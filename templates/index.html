@@ -1,0 +1,679 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>DB Import</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0 }
+  body {
+    font-family: 'Segoe UI', system-ui, sans-serif;
+    background: #0f1117;
+    color: #e2e8f0;
+    min-height: 100vh;
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 40px 16px;
+  }
+  .container {
+    width: 100%;
+    max-width: 1180px;
+    display: grid;
+    grid-template-columns: minmax(0, 760px) minmax(280px, 360px);
+    gap: 24px;
+    align-items: start;
+  }
+  .main-column { min-width: 0 }
+  h1 { font-size: 1.5rem; font-weight: 600; margin-bottom: 8px; color: #f0f4ff }
+  .subtitle { color: #64748b; font-size: .9rem; margin-bottom: 32px }
+  .side-panel {
+    position: sticky;
+    top: 40px;
+    background: #141827;
+    border: 1px solid #2d3148;
+    border-radius: 12px;
+    padding: 22px;
+  }
+  .side-title {
+    font-size: .75rem;
+    text-transform: uppercase;
+    letter-spacing: .1em;
+    color: #818cf8;
+    margin-bottom: 16px;
+  }
+  .side-section { padding: 14px 0; border-top: 1px solid #252840 }
+  .side-section:first-of-type { border-top: none; padding-top: 0 }
+  .side-section h2 { font-size: .95rem; font-weight: 600; color: #f0f4ff; margin-bottom: 7px }
+  .side-section p { color: #94a3b8; font-size: .84rem; line-height: 1.55 }
+  .side-list { list-style: none; display: grid; gap: 8px; margin-top: 10px }
+  .side-list li { color: #cbd5e1; font-size: .82rem; line-height: 1.45 }
+  .side-list strong { color: #e2e8f0 }
+
+  .card {
+    background: #1a1d2e;
+    border: 1px solid #2d3148;
+    border-radius: 12px;
+    padding: 28px;
+    margin-bottom: 20px;
+  }
+  .card-title {
+    font-size: .7rem;
+    text-transform: uppercase;
+    letter-spacing: .1em;
+    color: #4a5568;
+    margin-bottom: 18px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .card-title .step {
+    background: #2d3148;
+    border-radius: 50%;
+    width: 22px; height: 22px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: .75rem; color: #7c85c4;
+  }
+  .card-title.active .step { background: #4f46e5; color: #fff }
+  .card-title.done .step { background: #10b981; color: #fff }
+
+  label { display: block; font-size: .85rem; color: #94a3b8; margin-bottom: 6px }
+  input[type=text], input[type=password], select {
+    width: 100%;
+    background: #0f1117;
+    border: 1px solid #2d3148;
+    border-radius: 8px;
+    color: #e2e8f0;
+    padding: 10px 14px;
+    font-size: .9rem;
+    outline: none;
+    transition: border-color .15s;
+  }
+  input:focus, select:focus { border-color: #4f46e5 }
+  select option { background: #1a1d2e }
+
+  .drop-zone {
+    border: 2px dashed #2d3148;
+    border-radius: 10px;
+    padding: 36px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color .2s, background .2s;
+    position: relative;
+  }
+  .drop-zone:hover, .drop-zone.drag-over { border-color: #4f46e5; background: #1e213a }
+  .drop-zone input[type=file] {
+    position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%;
+  }
+  .drop-icon { font-size: 2rem; margin-bottom: 8px }
+  .drop-label { color: #94a3b8; font-size: .9rem }
+  .drop-label span { color: #818cf8; text-decoration: underline }
+  .file-name { color: #10b981; font-size: .85rem; margin-top: 8px; font-weight: 500 }
+
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px }
+  .row.trio { grid-template-columns: 2fr 1fr }
+
+  .btn {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: #4f46e5; color: #fff;
+    border: none; border-radius: 8px;
+    padding: 11px 22px; font-size: .9rem; font-weight: 500;
+    cursor: pointer; transition: background .15s;
+  }
+  .btn:hover { background: #4338ca }
+  .btn:disabled { background: #2d3148; color: #4a5568; cursor: not-allowed }
+  .btn.secondary { background: #1e213a; border: 1px solid #2d3148 }
+  .btn.secondary:hover { background: #252840 }
+  .btn-row { display: flex; gap: 10px; margin-top: 18px; flex-wrap: wrap }
+
+  /* Connection banner */
+  .conn-banner {
+    display: flex; align-items: center; justify-content: space-between;
+    background: #14241c; border: 1px solid #1e5f3f; border-radius: 10px;
+    padding: 12px 16px; margin-bottom: 20px;
+  }
+  .conn-banner .info { font-size: .85rem; color: #cbd5e1 }
+  .conn-banner .info strong { color: #4ade80 }
+  .conn-banner .dot { color: #4ade80; margin-right: 6px }
+  .link-btn {
+    background: none; border: none; color: #818cf8; cursor: pointer;
+    font-size: .82rem; text-decoration: underline; padding: 0;
+  }
+
+  /* Preview table */
+  .preview-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px }
+  .preview-header .summary { font-size: .9rem; color: #94a3b8 }
+  .preview-header .summary strong { color: #818cf8 }
+  .tbl { width: 100%; border-collapse: collapse; font-size: .875rem }
+  .tbl th {
+    text-align: left; padding: 8px 12px;
+    background: #0f1117; color: #4a5568;
+    font-size: .72rem; text-transform: uppercase; letter-spacing: .07em;
+    border-bottom: 1px solid #2d3148;
+  }
+  .tbl td { padding: 10px 12px; border-bottom: 1px solid #1e213a; color: #cbd5e1 }
+  .tbl tr:last-child td { border-bottom: none }
+  .tbl tr:hover td { background: #1e213a }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 99px; font-size: .75rem; font-weight: 500 }
+  .badge.blue { background: #1e3a5f; color: #60a5fa }
+  .badge.green { background: #14532d; color: #4ade80 }
+  .badge.yellow { background: #3d2f00; color: #fbbf24 }
+  .badge.red { background: #450a0a; color: #f87171 }
+  .badge.gray { background: #252840; color: #94a3b8 }
+  .cache-note { display: block; margin-top: 4px; color: #64748b; font-size: .8rem }
+  .range-code {
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    color: #cbd5e1;
+    font-size: .8rem;
+  }
+  input[type=checkbox] { width: 16px; height: 16px; accent-color: #4f46e5; cursor: pointer; vertical-align: middle }
+  .tbl tr.unchecked td:not(:first-child) { opacity: .4 }
+
+  /* Results */
+  .result-row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid #1e213a }
+  .result-row:last-child { border-bottom: none }
+  .result-name { font-weight: 500; min-width: 120px; color: #e2e8f0 }
+  .result-msg { color: #94a3b8; font-size: .875rem; flex: 1 }
+  .result-errors { font-size: .78rem; color: #f87171; margin-top: 3px }
+
+  .spinner {
+    display: inline-block; width: 16px; height: 16px;
+    border: 2px solid #4f46e5; border-top-color: transparent;
+    border-radius: 50%; animation: spin .7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg) } }
+
+  .alert { border-radius: 8px; padding: 12px 16px; font-size: .875rem; margin-bottom: 14px }
+  .alert.error { background: #450a0a; border: 1px solid #7f1d1d; color: #fca5a5 }
+  .alert.info  { background: #1e3a5f; border: 1px solid #1e40af; color: #93c5fd }
+
+  .hidden { display: none !important }
+  .divider { border: none; border-top: 1px solid #2d3148; margin: 18px 0 }
+  @media (max-width: 1080px) {
+    body { padding: 28px 14px }
+    .container { display: block; max-width: 760px }
+    .side-panel { position: static; margin-top: 20px }
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <main class="main-column">
+  <h1>Excel → SQL Server Importer</h1>
+  <p class="subtitle">Upload an Excel file, preview the tables, then import into your database.</p>
+
+  <!-- Saved-connection banner (shown when config exists) -->
+  <div class="conn-banner hidden" id="conn-banner">
+    <div class="info">
+      <span class="dot">●</span> Connected to
+      <strong id="conn-summary"></strong>
+    </div>
+    <button class="link-btn" id="btn-edit-conn">Edit connection</button>
+  </div>
+
+  <!-- ── Step 0: DB Connection setup ──────────────────── -->
+  <div class="card hidden" id="card-conn">
+    <div class="card-title active">
+      <span class="step">⚙</span> Database Connection
+    </div>
+    <p class="subtitle" style="margin-bottom:18px">
+      Enter your database details once — they'll be saved and reused next time.
+    </p>
+    <div id="err-conn" class="alert error hidden"></div>
+
+    <div class="row trio">
+      <div>
+        <label for="db-host">Host</label>
+        <input type="text" id="db-host" value="db" placeholder="db">
+      </div>
+      <div>
+        <label for="db-port">Port</label>
+        <input type="text" id="db-port" value="1433" placeholder="1433">
+      </div>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <div>
+        <label for="db-name">Database</label>
+        <input type="text" id="db-name" placeholder="your_database">
+      </div>
+      <div>
+        <label for="db-schema">Schema</label>
+        <input type="text" id="db-schema" value="lvapdbf" placeholder="lvapdbf">
+      </div>
+    </div>
+    <div class="row" style="margin-top:12px">
+      <div>
+        <label for="db-user">Username</label>
+        <input type="text" id="db-user" placeholder="sa">
+      </div>
+      <div>
+        <label for="db-pass">Password</label>
+        <input type="password" id="db-pass" placeholder="••••••••">
+      </div>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn" id="btn-save-conn">Test &amp; Save connection</button>
+      <button class="btn secondary hidden" id="btn-cancel-conn">Cancel</button>
+    </div>
+  </div>
+
+  <!-- ── Step 1: Upload ──────────────────────────────── -->
+  <div class="card hidden" id="card-upload">
+    <div class="card-title active">
+      <span class="step">1</span> Select File &amp; Sheet
+    </div>
+    <div id="err-upload" class="alert error hidden"></div>
+
+    <div class="drop-zone" id="drop-zone">
+      <input type="file" id="file-input" accept=".xlsx,.xls">
+      <div class="drop-icon">📂</div>
+      <div class="drop-label"><span>Click to browse</span> or drag &amp; drop your Excel file</div>
+      <div class="file-name hidden" id="file-name"></div>
+    </div>
+
+    <div style="margin-top:18px">
+      <label for="sheet-select">Sheet name</label>
+      <select id="sheet-select" disabled>
+        <option value="">— upload a file first —</option>
+      </select>
+    </div>
+
+    <div class="btn-row">
+      <button class="btn" id="btn-scan" disabled><span>Scan tables</span></button>
+    </div>
+  </div>
+
+  <!-- ── Step 2: Preview ──────────────────────────────── -->
+  <div class="card hidden" id="card-preview">
+    <div class="card-title active">
+      <span class="step">2</span> Preview &amp; Confirm
+    </div>
+    <div id="err-import" class="alert error hidden"></div>
+
+    <div class="preview-header">
+      <div class="summary" id="preview-summary"></div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">
+        <button class="btn secondary" id="btn-refresh-cache" style="padding:6px 14px;font-size:.8rem">Refresh cache</button>
+        <button class="btn secondary" id="btn-change-sheet" style="padding:6px 14px;font-size:.8rem">Change sheet</button>
+        <button class="btn secondary" id="btn-rescan" style="padding:6px 14px;font-size:.8rem">Change file</button>
+      </div>
+    </div>
+
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
+      <label for="schema-select" style="margin:0;white-space:nowrap">Import into schema</label>
+      <select id="schema-select" style="max-width:260px">
+        <option value="lvapdbf">lvapdbf</option>
+      </select>
+    </div>
+
+    <table class="tbl" id="preview-tbl">
+      <thead><tr>
+        <th style="width:36px"><input type="checkbox" id="chk-all" checked></th>
+        <th>#</th><th>Table Name</th><th>Range</th><th>Rows</th><th>Columns</th><th>Source</th>
+      </tr></thead>
+      <tbody id="preview-body"></tbody>
+    </table>
+
+    <div class="btn-row">
+      <button class="btn" id="btn-import"><span>Import selected tables</span></button>
+      <span id="select-count" style="align-self:center;color:#64748b;font-size:.82rem"></span>
+    </div>
+  </div>
+
+  <!-- ── Step 3: Results ──────────────────────────────── -->
+  <div class="card hidden" id="card-results">
+    <div class="card-title done"><span class="step">✓</span> Import Results</div>
+    <div id="results-body"></div>
+    <div class="btn-row">
+      <button class="btn secondary" id="btn-change-sheet-results">Change sheet</button>
+      <button class="btn secondary" id="btn-restart">Change file</button>
+    </div>
+  </div>
+  </main>
+
+  <aside class="side-panel">
+    <div class="side-title">Scan အကြောင်း</div>
+
+    <div class="side-section">
+      <h2>Table တွေကို ဘယ်လိုရှာလဲ</h2>
+      <p>App က user ရွေးထားတဲ့ Excel sheet ထဲက <strong>■ 実施前テストデータ</strong> section ကိုပဲ ဖတ်ပါတယ်။ အဲဒီ section ထဲမှာ <strong>MZAIHP(...)</strong>, <strong>MSHHNP(...)</strong> လို table name တွေကို ရှာပါတယ်။</p>
+      <ul class="side-list">
+        <li><strong>Table row:</strong> table name ရှိတဲ့ row ဖြစ်ပါတယ်။</li>
+        <li><strong>Header row:</strong> table name ရဲ့ အောက် row ကို header row လို့ယူပါတယ်။ <strong>→ 更新前</strong> / <strong>→ 登録前</strong> လို marker row ရှိရင် အဲဒီ row ကိုကျော်ပြီး နောက်တစ် row ကို header row လို့ယူပါတယ်။</li>
+        <li><strong>Column range:</strong> header row မှာ ပထမ column ကနေ blank column မရောက်မချင်း ဖတ်ပါတယ်။ ဥပမာ <strong>B:AI</strong> လို့ပြပါတယ်။</li>
+      </ul>
+    </div>
+
+    <div class="side-section">
+      <h2>Rows နဲ့ Import</h2>
+      <p>Preview မှာ data row အရေအတွက်ကို မတွက်တော့ပါ။ အဲဒါကြောင့် Scan ပိုမြန်ပါတယ်။ Import နှိပ်တဲ့အချိန်မှသာ selected table တွေရဲ့ data rows ကို ဖတ်ပါတယ်။ Data row တွေကို start row ကနေစပြီး row တစ်ခုလုံး blank ဖြစ်တဲ့နေရာအထိ ဖတ်ပါတယ်။</p>
+    </div>
+
+    <div class="side-section">
+      <h2>Cache</h2>
+      <p>ပထမ Scan လုပ်တဲ့အချိန်မှာ table တစ်ခုချင်းစီရဲ့ position ကို save ထားပါတယ်။ ဥပမာ table name row, header row, column range <strong>B:AI</strong> စတာတွေကို cache ထဲ သိမ်းထားပါတယ်။ နောက်တစ်ခါ Scan / Import လုပ်တဲ့အခါ Excel layout မပြောင်းဘူးဆိုရင် ဒီ cache ကိုပြန်သုံးလို့ ပိုမြန်ပါတယ်။</p>
+      <ul class="side-list">
+        <li><strong>Source scan:</strong> Sheet ကိုတကယ်ပြန်ဖတ်ပြီး range ရှာထားတာပါ။</li>
+        <li><strong>Source cache:</strong> အရင် scan က save ထားတဲ့ cache position ကိုသုံးထားတာပါ။</li>
+        <li><strong>Refresh cache:</strong> Excel layout ပြောင်းသွားရင် ဒီ button ကိုနှိပ်ပြီး cache အသစ်ပြန်လုပ်ပါ။</li>
+      </ul>
+    </div>
+  </aside>
+</div>
+
+<script>
+const $  = id => document.getElementById(id)
+const show = el => el.classList.remove('hidden')
+const hide = el => el.classList.add('hidden')
+
+let scannedTables = []
+let hasConfig = false
+
+// ── On load: check saved config ───────────────────────────────────────────────
+fetch('/config').then(r => r.json()).then(data => {
+  if (data.configured) {
+    hasConfig = true
+    fillConnBanner(data.config)
+    show($('conn-banner'))
+    show($('card-upload'))
+  } else {
+    show($('card-conn'))   // first-time setup
+  }
+})
+
+function fillConnBanner(cfg) {
+  $('conn-summary').textContent = `${cfg.host}:${cfg.port} / ${cfg.database} (${cfg.username})`
+  // pre-fill the edit form too
+  $('db-host').value = cfg.host
+  $('db-port').value = cfg.port
+  $('db-name').value = cfg.database
+  $('db-schema').value = cfg.schema || 'lvapdbf'
+  $('db-user').value = cfg.username
+  $('db-pass').value = cfg.password || ''
+}
+
+// ── Connection: edit / save ───────────────────────────────────────────────────
+$('btn-edit-conn').addEventListener('click', () => {
+  hide($('card-upload')); hide($('card-preview')); hide($('card-results'))
+  show($('btn-cancel-conn'))
+  show($('card-conn'))
+})
+
+$('btn-cancel-conn').addEventListener('click', () => {
+  hide($('card-conn'))
+  show($('card-upload'))
+})
+
+$('btn-save-conn').addEventListener('click', () => {
+  const payload = {
+    host:     $('db-host').value.trim(),
+    port:     $('db-port').value.trim(),
+    database: $('db-name').value.trim(),
+    schema:   $('db-schema').value.trim() || 'lvapdbf',
+    username: $('db-user').value.trim(),
+    password: $('db-pass').value,
+  }
+  if (!payload.host || !payload.port || !payload.database || !payload.username) {
+    showErr($('err-conn'), 'Host, port, database, and username are required.')
+    return
+  }
+  hide($('err-conn'))
+  setLoading($('btn-save-conn'), true, 'Testing…')
+
+  fetch('/config', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload)
+  })
+  .then(r => r.json())
+  .then(data => {
+    setLoading($('btn-save-conn'), false, 'Test & Save connection')
+    if (data.error) { showErr($('err-conn'), data.error); return }
+    hasConfig = true
+    fillConnBanner(payload)
+    show($('conn-banner'))
+    hide($('card-conn'))
+    show($('card-upload'))
+  })
+  .catch(e => {
+    setLoading($('btn-save-conn'), false, 'Test & Save connection')
+    showErr($('err-conn'), 'Save failed: ' + e)
+  })
+})
+
+// ── Drag & Drop ──────────────────────────────────────────────────────────────
+const dz = $('drop-zone')
+dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag-over') })
+dz.addEventListener('dragleave', () => dz.classList.remove('drag-over'))
+dz.addEventListener('drop', e => {
+  e.preventDefault(); dz.classList.remove('drag-over')
+  const f = e.dataTransfer.files[0]
+  if (f) handleFile(f)
+})
+$('file-input').addEventListener('change', e => {
+  if (e.target.files[0]) handleFile(e.target.files[0])
+})
+
+function handleFile(file) {
+  const fn = $('file-name')
+  fn.textContent = file.name; show(fn)
+  hide($('err-upload'))
+  $('sheet-select').innerHTML = '<option value="">Uploading…</option>'
+  $('sheet-select').disabled = true
+  $('btn-scan').disabled = true
+
+  const fd = new FormData(); fd.append('file', file)
+  fetch('/upload', { method: 'POST', body: fd })
+    .then(r => r.json())
+    .then(data => {
+      if (data.error) { showErr($('err-upload'), data.error); return }
+      const sel = $('sheet-select')
+      sel.innerHTML = '<option value="">— select a sheet —</option>'
+      data.sheets.forEach(s => {
+        const o = document.createElement('option'); o.value = s; o.textContent = s
+        sel.appendChild(o)
+      })
+      sel.disabled = false
+      if (data.sheets.length === 1) { sel.value = data.sheets[0]; $('btn-scan').disabled = false }
+    })
+    .catch(e => showErr($('err-upload'), 'Upload failed: ' + e))
+}
+
+$('sheet-select').addEventListener('change', function() {
+  $('btn-scan').disabled = !this.value
+})
+
+// ── Scan ─────────────────────────────────────────────────────────────────────
+$('btn-scan').addEventListener('click', () => scanSheet(false, $('btn-scan')))
+$('btn-refresh-cache').addEventListener('click', () => scanSheet(true, $('btn-refresh-cache')))
+
+function scanSheet(refresh, btn) {
+  const sheet = $('sheet-select').value
+  if (!sheet) return
+  const idleLabel = refresh ? 'Refresh cache' : 'Scan tables'
+  const errBox = refresh ? $('err-import') : $('err-upload')
+  setLoading(btn, true, refresh ? 'Refreshing…' : 'Scanning…')
+  hide($('err-upload')); hide($('err-import'))
+
+  fetch('/scan', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ sheet, refresh })
+  })
+  .then(r => r.json())
+  .then(data => {
+    setLoading(btn, false, idleLabel)
+    if (data.error) { showErr(errBox, data.error); return }
+    scannedTables = data.tables
+    buildPreview(data.tables, sheet, data.cache)
+    loadSchemas()
+    hide($('card-upload')); show($('card-preview'))
+  })
+  .catch(e => {
+    setLoading(btn, false, idleLabel)
+    showErr(errBox, 'Scan failed: ' + e)
+  })
+}
+
+function buildPreview(tables, sheet, cache) {
+  const rowSummary = `row counts during import`
+  const cacheText = cache
+    ? cache.used
+      ? `Using saved scan cache for ${cache.tables} table range${cache.tables !== 1 ? 's' : ''}.`
+      : `Scan cache refreshed with ${cache.tables} table range${cache.tables !== 1 ? 's' : ''}.`
+    : ''
+  $('preview-summary').innerHTML =
+    `Found <strong>${tables.length}</strong> table${tables.length !== 1 ? 's' : ''} in sheet
+     <strong>${escapeHtml(sheet)}</strong> &mdash; ${rowSummary}
+     ${cacheText ? `<span class="cache-note">${cacheText}</span>` : ''}`
+  const tbody = $('preview-body'); tbody.innerHTML = ''
+  tables.forEach((t, i) => {
+    const sourceClass = t.from_cache ? 'green' : 'gray'
+    const sourceText = t.from_cache ? 'cache' : 'scan'
+    tbody.innerHTML += `<tr>
+      <td><input type="checkbox" class="chk-row" data-name="${escapeAttr(t.name)}" checked></td>
+      <td>${i + 1}</td>
+      <td><strong>${escapeHtml(t.name)}</strong></td>
+      <td><span class="range-code">${escapeHtml(t.col_range || '-')}</span></td>
+      <td><span class="range-code">${escapeHtml(t.row_range || '-')}</span></td>
+      <td><span class="badge blue">${t.columns}</span></td>
+      <td><span class="badge ${sourceClass}">${sourceText}</span></td>
+    </tr>`
+  })
+  $('chk-all').checked = true
+  bindRowChecks()
+  updateSelectCount()
+}
+
+function loadSchemas() {
+  fetch('/schemas').then(r => r.json()).then(data => {
+    const sel = $('schema-select')
+    if (data.error || !data.schemas || !data.schemas.length) return  // keep default option
+    const def = data.default || 'lvapdbf'
+    sel.innerHTML = ''
+    data.schemas.forEach(s => {
+      const o = document.createElement('option')
+      o.value = s; o.textContent = s
+      if (s === def) o.selected = true
+      sel.appendChild(o)
+    })
+  }).catch(() => {})
+}
+
+function rowChecks() { return Array.from(document.querySelectorAll('.chk-row')) }
+
+function bindRowChecks() {
+  rowChecks().forEach(chk => chk.addEventListener('change', () => {
+    chk.closest('tr').classList.toggle('unchecked', !chk.checked)
+    const all = rowChecks()
+    $('chk-all').checked = all.every(c => c.checked)
+    $('chk-all').indeterminate = !$('chk-all').checked && all.some(c => c.checked)
+    updateSelectCount()
+  }))
+}
+
+$('chk-all').addEventListener('change', function() {
+  rowChecks().forEach(chk => {
+    chk.checked = this.checked
+    chk.closest('tr').classList.toggle('unchecked', !this.checked)
+  })
+  this.indeterminate = false
+  updateSelectCount()
+})
+
+function selectedNames() {
+  return rowChecks().filter(c => c.checked).map(c => c.dataset.name)
+}
+
+function updateSelectCount() {
+  const n = selectedNames().length, total = rowChecks().length
+  $('select-count').textContent = `${n} of ${total} selected`
+  $('btn-import').disabled = n === 0
+}
+
+// ── Import (uses saved config — no creds sent) ────────────────────────────────
+$('btn-import').addEventListener('click', () => {
+  const tables = selectedNames()
+  if (!tables.length) { showErr($('err-import'), 'Select at least one table.'); return }
+  hide($('err-import'))
+  setLoading($('btn-import'), true, 'Importing…')
+  fetch('/import', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ tables, schema: $('schema-select').value })
+  })
+  .then(r => r.json())
+  .then(data => {
+    setLoading($('btn-import'), false, 'Import selected tables')
+    if (data.error) { showErr($('err-import'), data.error); return }
+    buildResults(data.results)
+    hide($('card-preview')); show($('card-results'))
+  })
+  .catch(e => {
+    setLoading($('btn-import'), false, 'Import selected tables')
+    showErr($('err-import'), 'Import failed: ' + e)
+  })
+})
+
+function buildResults(results) {
+  const body = $('results-body'); body.innerHTML = ''
+  let ok = 0, skip = 0, warn = 0
+  results.forEach(r => {
+    const cls = r.status === 'ok' ? 'green' : r.status === 'warn' ? 'yellow' : 'red'
+    const icon = r.status === 'ok' ? '✓' : r.status === 'warn' ? '⚠' : '–'
+    const errHtml = r.errors && r.errors.length
+      ? `<div class="result-errors">${r.errors.join('<br>')}</div>` : ''
+    body.innerHTML += `
+      <div class="result-row">
+        <span class="badge ${cls}">${icon}</span>
+        <span class="result-name">${r.name}</span>
+        <div class="result-msg">${r.message}${errHtml}</div>
+      </div>`
+    if (r.status === 'ok') ok++; else if (r.status === 'warn') warn++; else skip++
+  })
+  const summary = document.createElement('div')
+  summary.style.cssText = 'margin-top:14px;font-size:.85rem;color:#64748b'
+  summary.textContent = `${ok} imported, ${warn} with warnings, ${skip} skipped — ${results.length} total tables`
+  body.appendChild(summary)
+}
+
+// ── Reset ─────────────────────────────────────────────────────────────────────
+$('btn-change-sheet').addEventListener('click', changeSheet)
+$('btn-change-sheet-results').addEventListener('click', changeSheet)
+$('btn-rescan').addEventListener('click', resetToFileUpload)
+$('btn-restart').addEventListener('click', resetToFileUpload)
+
+function changeSheet() {
+  hide($('err-upload')); hide($('err-import'))
+  hide($('card-preview')); hide($('card-results'))
+  show($('card-upload'))
+  $('btn-scan').disabled = !$('sheet-select').value
+}
+
+function resetToFileUpload() {
+  $('file-input').value = ''
+  $('file-name').textContent = ''; hide($('file-name'))
+  $('sheet-select').innerHTML = '<option value="">— upload a file first —</option>'
+  $('sheet-select').disabled = true
+  $('btn-scan').disabled = true
+  hide($('err-upload')); hide($('err-import'))
+  hide($('card-preview')); hide($('card-results'))
+  show($('card-upload'))
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function setLoading(btn, loading, label) {
+  btn.disabled = loading
+  btn.innerHTML = loading ? `<span class="spinner"></span><span>${label}</span>` : `<span>${label}</span>`
+}
+function showErr(el, msg) { el.textContent = msg; show(el) }
+function escapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, ch => ({
+    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+  }[ch]))
+}
+function escapeAttr(value) { return escapeHtml(value) }
+</script>
+</body>
+</html>

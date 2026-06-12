@@ -1,0 +1,14 @@
+services:
+  web:
+    build: .
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./data:/app/data          # persists db_config.json across rebuilds
+    networks:
+      - sazaby-network
+
+networks:
+  sazaby-network:
+    external: true
+    name: icl-lv-core-system_sazaby-network
