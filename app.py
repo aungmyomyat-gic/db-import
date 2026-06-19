@@ -18,10 +18,6 @@ app.secret_key = os.urandom(24)
 # Stored next to the app so it survives restarts; mount it as a volume to
 # keep it across container rebuilds.
 CONFIG_PATH = Path(os.environ.get("DB_CONFIG_PATH", "/app/data/db_config.json"))
-SCAN_CACHE_PATH = Path(os.environ.get(
-    "DB_SCAN_CACHE_PATH",
-    str(CONFIG_PATH.with_name("scan_cache.json")),
-))
 
 
 def load_config() -> dict:
@@ -36,27 +32,6 @@ def load_config() -> dict:
 def save_config(cfg: dict) -> None:
     CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
     CONFIG_PATH.write_text(json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8")
-
-
-def load_scan_cache() -> dict:
-    if SCAN_CACHE_PATH.exists():
-        try:
-            return json.loads(SCAN_CACHE_PATH.read_text(encoding="utf-8"))
-        except Exception:
-            return {}
-    return {}
-
-
-def save_scan_cache(cache: dict) -> None:
-    try:
-        SCAN_CACHE_PATH.parent.mkdir(parents=True, exist_ok=True)
-        SCAN_CACHE_PATH.write_text(
-            json.dumps(cache, indent=2, ensure_ascii=False),
-            encoding="utf-8",
-        )
-    except Exception:
-        # Cache is an optimization only. Import should still work without it.
-        pass
 
 # A table name MUST be followed by a "(description)" — e.g. MZAIHP(倉庫在庫マスタ).
 # This distinguishes table-name cells from header cells (DFRNKN, DFRGNO …),
@@ -156,17 +131,16 @@ def scan_tables(ws):
 def extract_headers(ws, meta):
     hrow, _ = resolve_header_row(ws, meta)
     start_col = int(meta["start_col"])
-    cached_end_col = meta.get("end_col")
 
     headers, col = [], start_col
-    while col <= int(cached_end_col or ws.max_column):
+    while col <= ws.max_column:
         val = ws.cell(row=hrow, column=col).value
-        if val is None and cached_end_col is None:
+        if val is None:
             break
         # Normalize header codes (may be full-width) so they match DB columns.
-        headers.append(normalize_cell(str(val)) if val is not None else "")
+        headers.append(normalize_cell(str(val)))
         col += 1
-    end_col = start_col + len(headers) - 1 if headers else int(cached_end_col or start_col)
+    end_col = start_col + len(headers) - 1 if headers else start_col
     return hrow, headers, end_col
 
 
@@ -186,23 +160,38 @@ def extract_table(ws, meta):
     return headers, rows
 
 
-def table_preview(ws, meta, from_cache=False):
+def count_data_rows(ws, hrow, start_col, n_cols):
+    count, r = 0, hrow + 1
+    while r <= ws.max_row:
+        row_vals = [ws.cell(row=r, column=start_col + i).value for i in range(n_cols)]
+        if all(v is None for v in row_vals):
+            break
+        count += 1
+        r += 1
+    data_end_row = r - 1 if count else None
+    return count, data_end_row
+
+
+def table_preview(ws, meta):
     hrow, headers, end_col = extract_headers(ws, meta)
     hrow, marker_skipped = resolve_header_row(ws, meta)
     start_col = int(meta["start_col"])
     data_start_row = hrow + 1
+    record_count, data_end_row = (0, None)
+    if headers:
+        record_count, data_end_row = count_data_rows(ws, hrow, start_col, len(headers))
     start_letter = get_column_letter(start_col)
     end_letter = get_column_letter(end_col)
-    row_range = f"{data_start_row}+"
+    row_range = f"{data_start_row}:{data_end_row}" if data_end_row else "-"
     cell_range = f"{start_letter}{hrow}:{end_letter}..."
     return {
         "name": meta["name"],
         "columns": len(headers),
-        "records": None,
+        "records": record_count,
         "name_row": int(meta["name_row"]),
         "header_row": hrow,
         "data_start_row": data_start_row,
-        "data_end_row": None,
+        "data_end_row": data_end_row,
         "start_col": start_col,
         "end_col": end_col,
         "start_col_letter": start_letter,
@@ -211,56 +200,7 @@ def table_preview(ws, meta, from_cache=False):
         "row_range": row_range,
         "cell_range": cell_range,
         "marker_skipped": marker_skipped,
-        "from_cache": from_cache,
     }
-
-
-def cache_meta_from_preview(table):
-    return {
-        "name": table["name"],
-        "name_row": table["name_row"],
-        "header_row": table["header_row"] - 1 if table["marker_skipped"] else table["header_row"],
-        "start_col": table["start_col"],
-        "end_col": table["end_col"],
-    }
-
-
-def cached_metas_for_sheet(ws, sheet_name):
-    entry = load_scan_cache().get("sheets", {}).get(sheet_name)
-    if not entry:
-        return None
-
-    metas = entry.get("tables") or []
-    if not metas:
-        return None
-
-    for meta in metas:
-        try:
-            name_row = int(meta["name_row"])
-            start_col = int(meta["start_col"])
-            expected_name = meta["name"]
-        except (KeyError, TypeError, ValueError):
-            return None
-        if name_row > ws.max_row or start_col > ws.max_column:
-            return None
-        value = ws.cell(row=name_row, column=start_col).value
-        if not isinstance(value, str):
-            return None
-        match = TABLE_NAME_RE.match(normalize_cell(value))
-        if not match or match.group(1) != expected_name:
-            return None
-
-    return metas
-
-
-def save_sheet_scan_cache(sheet_name, tables):
-    cache = load_scan_cache()
-    cache.setdefault("version", 1)
-    cache.setdefault("sheets", {})
-    cache["sheets"][sheet_name] = {
-        "tables": [cache_meta_from_preview(table) for table in tables],
-    }
-    save_scan_cache(cache)
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
@@ -268,6 +208,14 @@ def save_sheet_scan_cache(sheet_name, tables):
 @app.route("/")
 def index():
     return render_template("index.html")
+
+
+@app.after_request
+def disable_browser_cache(response):
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
 
 
 @app.route("/config", methods=["GET"])
@@ -362,7 +310,6 @@ def scan():
     """Scan a sheet and return table preview."""
     payload = request.json or {}
     sheet_name = payload.get("sheet", "").strip()
-    refresh_cache = bool(payload.get("refresh"))
     tmp_path = session.get("tmp_path")
 
     if not tmp_path or not Path(tmp_path).exists():
@@ -379,31 +326,12 @@ def scan():
         return jsonify({"error": f"Sheet '{sheet_name}' not found."}), 400
 
     ws = wb[sheet_name]
-    cache_used = False
-    metas = None if refresh_cache else cached_metas_for_sheet(ws, sheet_name)
-    if metas is not None:
-        cache_used = True
-    else:
-        metas = scan_tables(ws)
-
-    tables = [table_preview(ws, meta, from_cache=cache_used) for meta in metas]
-    if cache_used and any(table["columns"] == 0 for table in tables):
-        cache_used = False
-        metas = scan_tables(ws)
-        tables = [table_preview(ws, meta, from_cache=False) for meta in metas]
-    if not cache_used:
-        save_sheet_scan_cache(sheet_name, tables)
+    metas = scan_tables(ws)
+    tables = [table_preview(ws, meta) for meta in metas]
 
     wb.close()
     session["sheet_name"] = sheet_name
-    return jsonify({
-        "tables": tables,
-        "cache": {
-            "used": cache_used,
-            "tables": len(tables),
-            "path": str(SCAN_CACHE_PATH),
-        },
-    })
+    return jsonify({"tables": tables})
 
 
 @app.route("/schemas", methods=["GET"])
@@ -466,9 +394,7 @@ def do_import():
 
     wb = openpyxl.load_workbook(tmp_path, data_only=True, read_only=True)
     ws = wb[sheet_name]
-    metas = cached_metas_for_sheet(ws, sheet_name)
-    if metas is None:
-        metas = scan_tables(ws)
+    metas = scan_tables(ws)
 
     results = []
     for meta in metas:
@@ -603,4 +529,5 @@ def _type_default(dtype: str):
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=False)
+    debug = os.environ.get("FLASK_DEBUG", "").lower() in {"1", "true", "yes"}
+    app.run(host="0.0.0.0", port=5000, debug=debug)

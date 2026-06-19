@@ -3,6 +3,9 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
+<meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <title>DB Import</title>
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0 }
@@ -30,6 +33,7 @@
   .side-panel {
     position: sticky;
     top: 40px;
+    margin-top: 86px;
     background: #141827;
     border: 1px solid #2d3148;
     border-radius: 12px;
@@ -159,8 +163,6 @@
   .badge.green { background: #14532d; color: #4ade80 }
   .badge.yellow { background: #3d2f00; color: #fbbf24 }
   .badge.red { background: #450a0a; color: #f87171 }
-  .badge.gray { background: #252840; color: #94a3b8 }
-  .cache-note { display: block; margin-top: 4px; color: #64748b; font-size: .8rem }
   .range-code {
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     color: #cbd5e1;
@@ -294,7 +296,6 @@
     <div class="preview-header">
       <div class="summary" id="preview-summary"></div>
       <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">
-        <button class="btn secondary" id="btn-refresh-cache" style="padding:6px 14px;font-size:.8rem">Refresh cache</button>
         <button class="btn secondary" id="btn-change-sheet" style="padding:6px 14px;font-size:.8rem">Change sheet</button>
         <button class="btn secondary" id="btn-rescan" style="padding:6px 14px;font-size:.8rem">Change file</button>
       </div>
@@ -310,7 +311,7 @@
     <table class="tbl" id="preview-tbl">
       <thead><tr>
         <th style="width:36px"><input type="checkbox" id="chk-all" checked></th>
-        <th>#</th><th>Table Name</th><th>Range</th><th>Rows</th><th>Columns</th><th>Source</th>
+        <th>#</th><th>Table Name</th><th>Range</th><th>Rows</th><th>Columns</th>
       </tr></thead>
       <tbody id="preview-body"></tbody>
     </table>
@@ -344,21 +345,6 @@
         <li><strong>Column range:</strong> header row မှာ ပထမ column ကနေ blank column မရောက်မချင်း ဖတ်ပါတယ်။ ဥပမာ <strong>B:AI</strong> လို့ပြပါတယ်။</li>
       </ul>
     </div>
-
-    <div class="side-section">
-      <h2>Rows နဲ့ Import</h2>
-      <p>Preview မှာ data row အရေအတွက်ကို မတွက်တော့ပါ။ အဲဒါကြောင့် Scan ပိုမြန်ပါတယ်။ Import နှိပ်တဲ့အချိန်မှသာ selected table တွေရဲ့ data rows ကို ဖတ်ပါတယ်။ Data row တွေကို start row ကနေစပြီး row တစ်ခုလုံး blank ဖြစ်တဲ့နေရာအထိ ဖတ်ပါတယ်။</p>
-    </div>
-
-    <div class="side-section">
-      <h2>Cache</h2>
-      <p>ပထမ Scan လုပ်တဲ့အချိန်မှာ table တစ်ခုချင်းစီရဲ့ position ကို save ထားပါတယ်။ ဥပမာ table name row, header row, column range <strong>B:AI</strong> စတာတွေကို cache ထဲ သိမ်းထားပါတယ်။ နောက်တစ်ခါ Scan / Import လုပ်တဲ့အခါ Excel layout မပြောင်းဘူးဆိုရင် ဒီ cache ကိုပြန်သုံးလို့ ပိုမြန်ပါတယ်။</p>
-      <ul class="side-list">
-        <li><strong>Source scan:</strong> Sheet ကိုတကယ်ပြန်ဖတ်ပြီး range ရှာထားတာပါ။</li>
-        <li><strong>Source cache:</strong> အရင် scan က save ထားတဲ့ cache position ကိုသုံးထားတာပါ။</li>
-        <li><strong>Refresh cache:</strong> Excel layout ပြောင်းသွားရင် ဒီ button ကိုနှိပ်ပြီး cache အသစ်ပြန်လုပ်ပါ။</li>
-      </ul>
-    </div>
   </aside>
 </div>
 
@@ -367,13 +353,9 @@ const $  = id => document.getElementById(id)
 const show = el => el.classList.remove('hidden')
 const hide = el => el.classList.add('hidden')
 
-let scannedTables = []
-let hasConfig = false
-
 // ── On load: check saved config ───────────────────────────────────────────────
 fetch('/config').then(r => r.json()).then(data => {
   if (data.configured) {
-    hasConfig = true
     fillConnBanner(data.config)
     show($('conn-banner'))
     show($('card-upload'))
@@ -430,7 +412,6 @@ $('btn-save-conn').addEventListener('click', () => {
   .then(data => {
     setLoading($('btn-save-conn'), false, 'Test & Save connection')
     if (data.error) { showErr($('err-conn'), data.error); return }
-    hasConfig = true
     fillConnBanner(payload)
     show($('conn-banner'))
     hide($('card-conn'))
@@ -485,60 +466,47 @@ $('sheet-select').addEventListener('change', function() {
 })
 
 // ── Scan ─────────────────────────────────────────────────────────────────────
-$('btn-scan').addEventListener('click', () => scanSheet(false, $('btn-scan')))
-$('btn-refresh-cache').addEventListener('click', () => scanSheet(true, $('btn-refresh-cache')))
+$('btn-scan').addEventListener('click', () => scanSheet($('btn-scan')))
 
-function scanSheet(refresh, btn) {
+function scanSheet(btn) {
   const sheet = $('sheet-select').value
   if (!sheet) return
-  const idleLabel = refresh ? 'Refresh cache' : 'Scan tables'
-  const errBox = refresh ? $('err-import') : $('err-upload')
-  setLoading(btn, true, refresh ? 'Refreshing…' : 'Scanning…')
+  const idleLabel = 'Scan tables'
+  setLoading(btn, true, 'Scanning…')
   hide($('err-upload')); hide($('err-import'))
 
   fetch('/scan', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ sheet, refresh })
+    body: JSON.stringify({ sheet })
   })
   .then(r => r.json())
   .then(data => {
     setLoading(btn, false, idleLabel)
-    if (data.error) { showErr(errBox, data.error); return }
-    scannedTables = data.tables
-    buildPreview(data.tables, sheet, data.cache)
+    if (data.error) { showErr($('err-upload'), data.error); return }
+    buildPreview(data.tables, sheet)
     loadSchemas()
     hide($('card-upload')); show($('card-preview'))
   })
   .catch(e => {
     setLoading(btn, false, idleLabel)
-    showErr(errBox, 'Scan failed: ' + e)
+    showErr($('err-upload'), 'Scan failed: ' + e)
   })
 }
 
-function buildPreview(tables, sheet, cache) {
-  const rowSummary = `row counts during import`
-  const cacheText = cache
-    ? cache.used
-      ? `Using saved scan cache for ${cache.tables} table range${cache.tables !== 1 ? 's' : ''}.`
-      : `Scan cache refreshed with ${cache.tables} table range${cache.tables !== 1 ? 's' : ''}.`
-    : ''
+function buildPreview(tables, sheet) {
   $('preview-summary').innerHTML =
     `Found <strong>${tables.length}</strong> table${tables.length !== 1 ? 's' : ''} in sheet
-     <strong>${escapeHtml(sheet)}</strong> &mdash; ${rowSummary}
-     ${cacheText ? `<span class="cache-note">${cacheText}</span>` : ''}`
+     <strong>${escapeHtml(sheet)}</strong>`
   const tbody = $('preview-body'); tbody.innerHTML = ''
   tables.forEach((t, i) => {
-    const sourceClass = t.from_cache ? 'green' : 'gray'
-    const sourceText = t.from_cache ? 'cache' : 'scan'
     tbody.innerHTML += `<tr>
       <td><input type="checkbox" class="chk-row" data-name="${escapeAttr(t.name)}" checked></td>
       <td>${i + 1}</td>
       <td><strong>${escapeHtml(t.name)}</strong></td>
       <td><span class="range-code">${escapeHtml(t.col_range || '-')}</span></td>
-      <td><span class="range-code">${escapeHtml(t.row_range || '-')}</span></td>
+      <td><span class="badge blue">${t.records ?? 0}</span></td>
       <td><span class="badge blue">${t.columns}</span></td>
-      <td><span class="badge ${sourceClass}">${sourceText}</span></td>
     </tr>`
   })
   $('chk-all').checked = true
