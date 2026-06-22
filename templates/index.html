@@ -163,6 +163,17 @@
   .badge.green { background: #14532d; color: #4ade80 }
   .badge.yellow { background: #3d2f00; color: #fbbf24 }
   .badge.red { background: #450a0a; color: #f87171 }
+  .status-pill {
+    display: inline-flex; align-items: center; gap: 6px;
+    min-width: 82px; justify-content: center;
+    padding: 2px 8px; border-radius: 99px;
+    font-size: .75rem; font-weight: 600; white-space: nowrap;
+  }
+  .status-pill.gray { background: #252840; color: #94a3b8 }
+  .status-pill.blue { background: #1e3a5f; color: #60a5fa }
+  .status-pill.green { background: #14532d; color: #4ade80 }
+  .status-pill.yellow { background: #3d2f00; color: #fbbf24 }
+  .status-pill.red { background: #450a0a; color: #f87171 }
   .range-code {
     font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
     color: #cbd5e1;
@@ -174,8 +185,20 @@
   /* Results */
   .result-row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid #1e213a }
   .result-row:last-child { border-bottom: none }
+  .status-icon {
+    width: 22px; height: 22px; border-radius: 50%;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: .78rem; font-weight: 700; flex: 0 0 auto;
+  }
+  .status-icon.green { background: #14532d; color: #4ade80 }
+  .status-icon.yellow { background: #3d2f00; color: #fbbf24 }
+  .status-icon.red { background: #450a0a; color: #f87171 }
   .result-name { font-weight: 500; min-width: 120px; color: #e2e8f0 }
   .result-msg { color: #94a3b8; font-size: .875rem; flex: 1 }
+  .status-text { font-weight: 600 }
+  .status-text.green { color: #4ade80 }
+  .status-text.yellow { color: #fbbf24 }
+  .status-text.red { color: #f87171 }
   .result-errors { font-size: .78rem; color: #f87171; margin-top: 3px }
 
   .spinner {
@@ -311,7 +334,7 @@
     <table class="tbl" id="preview-tbl">
       <thead><tr>
         <th style="width:36px"><input type="checkbox" id="chk-all" checked></th>
-        <th>#</th><th>Table Name</th><th>Range</th><th>Rows</th><th>Columns</th>
+        <th>#</th><th>Table Name</th><th>Status</th><th>Range</th><th>Rows</th><th>Columns</th>
       </tr></thead>
       <tbody id="preview-body"></tbody>
     </table>
@@ -352,6 +375,7 @@
 const $  = id => document.getElementById(id)
 const show = el => el.classList.remove('hidden')
 const hide = el => el.classList.add('hidden')
+let importPollTimer = null
 
 // ── On load: check saved config ───────────────────────────────────────────────
 fetch('/config').then(r => r.json()).then(data => {
@@ -504,6 +528,7 @@ function buildPreview(tables, sheet) {
       <td><input type="checkbox" class="chk-row" data-name="${escapeAttr(t.name)}" checked></td>
       <td>${i + 1}</td>
       <td><strong>${escapeHtml(t.name)}</strong></td>
+      <td class="status-cell" data-status-name="${escapeAttr(t.name)}">${statusPill('ready')}</td>
       <td><span class="range-code">${escapeHtml(t.col_range || '-')}</span></td>
       <td><span class="badge blue">${t.records ?? 0}</span></td>
       <td><span class="badge blue">${t.columns}</span></td>
@@ -565,7 +590,11 @@ $('btn-import').addEventListener('click', () => {
   const tables = selectedNames()
   if (!tables.length) { showErr($('err-import'), 'Select at least one table.'); return }
   hide($('err-import'))
-  setLoading($('btn-import'), true, 'Importing…')
+  hide($('card-results'))
+  clearImportPolling()
+  setSelectedImportStatuses(tables)
+  setImportControlsDisabled(true)
+  setLoading($('btn-import'), true, 'Starting…')
   fetch('/import', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -573,37 +602,135 @@ $('btn-import').addEventListener('click', () => {
   })
   .then(r => r.json())
   .then(data => {
-    setLoading($('btn-import'), false, 'Import selected tables')
-    if (data.error) { showErr($('err-import'), data.error); return }
-    buildResults(data.results)
-    hide($('card-preview')); show($('card-results'))
+    if (data.error) {
+      setLoading($('btn-import'), false, 'Import selected tables')
+      setImportControlsDisabled(false)
+      showErr($('err-import'), data.error)
+      return
+    }
+    applyImportProgress(data)
+    setLoading($('btn-import'), true, 'Importing…')
+    pollImportJob(data.job_id)
+    importPollTimer = setInterval(() => pollImportJob(data.job_id), 1000)
   })
   .catch(e => {
+    clearImportPolling()
     setLoading($('btn-import'), false, 'Import selected tables')
+    setImportControlsDisabled(false)
     showErr($('err-import'), 'Import failed: ' + e)
   })
 })
 
+function clearImportPolling() {
+  if (importPollTimer) clearInterval(importPollTimer)
+  importPollTimer = null
+}
+
+function setImportControlsDisabled(disabled) {
+  rowChecks().forEach(chk => { chk.disabled = disabled })
+  $('chk-all').disabled = disabled
+  $('schema-select').disabled = disabled
+  $('btn-change-sheet').disabled = disabled
+  $('btn-rescan').disabled = disabled
+}
+
+function setSelectedImportStatuses(tableNames) {
+  const selected = new Set(tableNames)
+  rowChecks().forEach(chk => {
+    setTableStatus(chk.dataset.name, selected.has(chk.dataset.name) ? 'queued' : 'ready')
+  })
+  $('select-count').textContent = `0 of ${tableNames.length} imported`
+}
+
+function pollImportJob(jobId) {
+  fetch(`/import/status/${encodeURIComponent(jobId)}`)
+    .then(r => r.json())
+    .then(data => {
+      if (data.error && !data.state) {
+        clearImportPolling()
+        setLoading($('btn-import'), false, 'Import selected tables')
+        setImportControlsDisabled(false)
+        showErr($('err-import'), data.error)
+        return
+      }
+      applyImportProgress(data)
+      if (data.state === 'done' || data.state === 'failed') {
+        clearImportPolling()
+        setLoading($('btn-import'), false, 'Import selected tables')
+        setImportControlsDisabled(false)
+        if (data.error) showErr($('err-import'), data.error)
+        buildResults(data.results || [])
+        show($('card-results'))
+      }
+    })
+    .catch(e => {
+      clearImportPolling()
+      setLoading($('btn-import'), false, 'Import selected tables')
+      setImportControlsDisabled(false)
+      showErr($('err-import'), 'Import status failed: ' + e)
+    })
+}
+
+function applyImportProgress(data) {
+  ;(data.results || []).forEach(r => setTableStatus(r.name, r.status, r.message))
+  const total = data.total ?? selectedNames().length
+  const completed = data.completed ?? 0
+  $('select-count').textContent = `${completed} of ${total} imported`
+}
+
+function setTableStatus(tableName, status) {
+  document.querySelectorAll('.status-cell').forEach(cell => {
+    if (cell.dataset.statusName === tableName) cell.innerHTML = statusPill(status)
+  })
+}
+
+function statusPill(status) {
+  const info = statusInfo(status)
+  return `<span class="status-pill ${info.cls}">${info.icon ? `${info.icon} ` : ''}${info.label}</span>`
+}
+
 function buildResults(results) {
   const body = $('results-body'); body.innerHTML = ''
-  let ok = 0, skip = 0, warn = 0
+  let ok = 0, skip = 0, warn = 0, failed = 0
   results.forEach(r => {
-    const cls = r.status === 'ok' ? 'green' : r.status === 'warn' ? 'yellow' : 'red'
-    const icon = r.status === 'ok' ? '✓' : r.status === 'warn' ? '⚠' : '–'
+    const status = resultStatus(r.status)
     const errHtml = r.errors && r.errors.length
-      ? `<div class="result-errors">${r.errors.join('<br>')}</div>` : ''
+      ? `<div class="result-errors">${r.errors.map(escapeHtml).join('<br>')}</div>` : ''
     body.innerHTML += `
       <div class="result-row">
-        <span class="badge ${cls}">${icon}</span>
-        <span class="result-name">${r.name}</span>
-        <div class="result-msg">${r.message}${errHtml}</div>
+        <span class="status-icon ${status.cls}" title="${status.label}" aria-label="${status.label}">${status.icon}</span>
+        <span class="result-name">${escapeHtml(r.name)}</span>
+        <div class="result-msg">
+          <span class="status-text ${status.cls}">${status.label}</span> - ${escapeHtml(r.message)}
+          ${errHtml}
+        </div>
       </div>`
-    if (r.status === 'ok') ok++; else if (r.status === 'warn') warn++; else skip++
+    if (r.status === 'ok') ok++
+    else if (r.status === 'warn') warn++
+    else if (r.status === 'failed') failed++
+    else skip++
   })
   const summary = document.createElement('div')
   summary.style.cssText = 'margin-top:14px;font-size:.85rem;color:#64748b'
-  summary.textContent = `${ok} imported, ${warn} with warnings, ${skip} skipped — ${results.length} total tables`
+  const parts = [`${ok} imported`, `${warn} with warnings`]
+  if (failed) parts.push(`${failed} failed`)
+  parts.push(`${skip} skipped`)
+  summary.textContent = `${parts.join(', ')} — ${results.length} total tables`
   body.appendChild(summary)
+}
+
+function resultStatus(status) {
+  return statusInfo(status)
+}
+
+function statusInfo(status) {
+  if (status === 'ready') return { cls: 'gray', icon: '', label: 'Ready' }
+  if (status === 'queued') return { cls: 'gray', icon: '', label: 'Waiting' }
+  if (status === 'running') return { cls: 'blue', icon: '', label: 'Importing' }
+  if (status === 'ok') return { cls: 'green', icon: '✓', label: 'Imported' }
+  if (status === 'warn') return { cls: 'yellow', icon: '!', label: 'Imported with warnings' }
+  if (status === 'failed') return { cls: 'red', icon: '×', label: 'Failed' }
+  return { cls: 'red', icon: '×', label: 'Skipped' }
 }
 
 // ── Reset ─────────────────────────────────────────────────────────────────────
@@ -613,6 +740,8 @@ $('btn-rescan').addEventListener('click', resetToFileUpload)
 $('btn-restart').addEventListener('click', resetToFileUpload)
 
 function changeSheet() {
+  clearImportPolling()
+  setImportControlsDisabled(false)
   hide($('err-upload')); hide($('err-import'))
   hide($('card-preview')); hide($('card-results'))
   show($('card-upload'))
@@ -620,6 +749,8 @@ function changeSheet() {
 }
 
 function resetToFileUpload() {
+  clearImportPolling()
+  setImportControlsDisabled(false)
   $('file-input').value = ''
   $('file-name').textContent = ''; hide($('file-name'))
   $('sheet-select').innerHTML = '<option value="">— upload a file first —</option>'

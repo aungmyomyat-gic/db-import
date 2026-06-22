@@ -1,6 +1,8 @@
 import re
 import os
 import json
+import threading
+import time
 import unicodedata
 import tempfile
 import uuid
@@ -58,6 +60,10 @@ def normalize_cell(value: str) -> str:
 
 TARGET_SECTION = "実施前テストデータ"   # only import tables under this "■" section
 MARKER_SCAN_WIDTH = 8
+IMPORT_BATCH_SIZE = 1000
+IMPORT_JOB_TTL_SECONDS = 3600
+IMPORT_JOBS = {}
+IMPORT_JOBS_LOCK = threading.Lock()
 
 
 def is_one_line_marker_row(ws, row_num, start_col):
@@ -128,6 +134,146 @@ def scan_tables(ws):
     return found
 
 
+def _row_value(row, col_num):
+    idx = col_num - 1
+    return row[idx] if idx < len(row) else None
+
+
+def _is_one_line_marker_values(row, start_col):
+    values = []
+    end_col = start_col + MARKER_SCAN_WIDTH - 1
+    for col in range(start_col, end_col + 1):
+        val = _row_value(row, col)
+        if val is None:
+            continue
+        text = normalize_cell(str(val))
+        if text:
+            values.append(text)
+            if len(values) > 1:
+                return False
+    return len(values) == 1 and not HEADER_CODE_RE.fullmatch(values[0])
+
+
+def _headers_from_values(row, start_col):
+    headers, col = [], start_col
+    while col <= len(row):
+        val = _row_value(row, col)
+        if val is None:
+            break
+        headers.append(normalize_cell(str(val)))
+        col += 1
+    return headers
+
+
+def _preview_from_headers(meta, hrow, headers, marker_skipped):
+    start_col = int(meta["start_col"])
+    data_start_row = hrow + 1
+    end_col = start_col + len(headers) - 1 if headers else start_col
+    start_letter = get_column_letter(start_col)
+    end_letter = get_column_letter(end_col)
+    return {
+        "name": meta["name"],
+        "columns": len(headers),
+        "records": 0,
+        "name_row": int(meta["name_row"]),
+        "header_row": hrow,
+        "data_start_row": data_start_row,
+        "data_end_row": None,
+        "start_col": start_col,
+        "end_col": end_col,
+        "start_col_letter": start_letter,
+        "end_col_letter": end_letter,
+        "col_range": f"{start_letter}:{end_letter}",
+        "row_range": "-",
+        "cell_range": f"{start_letter}{hrow}:{end_letter}...",
+        "marker_skipped": marker_skipped,
+    }
+
+
+def _count_active_preview_rows(active_tables, row, row_idx):
+    still_active = []
+    for table in active_tables:
+        n_cols = table["columns"]
+        start_col = table["start_col"]
+        row_vals = [_row_value(row, start_col + i) for i in range(n_cols)]
+        if all(v is None for v in row_vals):
+            continue
+        table["records"] += 1
+        table["data_end_row"] = row_idx
+        table["row_range"] = f"{table['data_start_row']}:{row_idx}"
+        still_active.append(table)
+    return still_active
+
+
+def scan_table_previews(ws):
+    """
+    Stream the sheet once and build preview rows with real record counts.
+    This avoids slow random access on read-only worksheets during preview.
+    """
+    tables, active, waiting = [], [], []
+    seen = set()
+    in_target = None
+    seen_target = False
+
+    for row_idx, row in enumerate(ws.iter_rows(values_only=True), start=1):
+        active = _count_active_preview_rows(active, row, row_idx)
+
+        next_waiting = []
+        for item in waiting:
+            meta = item["meta"]
+            start_col = int(meta["start_col"])
+            if row_idx == int(meta["header_row"]) and _is_one_line_marker_values(row, start_col):
+                item["meta"] = {**meta, "header_row": row_idx + 1}
+                item["marker_skipped"] = True
+                next_waiting.append(item)
+                continue
+
+            headers = _headers_from_values(row, start_col)
+            table = _preview_from_headers(meta, row_idx, headers, item["marker_skipped"])
+            tables.append(table)
+            if headers:
+                active.append(table)
+        waiting = next_waiting
+
+        marker = next(
+            (normalize_cell(value) for value in row
+             if isinstance(value, str) and normalize_cell(value).startswith("■")),
+            None,
+        )
+        if marker is not None:
+            is_target = TARGET_SECTION in marker
+            if seen_target and not is_target:
+                break
+            in_target = is_target
+            seen_target = seen_target or is_target
+            continue
+
+        if in_target is False:
+            continue
+
+        for col_idx, value in enumerate(row, start=1):
+            if not value or not isinstance(value, str):
+                continue
+            m = TABLE_NAME_RE.match(normalize_cell(value))
+            if not m:
+                continue
+            name = m.group(1)
+            if name in seen:
+                continue
+            seen.add(name)
+            waiting.append({
+                "meta": {
+                    "name": name,
+                    "name_row": row_idx,
+                    "start_col": col_idx,
+                    "header_row": row_idx + 1,
+                },
+                "marker_skipped": False,
+            })
+
+    return tables
+
+
 def extract_headers(ws, meta):
     hrow, _ = resolve_header_row(ws, meta)
     start_col = int(meta["start_col"])
@@ -158,49 +304,6 @@ def extract_table(ws, meta):
         rows.append(row_vals)
         r += 1
     return headers, rows
-
-
-def count_data_rows(ws, hrow, start_col, n_cols):
-    count, r = 0, hrow + 1
-    while r <= ws.max_row:
-        row_vals = [ws.cell(row=r, column=start_col + i).value for i in range(n_cols)]
-        if all(v is None for v in row_vals):
-            break
-        count += 1
-        r += 1
-    data_end_row = r - 1 if count else None
-    return count, data_end_row
-
-
-def table_preview(ws, meta):
-    hrow, headers, end_col = extract_headers(ws, meta)
-    hrow, marker_skipped = resolve_header_row(ws, meta)
-    start_col = int(meta["start_col"])
-    data_start_row = hrow + 1
-    record_count, data_end_row = (0, None)
-    if headers:
-        record_count, data_end_row = count_data_rows(ws, hrow, start_col, len(headers))
-    start_letter = get_column_letter(start_col)
-    end_letter = get_column_letter(end_col)
-    row_range = f"{data_start_row}:{data_end_row}" if data_end_row else "-"
-    cell_range = f"{start_letter}{hrow}:{end_letter}..."
-    return {
-        "name": meta["name"],
-        "columns": len(headers),
-        "records": record_count,
-        "name_row": int(meta["name_row"]),
-        "header_row": hrow,
-        "data_start_row": data_start_row,
-        "data_end_row": data_end_row,
-        "start_col": start_col,
-        "end_col": end_col,
-        "start_col_letter": start_letter,
-        "end_col_letter": end_letter,
-        "col_range": f"{start_letter}:{end_letter}",
-        "row_range": row_range,
-        "cell_range": cell_range,
-        "marker_skipped": marker_skipped,
-    }
 
 
 # ── Routes ────────────────────────────────────────────────────────────────────
@@ -326,8 +429,7 @@ def scan():
         return jsonify({"error": f"Sheet '{sheet_name}' not found."}), 400
 
     ws = wb[sheet_name]
-    metas = scan_tables(ws)
-    tables = [table_preview(ws, meta) for meta in metas]
+    tables = scan_table_previews(ws)
 
     wb.close()
     session["sheet_name"] = sheet_name
@@ -361,18 +463,21 @@ def get_schemas():
 
 @app.route("/import", methods=["POST"])
 def do_import():
-    """Connect to DB (using saved config) and import all scanned tables."""
+    """Start a background import job and return its initial status."""
     cfg = load_config()
     if not cfg:
         return jsonify({"error": "No DB connection saved. Please set it up first."}), 400
 
     tmp_path   = session.get("tmp_path")
     sheet_name = session.get("sheet_name")
+    payload = request.json or {}
 
     # Only import the tables the user ticked (None = all, for backward compat).
-    selected = (request.json or {}).get("tables")
-    selected_set = set(selected) if selected is not None else None
-    if selected_set is not None and not selected_set:
+    selected = payload.get("tables")
+    selected_names = None
+    if selected is not None:
+        selected_names = [str(name) for name in selected if str(name).strip()]
+    if selected_names is not None and not selected_names:
         return jsonify({"error": "No tables selected."}), 400
 
     if not tmp_path or not Path(tmp_path).exists():
@@ -383,36 +488,251 @@ def do_import():
     )
     if err:
         return jsonify({"error": err}), 500
-    try:
-        conn = pyodbc.connect(conn_str, timeout=10)
-    except pyodbc.Error as e:
-        return jsonify({"error": f"Connection failed: {e}"}), 400
 
     # Schema chosen in the UI dropdown wins; fall back to saved config, then default.
-    preferred_schema = (request.json or {}).get("schema", "").strip() \
+    preferred_schema = payload.get("schema", "").strip() \
         or cfg.get("schema") or "lvapdbf"
 
-    wb = openpyxl.load_workbook(tmp_path, data_only=True, read_only=True)
-    ws = wb[sheet_name]
-    metas = scan_tables(ws)
+    _cleanup_import_jobs()
+    job_id = uuid.uuid4().hex
+    job = _new_import_job(job_id, selected_names or [])
+    with IMPORT_JOBS_LOCK:
+        IMPORT_JOBS[job_id] = job
+        snapshot = _job_snapshot(job)
 
-    results = []
-    for meta in metas:
-        if selected_set is not None and meta["name"] not in selected_set:
-            continue
-        headers, rows = extract_table(ws, meta)
-        if not headers:
-            results.append({"name": meta["name"], "status": "skip", "message": "Header row empty"})
-            continue
+    worker = threading.Thread(
+        target=_run_import_job,
+        args=(job_id, cfg, str(tmp_path), sheet_name, selected_names, preferred_schema),
+        daemon=True,
+    )
+    worker.start()
+    return jsonify(snapshot), 202
+
+
+@app.route("/import/status/<job_id>", methods=["GET"])
+def import_status(job_id):
+    _cleanup_import_jobs()
+    with IMPORT_JOBS_LOCK:
+        job = IMPORT_JOBS.get(job_id)
+        if not job:
+            return jsonify({"error": "Import job not found."}), 404
+        return jsonify(_job_snapshot(job))
+
+
+def _new_import_job(job_id, table_names):
+    now = time.time()
+    return {
+        "id": job_id,
+        "state": "queued",
+        "total": len(table_names),
+        "completed": 0,
+        "results": [
+            {"name": name, "status": "queued", "message": "Waiting", "errors": []}
+            for name in table_names
+        ],
+        "error": None,
+        "created_at": now,
+        "updated_at": now,
+    }
+
+
+def _job_snapshot(job):
+    return {
+        "job_id": job["id"],
+        "state": job["state"],
+        "total": job["total"],
+        "completed": job["completed"],
+        "results": [dict(result) for result in job["results"]],
+        "error": job.get("error"),
+    }
+
+
+def _cleanup_import_jobs():
+    cutoff = time.time() - IMPORT_JOB_TTL_SECONDS
+    with IMPORT_JOBS_LOCK:
+        for job_id, job in list(IMPORT_JOBS.items()):
+            if job["state"] in {"done", "failed"} and job["updated_at"] < cutoff:
+                del IMPORT_JOBS[job_id]
+
+
+def _replace_job_queue(job_id, table_names):
+    now = time.time()
+    with IMPORT_JOBS_LOCK:
+        job = IMPORT_JOBS.get(job_id)
+        if not job:
+            return
+        job["total"] = len(table_names)
+        job["completed"] = 0
+        job["results"] = [
+            {"name": name, "status": "queued", "message": "Waiting", "errors": []}
+            for name in table_names
+        ]
+        job["updated_at"] = now
+
+
+def _set_job_state(job_id, state, error=None):
+    with IMPORT_JOBS_LOCK:
+        job = IMPORT_JOBS.get(job_id)
+        if not job:
+            return
+        job["state"] = state
+        job["error"] = error
+        job["updated_at"] = time.time()
+
+
+def _mark_job_table(job_id, table_name, status, message, errors=None):
+    final_statuses = {"ok", "warn", "skip", "failed"}
+    with IMPORT_JOBS_LOCK:
+        job = IMPORT_JOBS.get(job_id)
+        if not job:
+            return
+        existing = next((r for r in job["results"] if r["name"] == table_name), None)
+        if existing is None:
+            existing = {"name": table_name, "status": "queued", "message": "Waiting", "errors": []}
+            job["results"].append(existing)
+            job["total"] = max(job["total"], len(job["results"]))
+
+        was_final = existing["status"] in final_statuses
+        existing.update({
+            "status": status,
+            "message": message,
+            "errors": errors or [],
+        })
+        if status in final_statuses and not was_final:
+            job["completed"] += 1
+        job["updated_at"] = time.time()
+
+
+def _finish_import_job(job_id):
+    with IMPORT_JOBS_LOCK:
+        job = IMPORT_JOBS.get(job_id)
+        if not job:
+            return
+        if job["state"] != "failed":
+            job["state"] = "done"
+        job["updated_at"] = time.time()
+
+
+def _fail_import_job(job_id, message):
+    with IMPORT_JOBS_LOCK:
+        job = IMPORT_JOBS.get(job_id)
+        if not job:
+            return
+        final_statuses = {"ok", "warn", "skip", "failed"}
+        for result in job["results"]:
+            if result["status"] not in final_statuses:
+                result["status"] = "failed"
+                result["message"] = message
+                result["errors"] = []
+                job["completed"] += 1
+        job["state"] = "failed"
+        job["error"] = message
+        job["updated_at"] = time.time()
+
+
+def _run_import_job(job_id, cfg, tmp_path, sheet_name, selected_names, preferred_schema):
+    conn = None
+    wb = None
+    try:
+        _set_job_state(job_id, "running")
+        conn_str, err = _build_conn_str(
+            cfg["host"], cfg["port"], cfg["database"], cfg["username"], cfg["password"]
+        )
+        if err:
+            _fail_import_job(job_id, err)
+            return
+        conn = pyodbc.connect(conn_str, timeout=10)
+
+        wb = openpyxl.load_workbook(tmp_path, data_only=True, read_only=True)
+        if sheet_name not in wb.sheetnames:
+            _fail_import_job(job_id, f"Sheet '{sheet_name}' not found.")
+            return
+
+        ws = wb[sheet_name]
+        metas = scan_tables(ws)
+        if selected_names is None:
+            selected_names = [meta["name"] for meta in metas]
+            _replace_job_queue(job_id, selected_names)
+
+        selected_set = set(selected_names)
+        pending = set(selected_names)
+        for meta in metas:
+            table_name = meta["name"]
+            if table_name not in selected_set:
+                continue
+            pending.discard(table_name)
+            _mark_job_table(job_id, table_name, "running", "Importing")
+            try:
+                headers, rows = extract_table(ws, meta)
+                if not headers:
+                    result = {"name": table_name, "status": "skip", "message": "Header row empty", "errors": []}
+                else:
+                    result = _import_one(conn, table_name, headers, rows, preferred_schema)
+            except Exception as e:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                result = {"name": table_name, "status": "failed", "message": f"Failed: {e}", "errors": []}
+            _mark_job_table(
+                job_id,
+                table_name,
+                result.get("status", "failed"),
+                result.get("message", ""),
+                result.get("errors", []),
+            )
+
+        for table_name in pending:
+            _mark_job_table(job_id, table_name, "skip", "Table not found in sheet", [])
+        _finish_import_job(job_id)
+    except Exception as e:
+        _fail_import_job(job_id, f"Import failed: {e}")
+    finally:
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+        if wb is not None:
+            try:
+                wb.close()
+            except Exception:
+                pass
+
+
+def _values_for_insert(row, plan, db_cols):
+    values = []
+    for col_name, src in plan:
+        if src[0] == "sheet":
+            v = row[src[1]]
+            if v is None and not db_cols[col_name.upper()]["nullable"]:
+                v = _type_default(db_cols[col_name.upper()]["type"])
+            values.append(v)
+        else:  # "fill"
+            values.append(src[1])
+    return tuple(values)
+
+
+def _insert_batch(cursor, insert_sql, batch, error_samples):
+    cursor.execute("SAVE TRANSACTION import_batch")
+    try:
+        cursor.fast_executemany = True
+        cursor.executemany(insert_sql, batch)
+        return len(batch), 0
+    except pyodbc.Error:
+        cursor.fast_executemany = False
+        cursor.execute("ROLLBACK TRANSACTION import_batch")
+
+    inserted = errors = 0
+    for values in batch:
         try:
-            results.append(_import_one(conn, meta["name"], headers, rows, preferred_schema))
-        except Exception as e:
-            conn.rollback()
-            results.append({"name": meta["name"], "status": "skip", "message": f"Failed: {e}"})
-
-    conn.close()
-    wb.close()
-    return jsonify({"results": results})
+            cursor.execute(insert_sql, values)
+            inserted += 1
+        except pyodbc.Error as e:
+            errors += 1
+            if len(error_samples) < 2:
+                error_samples.append(str(e))
+    return inserted, errors
 
 
 def _import_one(conn, table_name, headers, rows, preferred_schema="lvapdbf"):
@@ -475,23 +795,18 @@ def _import_one(conn, table_name, headers, rows, preferred_schema="lvapdbf"):
 
     inserted = errors = 0
     error_samples = []
+    batch = []
     for row in rows:
-        values = []
-        for col_name, src in plan:
-            if src[0] == "sheet":
-                v = row[src[1]]
-                if v is None and not db_cols[col_name.upper()]["nullable"]:
-                    v = _type_default(db_cols[col_name.upper()]["type"])
-                values.append(v)
-            else:  # "fill"
-                values.append(src[1])
-        try:
-            cursor.execute(insert_sql, values)
-            inserted += 1
-        except pyodbc.Error as e:
-            errors += 1
-            if errors <= 2:
-                error_samples.append(str(e))
+        batch.append(_values_for_insert(row, plan, db_cols))
+        if len(batch) >= IMPORT_BATCH_SIZE:
+            batch_inserted, batch_errors = _insert_batch(cursor, insert_sql, batch, error_samples)
+            inserted += batch_inserted
+            errors += batch_errors
+            batch = []
+    if batch:
+        batch_inserted, batch_errors = _insert_batch(cursor, insert_sql, batch, error_samples)
+        inserted += batch_inserted
+        errors += batch_errors
 
     conn.commit()
     unmapped = len(headers) - len(sheet_idx)
