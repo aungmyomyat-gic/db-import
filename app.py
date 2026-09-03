@@ -5,6 +5,8 @@ import threading
 import time
 import unicodedata
 import tempfile
+import urllib.error
+import urllib.request
 import uuid
 from pathlib import Path
 
@@ -60,7 +62,28 @@ def normalize_cell(value: str) -> str:
 
 TARGET_SECTION = "実施前テストデータ"   # only import tables under this "■" section
 MARKER_SCAN_WIDTH = 8
-IMPORT_BATCH_SIZE = 1000
+
+# ── Batch job trigger (derived from the uploaded file name) ────────────────────
+BATCH_BASE_URL = os.environ.get("BATCH_BASE_URL", "http://localhost:8080")
+BATCH_NAME_RE = re.compile(r"(day|month)[\s_-]*job[\s_-]*(\d+)", re.IGNORECASE)
+
+
+def derive_batch_job(filename):
+    """
+    Map an uploaded file name to the batch endpoint it should trigger.
+    'day_job_20.xlsx' / 'DayJob20.xlsx'   -> day-job20   / "Call DayJob20"
+    'Month Job-1.xlsx' / 'monthjob1.xlsx' -> month-job1  / "Call Month Job-1"
+    """
+    if not filename:
+        return None
+    m = BATCH_NAME_RE.search(filename)
+    if not m:
+        return None
+    kind, num = m.group(1).lower(), m.group(2)
+    slug = f"{kind}-job{num}"
+    label = f"Call DayJob{num}" if kind == "day" else f"Call Month Job-{num}"
+    return {"slug": slug, "label": label}
+IMPORT_BATCH_SIZE = int(os.environ.get("IMPORT_BATCH_SIZE", "5000"))
 IMPORT_JOB_TTL_SECONDS = 3600
 IMPORT_JOBS = {}
 IMPORT_JOBS_LOCK = threading.Lock()
@@ -296,13 +319,19 @@ def extract_table(ws, meta):
     if not headers:
         return [], []
     n_cols = len(headers)
-    rows, r = [], hrow + 1
-    while r <= ws.max_row:
-        row_vals = [ws.cell(row=r, column=start_col + i).value for i in range(n_cols)]
+    end_col = start_col + n_cols - 1
+    rows = []
+    # Sequential iter_rows() instead of per-cell ws.cell() lookups: on a
+    # read_only workbook, random-access ws.cell() re-walks the sheet's XML
+    # from the top on every call, making per-cell extraction O(rows^2).
+    for row_vals in ws.iter_rows(
+        min_row=hrow + 1, max_row=ws.max_row,
+        min_col=start_col, max_col=end_col,
+        values_only=True,
+    ):
         if all(v is None for v in row_vals):
             break
         rows.append(row_vals)
-        r += 1
     return headers, rows
 
 
@@ -405,7 +434,8 @@ def upload():
         Path(old).unlink(missing_ok=True)
 
     session["tmp_path"] = str(tmp)
-    return jsonify({"sheets": sheets})
+    session["orig_filename"] = file.filename
+    return jsonify({"sheets": sheets, "batch_job": derive_batch_job(file.filename)})
 
 
 @app.route("/scan", methods=["POST"])
@@ -519,6 +549,23 @@ def import_status(job_id):
         return jsonify(_job_snapshot(job))
 
 
+@app.route("/call-batch", methods=["POST"])
+def call_batch():
+    """Trigger the batch endpoint matching the uploaded file's name."""
+    job = derive_batch_job(session.get("orig_filename"))
+    if not job:
+        return jsonify({"error": "Could not determine a batch job from the file name."}), 400
+
+    url = f"{BATCH_BASE_URL}/batch/{job['slug']}"
+    try:
+        with urllib.request.urlopen(url, timeout=15) as resp:
+            return jsonify({"ok": True, "slug": job["slug"], "status": resp.status})
+    except urllib.error.HTTPError as e:
+        return jsonify({"error": f"{url} responded {e.code}: {e.reason}"}), 502
+    except urllib.error.URLError as e:
+        return jsonify({"error": f"Could not reach {url}: {e.reason}"}), 502
+
+
 def _new_import_job(job_id, table_names):
     now = time.time()
     return {
@@ -527,7 +574,8 @@ def _new_import_job(job_id, table_names):
         "total": len(table_names),
         "completed": 0,
         "results": [
-            {"name": name, "status": "queued", "message": "Waiting", "errors": []}
+            {"name": name, "status": "queued", "message": "Waiting", "errors": [],
+             "progress": {"done": 0, "total": 0}}
             for name in table_names
         ],
         "error": None,
@@ -564,7 +612,8 @@ def _replace_job_queue(job_id, table_names):
         job["total"] = len(table_names)
         job["completed"] = 0
         job["results"] = [
-            {"name": name, "status": "queued", "message": "Waiting", "errors": []}
+            {"name": name, "status": "queued", "message": "Waiting", "errors": [],
+             "progress": {"done": 0, "total": 0}}
             for name in table_names
         ]
         job["updated_at"] = now
@@ -588,7 +637,8 @@ def _mark_job_table(job_id, table_name, status, message, errors=None):
             return
         existing = next((r for r in job["results"] if r["name"] == table_name), None)
         if existing is None:
-            existing = {"name": table_name, "status": "queued", "message": "Waiting", "errors": []}
+            existing = {"name": table_name, "status": "queued", "message": "Waiting", "errors": [],
+                        "progress": {"done": 0, "total": 0}}
             job["results"].append(existing)
             job["total"] = max(job["total"], len(job["results"]))
 
@@ -600,6 +650,18 @@ def _mark_job_table(job_id, table_name, status, message, errors=None):
         })
         if status in final_statuses and not was_final:
             job["completed"] += 1
+        job["updated_at"] = time.time()
+
+
+def _mark_job_progress(job_id, table_name, done, total):
+    with IMPORT_JOBS_LOCK:
+        job = IMPORT_JOBS.get(job_id)
+        if not job:
+            return
+        existing = next((r for r in job["results"] if r["name"] == table_name), None)
+        if existing is None:
+            return
+        existing["progress"] = {"done": done, "total": total}
         job["updated_at"] = time.time()
 
 
@@ -667,7 +729,8 @@ def _run_import_job(job_id, cfg, tmp_path, sheet_name, selected_names, preferred
                 if not headers:
                     result = {"name": table_name, "status": "skip", "message": "Header row empty", "errors": []}
                 else:
-                    result = _import_one(conn, table_name, headers, rows, preferred_schema)
+                    progress_cb = lambda done, total, tn=table_name: _mark_job_progress(job_id, tn, done, total)
+                    result = _import_one(conn, table_name, headers, rows, preferred_schema, progress_cb)
             except Exception as e:
                 try:
                     conn.rollback()
@@ -735,7 +798,7 @@ def _insert_batch(cursor, insert_sql, batch, error_samples):
     return inserted, errors
 
 
-def _import_one(conn, table_name, headers, rows, preferred_schema="lvapdbf"):
+def _import_one(conn, table_name, headers, rows, preferred_schema="lvapdbf", progress_cb=None):
     cursor = conn.cursor()
 
     # Resolve the actual schema (e.g. 'lvapdbf'), not the login default ('dbo').
@@ -787,15 +850,24 @@ def _import_one(conn, table_name, headers, rows, preferred_schema="lvapdbf"):
             plan.append((info["name"], ("fill", _type_default(info["type"]))))
             filled_cols.append(info["name"])
 
-    cursor.execute(f"DELETE FROM {qualified}")
+    # TRUNCATE is minimally logged and skips per-row delete cost; fall back to
+    # DELETE only if it's blocked (e.g. a foreign key references this table).
+    try:
+        cursor.execute(f"TRUNCATE TABLE {qualified}")
+    except pyodbc.Error:
+        conn.rollback()
+        cursor.execute(f"DELETE FROM {qualified}")
 
     cols_sql     = ", ".join(f"[{c}]" for c, _ in plan)
     placeholders = ", ".join("?" for _ in plan)
     insert_sql   = f"INSERT INTO {qualified} ({cols_sql}) VALUES ({placeholders})"
 
+    total_rows = len(rows)
     inserted = errors = 0
     error_samples = []
     batch = []
+    if progress_cb:
+        progress_cb(0, total_rows)
     for row in rows:
         batch.append(_values_for_insert(row, plan, db_cols))
         if len(batch) >= IMPORT_BATCH_SIZE:
@@ -803,12 +875,16 @@ def _import_one(conn, table_name, headers, rows, preferred_schema="lvapdbf"):
             inserted += batch_inserted
             errors += batch_errors
             batch = []
+            if progress_cb:
+                progress_cb(inserted + errors, total_rows)
     if batch:
         batch_inserted, batch_errors = _insert_batch(cursor, insert_sql, batch, error_samples)
         inserted += batch_inserted
         errors += batch_errors
 
     conn.commit()
+    if progress_cb:
+        progress_cb(inserted + errors, total_rows)
     unmapped = len(headers) - len(sheet_idx)
     msg = f"{inserted} rows inserted"
     if errors:

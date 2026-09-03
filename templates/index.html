@@ -54,6 +54,15 @@
   .side-list li { color: #cbd5e1; font-size: .82rem; line-height: 1.45 }
   .side-list strong { color: #e2e8f0 }
 
+  .side-fold summary { cursor: pointer; list-style: none }
+  .side-fold summary::-webkit-details-marker { display: none }
+  .side-fold summary::before {
+    content: '▸'; display: inline-block; margin-right: 6px;
+    transition: transform .15s; color: #818cf8;
+  }
+  .side-fold[open] summary::before { transform: rotate(90deg) }
+  .side-fold .side-section { padding-top: 14px }
+
   .card {
     background: #1a1d2e;
     border: 1px solid #2d3148;
@@ -200,6 +209,17 @@
   .status-text.yellow { color: #fbbf24 }
   .status-text.red { color: #f87171 }
   .result-errors { font-size: .78rem; color: #f87171; margin-top: 3px }
+
+  .progress-ring {
+    position: relative;
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 34px; height: 34px; vertical-align: middle;
+  }
+  .progress-ring svg circle { transition: stroke-dasharray .3s ease }
+  .progress-ring-label {
+    position: absolute;
+    font-size: .58rem; font-weight: 700; color: #e2e8f0;
+  }
 
   .spinner {
     display: inline-block; width: 16px; height: 16px;
@@ -349,7 +369,9 @@
   <div class="card hidden" id="card-results">
     <div class="card-title done"><span class="step">✓</span> Import Results</div>
     <div id="results-body"></div>
+    <div id="batch-status" class="alert hidden"></div>
     <div class="btn-row">
+      <button class="btn hidden" id="btn-call-batch"></button>
       <button class="btn secondary" id="btn-change-sheet-results">Change sheet</button>
       <button class="btn secondary" id="btn-restart">Change file</button>
     </div>
@@ -357,17 +379,18 @@
   </main>
 
   <aside class="side-panel">
-    <div class="side-title">Scan အကြောင်း</div>
-
-    <div class="side-section">
-      <h2>Table တွေကို ဘယ်လိုရှာလဲ</h2>
-      <p>App က user ရွေးထားတဲ့ Excel sheet ထဲက <strong>■ 実施前テストデータ</strong> section ကိုပဲ ဖတ်ပါတယ်။ အဲဒီ section ထဲမှာ <strong>MZAIHP(...)</strong>, <strong>MSHHNP(...)</strong> လို table name တွေကို ရှာပါတယ်။</p>
-      <ul class="side-list">
-        <li><strong>Table row:</strong> table name ရှိတဲ့ row ဖြစ်ပါတယ်။</li>
-        <li><strong>Header row:</strong> table name ရဲ့ အောက် row ကို header row လို့ယူပါတယ်။ <strong>→ 更新前</strong> / <strong>→ 登録前</strong> လို marker row ရှိရင် အဲဒီ row ကိုကျော်ပြီး နောက်တစ် row ကို header row လို့ယူပါတယ်။</li>
-        <li><strong>Column range:</strong> header row မှာ ပထမ column ကနေ blank column မရောက်မချင်း ဖတ်ပါတယ်။ ဥပမာ <strong>B:AI</strong> လို့ပြပါတယ်။</li>
-      </ul>
-    </div>
+    <details class="side-fold">
+      <summary class="side-title">Scan အကြောင်း</summary>
+      <div class="side-section">
+        <h2>Table တွေကို ဘယ်လိုရှာလဲ</h2>
+        <p>App က user ရွေးထားတဲ့ Excel sheet ထဲက <strong>■ 実施前テストデータ</strong> section ကိုပဲ ဖတ်ပါတယ်။ အဲဒီ section ထဲမှာ <strong>MZAIHP(...)</strong>, <strong>MSHHNP(...)</strong> လို table name တွေကို ရှာပါတယ်။</p>
+        <ul class="side-list">
+          <li><strong>Table row:</strong> table name ရှိတဲ့ row ဖြစ်ပါတယ်။</li>
+          <li><strong>Header row:</strong> table name ရဲ့ အောက် row ကို header row လို့ယူပါတယ်။ <strong>→ 更新前</strong> / <strong>→ 登録前</strong> လို marker row ရှိရင် အဲဒီ row ကိုကျော်ပြီး နောက်တစ် row ကို header row လို့ယူပါတယ်။</li>
+          <li><strong>Column range:</strong> header row မှာ ပထမ column ကနေ blank column မရောက်မချင်း ဖတ်ပါတယ်။ ဥပမာ <strong>B:AI</strong> လို့ပြပါတယ်။</li>
+        </ul>
+      </div>
+    </details>
   </aside>
 </div>
 
@@ -376,6 +399,7 @@ const $  = id => document.getElementById(id)
 const show = el => el.classList.remove('hidden')
 const hide = el => el.classList.add('hidden')
 let importPollTimer = null
+let currentBatchJob = null
 
 // ── On load: check saved config ───────────────────────────────────────────────
 fetch('/config').then(r => r.json()).then(data => {
@@ -473,6 +497,7 @@ function handleFile(file) {
     .then(r => r.json())
     .then(data => {
       if (data.error) { showErr($('err-upload'), data.error); return }
+      currentBatchJob = data.batch_job || null
       const sel = $('sheet-select')
       sel.innerHTML = '<option value="">— select a sheet —</option>'
       data.sheets.forEach(s => {
@@ -660,6 +685,7 @@ function pollImportJob(jobId) {
         setImportControlsDisabled(false)
         if (data.error) showErr($('err-import'), data.error)
         buildResults(data.results || [])
+        setupBatchButton(data.state === 'done')
         show($('card-results'))
       }
     })
@@ -672,22 +698,71 @@ function pollImportJob(jobId) {
 }
 
 function applyImportProgress(data) {
-  ;(data.results || []).forEach(r => setTableStatus(r.name, r.status, r.message))
+  ;(data.results || []).forEach(r => setTableStatus(r.name, r.status, r.progress))
   const total = data.total ?? selectedNames().length
   const completed = data.completed ?? 0
   $('select-count').textContent = `${completed} of ${total} imported`
 }
 
-function setTableStatus(tableName, status) {
+function setTableStatus(tableName, status, progress) {
   document.querySelectorAll('.status-cell').forEach(cell => {
-    if (cell.dataset.statusName === tableName) cell.innerHTML = statusPill(status)
+    if (cell.dataset.statusName !== tableName) return
+    if (status === 'running' && progress && progress.total > 0) {
+      const pct = Math.min(100, Math.round((progress.done / progress.total) * 100))
+      cell.innerHTML = progressRing(pct)
+    } else {
+      cell.innerHTML = statusPill(status)
+    }
   })
+}
+
+function progressRing(pct) {
+  const radius = 15, circumference = 2 * Math.PI * radius
+  const dash = (pct / 100) * circumference
+  return `
+    <span class="progress-ring" title="${pct}% imported">
+      <svg width="34" height="34" viewBox="0 0 34 34">
+        <circle cx="17" cy="17" r="${radius}" fill="none" stroke="#252840" stroke-width="4"/>
+        <circle cx="17" cy="17" r="${radius}" fill="none" stroke="#4f46e5" stroke-width="4"
+          stroke-linecap="round" stroke-dasharray="${dash} ${circumference - dash}"
+          transform="rotate(-90 17 17)"/>
+      </svg>
+      <span class="progress-ring-label">${pct}%</span>
+    </span>`
 }
 
 function statusPill(status) {
   const info = statusInfo(status)
   return `<span class="status-pill ${info.cls}">${info.icon ? `${info.icon} ` : ''}${info.label}</span>`
 }
+
+function setupBatchButton(importSucceeded) {
+  const btn = $('btn-call-batch')
+  hide($('batch-status'))
+  if (!importSucceeded || !currentBatchJob) { hide(btn); return }
+  btn.textContent = currentBatchJob.label
+  show(btn)
+}
+
+$('btn-call-batch').addEventListener('click', () => {
+  const btn = $('btn-call-batch')
+  const statusEl = $('batch-status')
+  setLoading(btn, true, currentBatchJob.label)
+  fetch('/call-batch', { method: 'POST' })
+    .then(r => r.json())
+    .then(data => {
+      setLoading(btn, false, currentBatchJob.label)
+      statusEl.className = data.error ? 'alert error' : 'alert info'
+      statusEl.textContent = data.error || `${currentBatchJob.label} triggered successfully.`
+      show(statusEl)
+    })
+    .catch(e => {
+      setLoading(btn, false, currentBatchJob.label)
+      statusEl.className = 'alert error'
+      statusEl.textContent = 'Could not call batch job: ' + e
+      show(statusEl)
+    })
+})
 
 function buildResults(results) {
   const body = $('results-body'); body.innerHTML = ''
@@ -751,6 +826,9 @@ function changeSheet() {
 function resetToFileUpload() {
   clearImportPolling()
   setImportControlsDisabled(false)
+  currentBatchJob = null
+  hide($('batch-status'))
+  hide($('btn-call-batch'))
   $('file-input').value = ''
   $('file-name').textContent = ''; hide($('file-name'))
   $('sheet-select').innerHTML = '<option value="">— upload a file first —</option>'

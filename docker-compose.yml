@@ -6,6 +6,7 @@ services:
     environment:
       FLASK_DEBUG: "1"
       PYTHONUNBUFFERED: "1"
+      BATCH_BASE_URL: "http://icl-core:8080"
     volumes:
       - .:/app                   # live source/templates; no rebuild for code/UI edits
       - ./data:/app/data          # persists db_config.json across rebuilds
