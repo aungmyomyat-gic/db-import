@@ -27,9 +27,46 @@
     gap: 24px;
     align-items: start;
   }
+  .container.editor-layout {
+    max-width: calc(100vw - 32px);
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .container.editor-layout .main-column { width: 100% }
+  .container.editor-layout #card-data-editor { min-height: calc(100vh - 190px) }
   .main-column { min-width: 0 }
   h1 { font-size: 1.5rem; font-weight: 600; margin-bottom: 8px; color: #f0f4ff }
   .subtitle { color: #64748b; font-size: .9rem; margin-bottom: 32px }
+  .nav-bar {
+    display: flex; gap: 6px; padding: 5px; margin-bottom: 20px;
+    width: fit-content; background: #141827; border: 1px solid #2d3148; border-radius: 10px;
+  }
+  .nav-btn {
+    border: 0; border-radius: 7px; padding: 8px 16px;
+    color: #94a3b8; background: transparent; cursor: pointer; font-size: .85rem;
+  }
+  .nav-btn:hover { color: #e2e8f0; background: #1e213a }
+  .nav-btn.active { color: #fff; background: #4f46e5 }
+  .nav-btn:disabled { color: #4a5568; cursor: not-allowed; background: transparent }
+  .multi-table-list { display: grid; gap: 8px; min-width: 0; width: 100% }
+  .multi-table-row { display: flex; gap: 7px; align-items: center; min-width: 0; width: 100% }
+  .multi-table-row input { flex: 1 1 auto; min-width: 0; width: 100% }
+  .remove-table {
+    width: 38px; height: 38px; border: 1px solid #45303b; border-radius: 8px;
+    background: #27151d; color: #f87171; cursor: pointer; font-size: 1rem;
+  }
+  .remove-table:hover { background: #3b1824 }
+  #err-truncate-manager { white-space: pre-line }
+  .data-toolbar { display: flex; gap: 10px; align-items: end; flex-wrap: wrap }
+  .data-toolbar > div { flex: 1 1 180px; min-width: 0 }
+  .data-grid-wrap { margin-top: 18px; overflow: auto; max-height: calc(100vh - 330px); min-height: 280px; border: 1px solid #2d3148; border-radius: 9px }
+  .data-grid { width: max-content; min-width: 100%; border-collapse: separate; border-spacing: 0; font-size: .78rem }
+  .data-grid th { position: sticky; top: 0; z-index: 1; background: #111522; color: #94a3b8; padding: 8px 10px; text-align: left; border-bottom: 1px solid #2d3148; white-space: nowrap }
+  .data-grid td { padding: 7px 10px; border-bottom: 1px solid #252840; white-space: nowrap; max-width: 260px; overflow: hidden; text-overflow: ellipsis }
+  .data-grid input { min-width: 130px; padding: 6px 8px; font-size: .78rem }
+  .data-grid .pk-cell { color: #fbbf24 }
+  .data-grid .pk-cell input { color: #fbbf24; border-color: #6b5212 }
+  .data-grid .row-action { position: sticky; right: 0; background: #111522 }
+  .data-note { margin-top: 10px; color: #64748b; font-size: .78rem }
   .side-panel {
     position: sticky;
     top: 40px;
@@ -62,6 +99,54 @@
   }
   .side-fold[open] summary::before { transform: rotate(90deg) }
   .side-fold .side-section { padding-top: 14px }
+  .side-panel:has(#card-results.hidden) { display: none }
+  .side-panel:has(#card-results:not(.hidden)) { position: static; margin-top: 86px }
+  .side-panel #card-results {
+    margin: 0; padding: 0; border: 0; background: transparent;
+  }
+  .side-panel #card-results .card-title {
+    color: #a5b4fc; font-size: .78rem; letter-spacing: .12em;
+    margin-bottom: 16px;
+  }
+  .side-panel #card-results .result-row {
+    display: grid; grid-template-columns: 22px minmax(62px, auto) minmax(0, 1fr) auto;
+    gap: 8px; align-items: center;
+    padding: 8px 9px; margin-bottom: 6px;
+    background: #111522; border: 1px solid #292e45; border-radius: 10px;
+    transition: border-color .15s, transform .15s;
+  }
+  .side-panel #card-results .result-row:hover {
+    border-color: #414866; transform: translateY(-1px);
+  }
+  .side-panel #card-results .status-icon {
+    grid-column: 1; grid-row: 1; width: 20px; height: 20px; font-size: .68rem;
+  }
+  .side-panel #card-results .result-name {
+    grid-column: 2; grid-row: 1; min-width: 0;
+    font-size: .82rem; overflow-wrap: anywhere;
+  }
+  .side-panel #card-results .result-msg {
+    grid-column: 3; grid-row: 1; min-width: 0; padding: 0;
+    line-height: 1.25; font-size: .72rem; overflow: hidden;
+  }
+  .side-panel #card-results .status-text { display: block; white-space: nowrap }
+  .side-panel #card-results .result-detail {
+    display: block; color: #64748b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .side-panel #card-results .btn-truncate {
+    grid-column: 4; grid-row: 1; width: auto; justify-content: center;
+    padding: 5px 8px; margin: 0; font-size: .68rem;
+  }
+  .side-panel #card-results .truncate-result { grid-column: 2 / -1; grid-row: 2; margin: 0 }
+  .side-panel #card-results > .btn-row {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+  }
+  .side-panel #card-results > .btn-row .btn { justify-content: center; padding: 9px 10px }
+  .side-panel #card-results > .btn-row #btn-call-batch { grid-column: 1 / -1 }
+  .results-summary {
+    margin: 14px 2px 4px; padding-top: 12px;
+    border-top: 1px solid #2d3148; font-size: .8rem; color: #94a3b8;
+  }
 
   .card {
     background: #1a1d2e;
@@ -116,7 +201,7 @@
   }
   .drop-zone:hover, .drop-zone.drag-over { border-color: #4f46e5; background: #1e213a }
   .drop-zone input[type=file] {
-    position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%;
+    display: none;
   }
   .drop-icon { font-size: 2rem; margin-bottom: 8px }
   .drop-label { color: #94a3b8; font-size: .9rem }
@@ -125,6 +210,7 @@
 
   .row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px }
   .row.trio { grid-template-columns: 2fr 1fr }
+  .row > div { min-width: 0 }
 
   .btn {
     display: inline-flex; align-items: center; gap: 8px;
@@ -137,6 +223,9 @@
   .btn:disabled { background: #2d3148; color: #4a5568; cursor: not-allowed }
   .btn.secondary { background: #1e213a; border: 1px solid #2d3148 }
   .btn.secondary:hover { background: #252840 }
+  .btn.danger { background: #7f1d1d; padding: 7px 12px; font-size: .78rem; white-space: nowrap }
+  .btn.danger:hover { background: #991b1b }
+  .btn.danger:disabled { background: #2d3148; color: #64748b }
   .btn-row { display: flex; gap: 10px; margin-top: 18px; flex-wrap: wrap }
 
   /* Connection banner */
@@ -209,6 +298,9 @@
   .status-text.yellow { color: #fbbf24 }
   .status-text.red { color: #f87171 }
   .result-errors { font-size: .78rem; color: #f87171; margin-top: 3px }
+  .truncate-result { font-size: .78rem; margin-top: 4px }
+  .truncate-result.ok { color: #4ade80 }
+  .truncate-result.error { color: #f87171 }
 
   .progress-ring {
     position: relative;
@@ -231,6 +323,7 @@
   .alert { border-radius: 8px; padding: 12px 16px; font-size: .875rem; margin-bottom: 14px }
   .alert.error { background: #450a0a; border: 1px solid #7f1d1d; color: #fca5a5 }
   .alert.info  { background: #1e3a5f; border: 1px solid #1e40af; color: #93c5fd }
+  .file-change-warning { display: flex; align-items: center; justify-content: space-between; gap: 14px }
 
   .hidden { display: none !important }
   .divider { border: none; border-top: 1px solid #2d3148; margin: 18px 0 }
@@ -238,6 +331,19 @@
     body { padding: 28px 14px }
     .container { display: block; max-width: 760px }
     .side-panel { position: static; margin-top: 20px }
+    .side-panel:has(#card-results:not(.hidden)) { margin-top: 20px }
+  }
+  @media (max-width: 620px) {
+    body { padding: 18px 10px }
+    .card { padding: 20px 16px }
+    .row, .row.trio { grid-template-columns: minmax(0, 1fr) }
+    .nav-bar { width: 100% }
+    .nav-btn { flex: 1; padding-inline: 8px }
+    #card-truncate-manager .btn-row { display: grid }
+    #card-truncate-manager .btn-row .btn { width: 100%; justify-content: center }
+    .container.editor-layout { max-width: 100% }
+    .container.editor-layout #card-data-editor { min-height: calc(100vh - 150px) }
+    .data-grid-wrap { max-height: calc(100vh - 300px) }
   }
 </style>
 </head>
@@ -247,6 +353,12 @@
   <h1>Excel → SQL Server Importer</h1>
   <p class="subtitle">Upload an Excel file, preview the tables, then import into your database.</p>
 
+  <nav class="nav-bar" aria-label="Main navigation">
+    <button class="nav-btn active" id="nav-import">Import</button>
+    <button class="nav-btn" id="nav-truncate" disabled>Truncate Table</button>
+    <button class="nav-btn" id="nav-editor" disabled>Data Editor</button>
+  </nav>
+
   <!-- Saved-connection banner (shown when config exists) -->
   <div class="conn-banner hidden" id="conn-banner">
     <div class="info">
@@ -254,6 +366,11 @@
       <strong id="conn-summary"></strong>
     </div>
     <button class="link-btn" id="btn-edit-conn">Edit connection</button>
+  </div>
+
+  <div class="alert info file-change-warning hidden" id="file-change-warning">
+    <span>The selected local Excel file has changed.</span>
+    <button class="btn" id="btn-refresh-file" style="padding:7px 14px;white-space:nowrap">Refresh file</button>
   </div>
 
   <!-- ── Step 0: DB Connection setup ──────────────────── -->
@@ -301,6 +418,45 @@
       <button class="btn" id="btn-save-conn">Test &amp; Save connection</button>
       <button class="btn secondary hidden" id="btn-cancel-conn">Cancel</button>
     </div>
+  </div>
+
+  <div class="card hidden" id="card-truncate-manager">
+    <div class="card-title active"><span class="step">⌫</span> Truncate Table</div>
+    <p class="subtitle" style="margin-bottom:18px">Choose exactly which schema and table to empty.</p>
+    <div id="err-truncate-manager" class="alert error hidden"></div>
+    <div id="ok-truncate-manager" class="alert info hidden"></div>
+    <div class="row">
+      <div>
+        <label for="truncate-schema">Schema</label>
+        <select id="truncate-schema"><option value="">— select schema —</option></select>
+      </div>
+      <div>
+        <label>Tables</label>
+        <div class="multi-table-list" id="truncate-table-list"></div>
+        <datalist id="truncate-table-options"></datalist>
+      </div>
+    </div>
+    <div class="btn-row">
+      <button class="btn danger" id="btn-truncate-selected" disabled>Truncate selected table</button>
+    </div>
+  </div>
+
+  <div class="card hidden" id="card-data-editor">
+    <div class="card-title active"><span class="step">✎</span> Data Editor</div>
+    <div id="err-data-editor" class="alert error hidden"></div>
+    <div id="ok-data-editor" class="alert info hidden"></div>
+    <div class="data-toolbar">
+      <div><label for="editor-schema">Schema</label><select id="editor-schema"><option value="">— select schema —</option></select></div>
+      <div>
+        <label for="editor-table">Table</label>
+        <input type="text" id="editor-table" list="editor-table-options" placeholder="Select a schema first" disabled>
+        <datalist id="editor-table-options"></datalist>
+      </div>
+      <button class="btn secondary" id="btn-load-data" disabled>Load data</button>
+      <button class="btn" id="btn-edit-mode" disabled>Edit mode</button>
+    </div>
+    <div class="data-note" id="data-editor-note">Select a schema and table. Up to 100 rows will be shown.</div>
+    <div class="data-grid-wrap hidden" id="data-grid-wrap"><table class="data-grid"><thead id="data-grid-head"></thead><tbody id="data-grid-body"></tbody></table></div>
   </div>
 
   <!-- ── Step 1: Upload ──────────────────────────────── -->
@@ -365,21 +521,10 @@
     </div>
   </div>
 
-  <!-- ── Step 3: Results ──────────────────────────────── -->
-  <div class="card hidden" id="card-results">
-    <div class="card-title done"><span class="step">✓</span> Import Results</div>
-    <div id="results-body"></div>
-    <div id="batch-status" class="alert hidden"></div>
-    <div class="btn-row">
-      <button class="btn hidden" id="btn-call-batch"></button>
-      <button class="btn secondary" id="btn-change-sheet-results">Change sheet</button>
-      <button class="btn secondary" id="btn-restart">Change file</button>
-    </div>
-  </div>
   </main>
 
   <aside class="side-panel">
-    <details class="side-fold">
+    <details class="side-fold hidden">
       <summary class="side-title">Scan အကြောင်း</summary>
       <div class="side-section">
         <h2>Table တွေကို ဘယ်လိုရှာလဲ</h2>
@@ -391,6 +536,17 @@
         </ul>
       </div>
     </details>
+
+    <div class="card hidden" id="card-results">
+      <div class="card-title done"><span class="step">✓</span> Import Results</div>
+      <div id="results-body"></div>
+      <div id="batch-status" class="alert hidden"></div>
+      <div class="btn-row">
+        <button class="btn hidden" id="btn-call-batch"></button>
+        <button class="btn secondary" id="btn-change-sheet-results">Change sheet</button>
+        <button class="btn secondary" id="btn-restart">Change file</button>
+      </div>
+    </div>
   </aside>
 </div>
 
@@ -400,10 +556,22 @@ const show = el => el.classList.remove('hidden')
 const hide = el => el.classList.add('hidden')
 let importPollTimer = null
 let currentBatchJob = null
+let currentFileHandle = null
+let currentFileStamp = null
+let fileWatchTimer = null
+let lastImportCard = 'card-upload'
+let restoreImportResults = false
+let truncateAvailableTables = []
+let truncateSelectedTables = []
+let editorData = null
+let editorEditMode = false
+let editorAvailableTables = []
 
 // ── On load: check saved config ───────────────────────────────────────────────
 fetch('/config').then(r => r.json()).then(data => {
   if (data.configured) {
+    $('nav-truncate').disabled = false
+    $('nav-editor').disabled = false
     fillConnBanner(data.config)
     show($('conn-banner'))
     show($('card-upload'))
@@ -422,6 +590,298 @@ function fillConnBanner(cfg) {
   $('db-user').value = cfg.username
   $('db-pass').value = cfg.password || ''
 }
+
+// ── Main navigation ──────────────────────────────────────────────────────────
+$('nav-import').addEventListener('click', () => {
+  document.querySelector('.container').classList.remove('editor-layout')
+  hide($('card-truncate-manager'))
+  hide($('card-data-editor'))
+  show($(lastImportCard))
+  if (restoreImportResults) show($('card-results'))
+  $('nav-import').classList.add('active')
+  $('nav-truncate').classList.remove('active')
+  $('nav-editor').classList.remove('active')
+})
+
+$('nav-truncate').addEventListener('click', () => {
+  document.querySelector('.container').classList.remove('editor-layout')
+  const visible = ['card-conn', 'card-upload', 'card-preview'].find(id => !$(id).classList.contains('hidden'))
+  if (visible) lastImportCard = visible
+  restoreImportResults = !$('card-results').classList.contains('hidden')
+  ;['card-conn', 'card-upload', 'card-preview'].forEach(id => hide($(id)))
+  hide($('card-results'))
+  show($('card-truncate-manager'))
+  hide($('card-data-editor'))
+  $('nav-truncate').classList.add('active')
+  $('nav-import').classList.remove('active')
+  $('nav-editor').classList.remove('active')
+  loadTruncateSchemas()
+})
+
+$('nav-editor').addEventListener('click', () => {
+  document.querySelector('.container').classList.add('editor-layout')
+  const visible = ['card-conn', 'card-upload', 'card-preview'].find(id => !$(id).classList.contains('hidden'))
+  if (visible) lastImportCard = visible
+  restoreImportResults = !$('card-results').classList.contains('hidden')
+  ;['card-conn', 'card-upload', 'card-preview', 'card-truncate-manager'].forEach(id => hide($(id)))
+  hide($('card-results')); show($('card-data-editor'))
+  $('nav-editor').classList.add('active')
+  $('nav-import').classList.remove('active'); $('nav-truncate').classList.remove('active')
+  loadEditorSchemas()
+})
+
+function loadEditorSchemas() {
+  const select = $('editor-schema')
+  select.disabled = true; select.innerHTML = '<option value="">Loading schemas…</option>'
+  fetch('/schemas').then(r => r.json()).then(data => {
+    if (data.error) throw new Error(data.error)
+    select.innerHTML = '<option value="">— select schema —</option>'
+    data.schemas.forEach(name => select.add(new Option(name, name)))
+    select.disabled = false
+    if (data.default && data.schemas.includes(data.default)) {
+      select.value = data.default; loadEditorTables(data.default)
+    }
+  }).catch(error => showErr($('err-data-editor'), error.message))
+}
+
+function loadEditorTables(schema) {
+  const input = $('editor-table')
+  editorAvailableTables = []
+  input.value = ''; input.disabled = true; $('btn-load-data').disabled = true
+  input.placeholder = schema ? 'Loading tables…' : 'Select a schema first'
+  $('editor-table-options').innerHTML = ''
+  if (!schema) return
+  fetch(`/tables?schema=${encodeURIComponent(schema)}`).then(r => r.json()).then(data => {
+    if (data.error) throw new Error(data.error)
+    editorAvailableTables = data.tables
+    const options = $('editor-table-options')
+    data.tables.forEach(name => {
+      const option = document.createElement('option'); option.value = name
+      options.appendChild(option)
+    })
+    input.placeholder = data.tables.length ? 'Type to search table…' : 'No tables found'
+    input.disabled = !data.tables.length
+  }).catch(error => showErr($('err-data-editor'), error.message))
+}
+
+$('editor-schema').addEventListener('change', e => loadEditorTables(e.target.value))
+$('editor-table').addEventListener('input', e => {
+  const value = e.target.value.trim().toLowerCase()
+  $('btn-load-data').disabled = !editorAvailableTables.some(name => name.toLowerCase() === value)
+})
+$('editor-table').addEventListener('change', e => {
+  const match = editorAvailableTables.find(name => name.toLowerCase() === e.target.value.trim().toLowerCase())
+  if (match) e.target.value = match
+})
+$('btn-load-data').addEventListener('click', loadEditorData)
+$('btn-edit-mode').addEventListener('click', () => {
+  editorEditMode = !editorEditMode
+  $('btn-edit-mode').textContent = editorEditMode ? 'Close edit mode' : 'Edit mode'
+  renderEditorGrid()
+})
+
+function loadEditorData() {
+  const schema = $('editor-schema').value
+  const typedTable = $('editor-table').value.trim()
+  const table = editorAvailableTables.find(name => name.toLowerCase() === typedTable.toLowerCase())
+  if (!schema || !table) return
+  $('editor-table').value = table
+  const btn = $('btn-load-data'); hide($('err-data-editor')); hide($('ok-data-editor'))
+  setLoading(btn, true, 'Loading…')
+  return fetch(`/table-data?schema=${encodeURIComponent(schema)}&table=${encodeURIComponent(table)}`)
+    .then(r => r.json()).then(data => {
+      if (data.error) throw new Error(data.error)
+      editorData = data; editorEditMode = false
+      $('btn-edit-mode').textContent = 'Edit mode'
+      $('btn-edit-mode').disabled = false
+      $('data-editor-note').textContent = data.primary_keys.length
+        ? `${data.rows.length} row(s) shown. Editable primary key: ${data.primary_keys.join(', ')}`
+        : `${data.rows.length} row(s) shown. No primary key: updates match all original row values and save only when exactly one row matches.`
+      renderEditorGrid()
+    }).catch(error => showErr($('err-data-editor'), error.message))
+    .finally(() => setLoading(btn, false, 'Load data'))
+}
+
+function renderEditorGrid() {
+  if (!editorData) return
+  const head = $('data-grid-head'), body = $('data-grid-body')
+  head.innerHTML = ''; body.innerHTML = ''
+  const headerRow = document.createElement('tr')
+  editorData.columns.forEach(column => {
+    const th = document.createElement('th'); th.textContent = column.name
+    if (editorData.primary_keys.includes(column.name)) th.textContent += ' 🔑'
+    headerRow.appendChild(th)
+  })
+  if (editorEditMode) { const th = document.createElement('th'); th.textContent = 'Action'; th.className = 'row-action'; headerRow.appendChild(th) }
+  head.appendChild(headerRow)
+  editorData.rows.forEach((row, rowIndex) => {
+    const tr = document.createElement('tr')
+    editorData.columns.forEach((column, colIndex) => {
+      const td = document.createElement('td'), value = row[colIndex]
+      if (editorData.primary_keys.includes(column.name)) td.className = 'pk-cell'
+      if (editorEditMode) {
+        const input = document.createElement('input'); input.type = 'text'
+        input.value = value == null ? '' : value; input.dataset.column = column.name
+        td.appendChild(input)
+      } else {
+        td.textContent = value == null ? 'NULL' : value
+        td.title = td.textContent
+      }
+      tr.appendChild(td)
+    })
+    if (editorEditMode) {
+      const td = document.createElement('td'); td.className = 'row-action'
+      const save = document.createElement('button'); save.className = 'btn'; save.textContent = 'Save'
+      save.style.cssText = 'padding:5px 9px;font-size:.72rem'
+      save.addEventListener('click', () => saveEditorRow(rowIndex, tr, save))
+      td.appendChild(save); tr.appendChild(td)
+    }
+    body.appendChild(tr)
+  })
+  show($('data-grid-wrap'))
+}
+
+async function saveEditorRow(rowIndex, tr, button) {
+  const row = editorData.rows[rowIndex], keys = {}, values = {}
+  editorData.columns.forEach((column, index) => {
+    if (editorData.identifier_columns.includes(column.name)) keys[column.name] = row[index]
+  })
+  tr.querySelectorAll('input[data-column]').forEach(input => {
+    const index = editorData.columns.findIndex(column => column.name === input.dataset.column)
+    if (input.value !== String(row[index] ?? '')) values[input.dataset.column] = input.value
+  })
+  if (!Object.keys(values).length) { showErr($('err-data-editor'), 'No values changed in this row.'); return }
+  if (!editorData.primary_keys.length && !window.confirm(
+    'This table has no primary key. Save only if the original row values identify exactly one row?'
+  )) return
+  setLoading(button, true, 'Saving…'); hide($('err-data-editor')); hide($('ok-data-editor'))
+  try {
+    const response = await fetch('/table-data', {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ schema: editorData.schema, table: editorData.table, keys, values })
+    })
+    const data = await response.json()
+    if (!response.ok || data.error) throw new Error(data.error || 'Update failed.')
+    $('ok-data-editor').textContent = data.message; show($('ok-data-editor'))
+    await loadEditorData()
+  } catch (error) {
+    showErr($('err-data-editor'), error.message); setLoading(button, false, 'Save')
+  }
+}
+
+function loadTruncateSchemas() {
+  const schemaSelect = $('truncate-schema')
+  hide($('err-truncate-manager')); hide($('ok-truncate-manager'))
+  schemaSelect.disabled = true
+  schemaSelect.innerHTML = '<option value="">Loading schemas…</option>'
+  fetch('/schemas').then(r => r.json()).then(data => {
+    if (data.error) throw new Error(data.error)
+    schemaSelect.innerHTML = '<option value="">— select schema —</option>'
+    data.schemas.forEach(schema => {
+      const option = document.createElement('option')
+      option.value = schema; option.textContent = schema
+      schemaSelect.appendChild(option)
+    })
+    schemaSelect.disabled = false
+    if (data.default && data.schemas.includes(data.default)) {
+      schemaSelect.value = data.default
+      loadTruncateTables(data.default)
+    }
+  }).catch(error => showErr($('err-truncate-manager'), error.message))
+}
+
+function loadTruncateTables(schema) {
+  $('btn-truncate-selected').disabled = true
+  truncateAvailableTables = []
+  truncateSelectedTables = []
+  renderTruncateTableInputs(!schema ? 'Select a schema first' : 'Loading tables…', true)
+  if (!schema) return
+  fetch(`/tables?schema=${encodeURIComponent(schema)}`).then(r => r.json()).then(data => {
+    if (data.error) throw new Error(data.error)
+    truncateAvailableTables = data.tables
+    const options = $('truncate-table-options')
+    options.innerHTML = ''
+    data.tables.forEach(table => {
+      const option = document.createElement('option'); option.value = table
+      options.appendChild(option)
+    })
+    renderTruncateTableInputs(data.tables.length ? 'Type to search table…' : 'No tables found', !data.tables.length)
+  }).catch(error => showErr($('err-truncate-manager'), error.message))
+}
+
+function renderTruncateTableInputs(placeholder = 'Type to search table…', disabled = false) {
+  const list = $('truncate-table-list')
+  list.innerHTML = ''
+  truncateSelectedTables.forEach((table, index) => {
+    const row = document.createElement('div'); row.className = 'multi-table-row'
+    const input = document.createElement('input')
+    input.type = 'text'; input.value = table; input.readOnly = true
+    const remove = document.createElement('button')
+    remove.type = 'button'; remove.className = 'remove-table'; remove.title = `Remove ${table}`
+    remove.textContent = '×'
+    remove.addEventListener('click', () => {
+      truncateSelectedTables.splice(index, 1)
+      renderTruncateTableInputs()
+    })
+    row.append(input, remove); list.appendChild(row)
+  })
+
+  const row = document.createElement('div'); row.className = 'multi-table-row'
+  const input = document.createElement('input')
+  input.type = 'text'; input.setAttribute('list', 'truncate-table-options')
+  input.placeholder = placeholder; input.disabled = disabled
+  input.setAttribute('aria-label', 'Search and add table')
+  input.addEventListener('change', () => {
+    const table = input.value.trim()
+    const actual = truncateAvailableTables.find(name => name.toLowerCase() === table.toLowerCase())
+    if (!actual) {
+      input.setCustomValidity('Choose a table from the list.'); input.reportValidity(); return
+    }
+    if (!truncateSelectedTables.includes(actual)) truncateSelectedTables.push(actual)
+    renderTruncateTableInputs()
+  })
+  row.appendChild(input); list.appendChild(row)
+  $('btn-truncate-selected').disabled = truncateSelectedTables.length === 0
+}
+
+$('truncate-schema').addEventListener('change', e => {
+  hide($('err-truncate-manager')); hide($('ok-truncate-manager'))
+  loadTruncateTables(e.target.value)
+})
+$('btn-truncate-selected').addEventListener('click', async () => {
+  const schema = $('truncate-schema').value
+  const tables = [...truncateSelectedTables]
+  if (!schema || !tables.length) return
+  const tableList = tables.map(table => `${schema}.${table}`).join('\n')
+  if (!window.confirm(`Delete ALL rows from these ${tables.length} table(s)?\n\n${tableList}\n\nThis cannot be undone.`)) return
+  const btn = $('btn-truncate-selected')
+  hide($('err-truncate-manager')); hide($('ok-truncate-manager'))
+  setLoading(btn, true, `Truncating 0/${tables.length}…`)
+  const succeeded = [], failed = []
+  for (let i = 0; i < tables.length; i++) {
+    const table = tables[i]
+    setLoading(btn, true, `Truncating ${i + 1}/${tables.length}…`)
+    try {
+      const response = await fetch('/truncate', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ schema, table })
+      })
+      const data = await response.json()
+      if (!response.ok || data.error) throw new Error(data.error || 'Truncate failed.')
+      succeeded.push(table)
+    } catch (error) {
+      failed.push(`${table}: ${error.message}`)
+    }
+  }
+  if (succeeded.length) {
+    $('ok-truncate-manager').textContent = `${succeeded.length} table(s) truncated: ${succeeded.join(', ')}`
+    show($('ok-truncate-manager'))
+  }
+  if (failed.length) showErr($('err-truncate-manager'), failed.join('\n'))
+  truncateSelectedTables = tables.filter(table => !succeeded.includes(table))
+  setLoading(btn, false, 'Truncate selected table')
+  renderTruncateTableInputs()
+})
 
 // ── Connection: edit / save ───────────────────────────────────────────────────
 $('btn-edit-conn').addEventListener('click', () => {
@@ -461,6 +921,8 @@ $('btn-save-conn').addEventListener('click', () => {
     setLoading($('btn-save-conn'), false, 'Test & Save connection')
     if (data.error) { showErr($('err-conn'), data.error); return }
     fillConnBanner(payload)
+    $('nav-truncate').disabled = false
+    $('nav-editor').disabled = false
     show($('conn-banner'))
     hide($('card-conn'))
     show($('card-upload'))
@@ -473,18 +935,51 @@ $('btn-save-conn').addEventListener('click', () => {
 
 // ── Drag & Drop ──────────────────────────────────────────────────────────────
 const dz = $('drop-zone')
+dz.tabIndex = 0
+dz.setAttribute('role', 'button')
+dz.addEventListener('click', chooseLocalFile)
+dz.addEventListener('keydown', e => {
+  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); chooseLocalFile() }
+})
 dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag-over') })
 dz.addEventListener('dragleave', () => dz.classList.remove('drag-over'))
-dz.addEventListener('drop', e => {
+dz.addEventListener('drop', async e => {
   e.preventDefault(); dz.classList.remove('drag-over')
   const f = e.dataTransfer.files[0]
-  if (f) handleFile(f)
+  if (!f) return
+  currentFileHandle = null
+  const item = e.dataTransfer.items && e.dataTransfer.items[0]
+  if (item && item.getAsFileSystemHandle) {
+    try { currentFileHandle = await item.getAsFileSystemHandle() } catch (_) {}
+  }
+  handleFile(f)
 })
 $('file-input').addEventListener('change', e => {
-  if (e.target.files[0]) handleFile(e.target.files[0])
+  if (e.target.files[0]) {
+    currentFileHandle = null
+    handleFile(e.target.files[0])
+  }
 })
 
+async function chooseLocalFile() {
+  if (!window.showOpenFilePicker) { $('file-input').click(); return }
+  try {
+    const handles = await window.showOpenFilePicker({
+      multiple: false,
+      types: [{ description: 'Excel files', accept: {
+        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
+        'application/vnd.ms-excel': ['.xls']
+      }}]
+    })
+    currentFileHandle = handles[0]
+    handleFile(await currentFileHandle.getFile())
+  } catch (e) {
+    if (e.name !== 'AbortError') showErr($('err-upload'), 'Could not open file: ' + e)
+  }
+}
+
 function handleFile(file) {
+  startFileWatcher()
   const fn = $('file-name')
   fn.textContent = file.name; show(fn)
   hide($('err-upload'))
@@ -493,10 +988,12 @@ function handleFile(file) {
   $('btn-scan').disabled = true
 
   const fd = new FormData(); fd.append('file', file)
-  fetch('/upload', { method: 'POST', body: fd })
+  return fetch('/upload', { method: 'POST', body: fd })
     .then(r => r.json())
     .then(data => {
       if (data.error) { showErr($('err-upload'), data.error); return }
+      currentFileStamp = `${file.lastModified}:${file.size}`
+      hide($('file-change-warning'))
       currentBatchJob = data.batch_job || null
       const sel = $('sheet-select')
       sel.innerHTML = '<option value="">— select a sheet —</option>'
@@ -506,9 +1003,46 @@ function handleFile(file) {
       })
       sel.disabled = false
       if (data.sheets.length === 1) { sel.value = data.sheets[0]; $('btn-scan').disabled = false }
+      return data
     })
     .catch(e => showErr($('err-upload'), 'Upload failed: ' + e))
 }
+
+function startFileWatcher() {
+  if (fileWatchTimer) clearInterval(fileWatchTimer)
+  if (!currentFileHandle) return
+  fileWatchTimer = setInterval(async () => {
+    try {
+      const file = await currentFileHandle.getFile()
+      const stamp = `${file.lastModified}:${file.size}`
+      if (currentFileStamp && stamp !== currentFileStamp) show($('file-change-warning'))
+    } catch (_) {
+      clearInterval(fileWatchTimer)
+      fileWatchTimer = null
+    }
+  }, 2000)
+}
+
+$('btn-refresh-file').addEventListener('click', async () => {
+  if (!currentFileHandle) { chooseLocalFile(); return }
+  const btn = $('btn-refresh-file')
+  const previousSheet = $('sheet-select').value
+  setLoading(btn, true, 'Refreshing…')
+  try {
+    const data = await handleFile(await currentFileHandle.getFile())
+    if (!data || data.error) return
+    if (previousSheet && data.sheets.includes(previousSheet)) {
+      $('sheet-select').value = previousSheet
+      await scanSheet($('btn-scan'))
+    } else {
+      hide($('card-preview')); hide($('card-results')); show($('card-upload'))
+    }
+  } catch (e) {
+    showErr($('err-upload'), 'Refresh failed: ' + e)
+  } finally {
+    setLoading(btn, false, 'Refresh file')
+  }
+})
 
 $('sheet-select').addEventListener('change', function() {
   $('btn-scan').disabled = !this.value
@@ -524,7 +1058,7 @@ function scanSheet(btn) {
   setLoading(btn, true, 'Scanning…')
   hide($('err-upload')); hide($('err-import'))
 
-  fetch('/scan', {
+  return fetch('/scan', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ sheet })
@@ -771,14 +1305,20 @@ function buildResults(results) {
     const status = resultStatus(r.status)
     const errHtml = r.errors && r.errors.length
       ? `<div class="result-errors">${r.errors.map(escapeHtml).join('<br>')}</div>` : ''
+    const truncateButton = (r.status === 'ok' || r.status === 'warn')
+      ? `<button class="btn danger btn-truncate" data-table="${escapeAttr(r.name)}">Truncate</button>`
+      : ''
     body.innerHTML += `
       <div class="result-row">
         <span class="status-icon ${status.cls}" title="${status.label}" aria-label="${status.label}">${status.icon}</span>
         <span class="result-name">${escapeHtml(r.name)}</span>
         <div class="result-msg">
-          <span class="status-text ${status.cls}">${status.label}</span> - ${escapeHtml(r.message)}
+          <span class="status-text ${status.cls}">${status.label}</span>
+          <span class="result-detail">${escapeHtml(r.message)}</span>
           ${errHtml}
+          <div class="truncate-result hidden"></div>
         </div>
+        ${truncateButton}
       </div>`
     if (r.status === 'ok') ok++
     else if (r.status === 'warn') warn++
@@ -786,12 +1326,45 @@ function buildResults(results) {
     else skip++
   })
   const summary = document.createElement('div')
-  summary.style.cssText = 'margin-top:14px;font-size:.85rem;color:#64748b'
+  summary.className = 'results-summary'
   const parts = [`${ok} imported`, `${warn} with warnings`]
   if (failed) parts.push(`${failed} failed`)
   parts.push(`${skip} skipped`)
   summary.textContent = `${parts.join(', ')} — ${results.length} total tables`
   body.appendChild(summary)
+  bindTruncateButtons()
+}
+
+function bindTruncateButtons() {
+  document.querySelectorAll('.btn-truncate').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const table = btn.dataset.table
+      const schema = $('schema-select').value
+      if (!window.confirm(`Delete ALL rows from ${schema}.${table}? This cannot be undone.`)) return
+
+      const result = btn.closest('.result-row').querySelector('.truncate-result')
+      hide(result)
+      setLoading(btn, true, 'Truncating…')
+      fetch('/truncate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ table, schema })
+      })
+      .then(async response => ({ response, data: await response.json() }))
+      .then(({ response, data }) => {
+        if (!response.ok || data.error) throw new Error(data.error || 'Truncate failed.')
+        result.className = 'truncate-result ok'
+        result.textContent = data.message
+        btn.innerHTML = '<span>Done</span>'
+        btn.disabled = true
+      })
+      .catch(error => {
+        setLoading(btn, false, 'Truncate')
+        result.className = 'truncate-result error'
+        result.textContent = error.message
+      })
+    })
+  })
 }
 
 function resultStatus(status) {
@@ -826,7 +1399,12 @@ function changeSheet() {
 function resetToFileUpload() {
   clearImportPolling()
   setImportControlsDisabled(false)
+  if (fileWatchTimer) clearInterval(fileWatchTimer)
+  fileWatchTimer = null
+  currentFileHandle = null
+  currentFileStamp = null
   currentBatchJob = null
+  hide($('file-change-warning'))
   hide($('batch-status'))
   hide($('btn-call-batch'))
   $('file-input').value = ''

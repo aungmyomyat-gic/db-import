@@ -8,6 +8,8 @@ import tempfile
 import urllib.error
 import urllib.request
 import uuid
+from datetime import date, datetime, time as datetime_time
+from decimal import Decimal
 from pathlib import Path
 
 from flask import Flask, render_template, request, jsonify, session
@@ -491,6 +493,180 @@ def get_schemas():
     return jsonify({"schemas": schemas, "default": cfg.get("schema") or "lvapdbf"})
 
 
+@app.route("/tables", methods=["GET"])
+def get_tables():
+    """List base tables in one schema for the maintenance UI."""
+    cfg = load_config()
+    if not cfg:
+        return jsonify({"error": "No DB connection saved."}), 400
+    schema = request.args.get("schema", "").strip()
+    if not schema:
+        return jsonify({"error": "Schema is required."}), 400
+
+    conn_str, err = _build_conn_str(
+        cfg["host"], cfg["port"], cfg["database"], cfg["username"], cfg["password"]
+    )
+    if err:
+        return jsonify({"error": err}), 500
+    try:
+        conn = pyodbc.connect(conn_str, timeout=10)
+        cur = conn.cursor()
+        cur.execute(
+            "SELECT TABLE_NAME FROM INFORMATION_SCHEMA.TABLES "
+            "WHERE TABLE_TYPE = 'BASE TABLE' AND TABLE_SCHEMA = ? ORDER BY TABLE_NAME",
+            schema,
+        )
+        tables = [row[0] for row in cur.fetchall()]
+        conn.close()
+    except pyodbc.Error as e:
+        return jsonify({"error": f"Could not list tables: {e}"}), 400
+    return jsonify({"schema": schema, "tables": tables})
+
+
+def _table_metadata(cursor, schema, table_name):
+    cursor.execute(
+        "SELECT COLUMN_NAME, DATA_TYPE, IS_NULLABLE FROM INFORMATION_SCHEMA.COLUMNS "
+        "WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? ORDER BY ORDINAL_POSITION",
+        schema, table_name,
+    )
+    columns = [
+        {"name": row[0], "type": row[1], "nullable": row[2] == "YES"}
+        for row in cursor.fetchall()
+    ]
+    if not columns:
+        return [], []
+    cursor.execute(
+        "SELECT k.COLUMN_NAME FROM INFORMATION_SCHEMA.TABLE_CONSTRAINTS t "
+        "JOIN INFORMATION_SCHEMA.KEY_COLUMN_USAGE k "
+        "ON t.CONSTRAINT_NAME = k.CONSTRAINT_NAME AND t.TABLE_SCHEMA = k.TABLE_SCHEMA "
+        "WHERE t.CONSTRAINT_TYPE = 'PRIMARY KEY' AND t.TABLE_SCHEMA = ? AND t.TABLE_NAME = ? "
+        "ORDER BY k.ORDINAL_POSITION",
+        schema, table_name,
+    )
+    return columns, [row[0] for row in cursor.fetchall()]
+
+
+def _json_table_value(value):
+    if value is None or isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, Decimal):
+        return str(value)
+    if isinstance(value, (date, datetime, datetime_time)):
+        return value.isoformat()
+    if isinstance(value, bytes):
+        return "0x" + value.hex()
+    return str(value)
+
+
+@app.route("/table-data", methods=["GET"])
+def get_table_data():
+    """Return a bounded table preview plus metadata for safe row editing."""
+    cfg = load_config()
+    if not cfg:
+        return jsonify({"error": "No DB connection saved."}), 400
+    schema = request.args.get("schema", "").strip()
+    table_name = request.args.get("table", "").strip()
+    limit = min(max(request.args.get("limit", 100, type=int), 1), 500)
+    if not schema or not table_name:
+        return jsonify({"error": "Schema and table are required."}), 400
+
+    conn_str, err = _build_conn_str(
+        cfg["host"], cfg["port"], cfg["database"], cfg["username"], cfg["password"]
+    )
+    if err:
+        return jsonify({"error": err}), 500
+    conn = None
+    try:
+        conn = pyodbc.connect(conn_str, timeout=10)
+        cursor = conn.cursor()
+        columns, primary_keys = _table_metadata(cursor, schema, table_name)
+        if not columns:
+            return jsonify({"error": f"Table '{schema}.{table_name}' was not found."}), 404
+        safe_schema = schema.replace("]", "]]")
+        safe_table = table_name.replace("]", "]]")
+        order_sql = ""
+        if primary_keys:
+            order_sql = " ORDER BY " + ", ".join(f"[{key.replace(']', ']]')}]" for key in primary_keys)
+        cursor.execute(f"SELECT TOP {limit} * FROM [{safe_schema}].[{safe_table}]{order_sql}")
+        rows = [[_json_table_value(value) for value in row] for row in cursor.fetchall()]
+        return jsonify({
+            "schema": schema, "table": table_name, "columns": columns,
+            "primary_keys": primary_keys,
+            "identifier_columns": primary_keys or [column["name"] for column in columns],
+            "rows": rows, "limit": limit,
+        })
+    except pyodbc.Error as e:
+        return jsonify({"error": f"Could not load table data: {e}"}), 400
+    finally:
+        if conn is not None:
+            conn.close()
+
+
+@app.route("/table-data", methods=["PATCH"])
+def update_table_row():
+    """Update one row identified by the table's primary key."""
+    cfg = load_config()
+    payload = request.json or {}
+    schema = str(payload.get("schema", "")).strip()
+    table_name = str(payload.get("table", "")).strip()
+    keys = payload.get("keys") or {}
+    values = payload.get("values") or {}
+    if not cfg or not schema or not table_name or not isinstance(keys, dict) or not isinstance(values, dict):
+        return jsonify({"error": "Invalid update request."}), 400
+    if not values:
+        return jsonify({"error": "No changed values were provided."}), 400
+
+    conn_str, err = _build_conn_str(
+        cfg["host"], cfg["port"], cfg["database"], cfg["username"], cfg["password"]
+    )
+    if err:
+        return jsonify({"error": err}), 500
+    conn = None
+    try:
+        conn = pyodbc.connect(conn_str, timeout=10)
+        cursor = conn.cursor()
+        columns, primary_keys = _table_metadata(cursor, schema, table_name)
+        column_names = {column["name"] for column in columns}
+        if not columns:
+            return jsonify({"error": f"Table '{schema}.{table_name}' was not found."}), 404
+        identifier_columns = primary_keys or [column["name"] for column in columns]
+        if set(keys) != set(identifier_columns):
+            return jsonify({"error": "Complete original row values are required to update this row."}), 400
+        # Primary-key values may be changed; the original key values in `keys`
+        # still identify the row in the WHERE clause.
+        changed = [name for name in values if name in column_names]
+        if len(changed) != len(values):
+            return jsonify({"error": "One or more columns cannot be edited."}), 400
+
+        quote = lambda name: "[" + name.replace("]", "]]") + "]"
+        qualified = f"{quote(schema)}.{quote(table_name)}"
+        set_sql = ", ".join(f"{quote(name)} = ?" for name in changed)
+        where_parts = []
+        where_params = []
+        for name in identifier_columns:
+            if keys[name] is None:
+                where_parts.append(f"{quote(name)} IS NULL")
+            else:
+                where_parts.append(f"{quote(name)} = ?")
+                where_params.append(keys[name])
+        where_sql = " AND ".join(where_parts)
+        params = [values[name] for name in changed] + where_params
+        cursor.execute(f"UPDATE {qualified} SET {set_sql} WHERE {where_sql}", params)
+        affected = cursor.rowcount
+        if affected != 1:
+            conn.rollback()
+            return jsonify({"error": f"Expected one row, but matched {affected}. Data was not changed."}), 409
+        conn.commit()
+        return jsonify({"ok": True, "message": "Row updated successfully."})
+    except pyodbc.Error as e:
+        if conn is not None:
+            conn.rollback()
+        return jsonify({"error": f"Could not update row: {e}"}), 400
+    finally:
+        if conn is not None:
+            conn.close()
+
+
 @app.route("/import", methods=["POST"])
 def do_import():
     """Start a background import job and return its initial status."""
@@ -547,6 +723,51 @@ def import_status(job_id):
         if not job:
             return jsonify({"error": "Import job not found."}), 404
         return jsonify(_job_snapshot(job))
+
+
+@app.route("/truncate", methods=["POST"])
+def truncate_table():
+    """Remove all rows from one validated table in the selected schema."""
+    cfg = load_config()
+    if not cfg:
+        return jsonify({"error": "No DB connection saved. Please set it up first."}), 400
+
+    payload = request.json or {}
+    table_name = str(payload.get("table", "")).strip()
+    schema = str(payload.get("schema", "")).strip() or cfg.get("schema") or "lvapdbf"
+    if not table_name or not schema:
+        return jsonify({"error": "Table and schema are required."}), 400
+
+    conn_str, err = _build_conn_str(
+        cfg["host"], cfg["port"], cfg["database"], cfg["username"], cfg["password"]
+    )
+    if err:
+        return jsonify({"error": err}), 500
+
+    conn = None
+    try:
+        conn = pyodbc.connect(conn_str, timeout=10)
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT 1 FROM INFORMATION_SCHEMA.TABLES "
+            "WHERE TABLE_TYPE = 'BASE TABLE' AND TABLE_SCHEMA = ? AND TABLE_NAME = ?",
+            schema, table_name,
+        )
+        if cursor.fetchone() is None:
+            return jsonify({"error": f"Table '{schema}.{table_name}' was not found."}), 404
+
+        safe_schema = schema.replace("]", "]]")
+        safe_table = table_name.replace("]", "]]")
+        cursor.execute(f"TRUNCATE TABLE [{safe_schema}].[{safe_table}]")
+        conn.commit()
+        return jsonify({"ok": True, "message": f"{schema}.{table_name} truncated successfully."})
+    except pyodbc.Error as e:
+        if conn is not None:
+            conn.rollback()
+        return jsonify({"error": f"Could not truncate '{schema}.{table_name}': {e}"}), 400
+    finally:
+        if conn is not None:
+            conn.close()
 
 
 @app.route("/call-batch", methods=["POST"])
