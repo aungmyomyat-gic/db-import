@@ -14,14 +14,40 @@
     background: #0f1117;
     color: #e2e8f0;
     min-height: 100vh;
+    padding: 0 16px 40px;
+  }
+  .topbar {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    margin: 0 -16px;
+    background: rgba(15, 17, 23, .92);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid #2d3148;
+  }
+  .topbar-inner {
+    max-width: 1180px;
+    margin: 0 auto;
     display: flex;
-    align-items: flex-start;
-    justify-content: center;
-    padding: 40px 16px;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 12px 16px;
+  }
+  .topbar-brand {
+    display: flex; align-items: center; gap: 9px;
+    font-weight: 600; color: #f0f4ff; font-size: .95rem; white-space: nowrap;
+  }
+  .topbar-logo {
+    width: 28px; height: 28px; border-radius: 8px;
+    background: #4f46e5; color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    font-size: .85rem; flex: 0 0 auto;
   }
   .container {
     width: 100%;
     max-width: 1180px;
+    margin: 40px auto 0;
     display: grid;
     grid-template-columns: minmax(0, 760px) minmax(280px, 360px);
     gap: 24px;
@@ -37,7 +63,7 @@
   h1 { font-size: 1.5rem; font-weight: 600; margin-bottom: 8px; color: #f0f4ff }
   .subtitle { color: #64748b; font-size: .9rem; margin-bottom: 32px }
   .nav-bar {
-    display: flex; gap: 6px; padding: 5px; margin-bottom: 20px;
+    display: flex; gap: 6px; padding: 5px;
     width: fit-content; background: #141827; border: 1px solid #2d3148; border-radius: 10px;
   }
   .nav-btn {
@@ -55,12 +81,71 @@
     background: #27151d; color: #f87171; cursor: pointer; font-size: 1rem;
   }
   .remove-table:hover { background: #3b1824 }
+  .table-combo { position: relative; flex: 1 1 auto; min-width: 0; width: 100% }
+  .table-combo-panel {
+    position: absolute; top: calc(100% + 6px); left: 0; right: 0;
+    max-height: 220px; overflow-y: auto; z-index: 20;
+    background: #141827; border: 1px solid #2d3148; border-radius: 8px;
+    box-shadow: 0 10px 28px rgba(0, 0, 0, .4);
+    padding: 4px;
+  }
+  .table-combo-option {
+    padding: 8px 10px; border-radius: 6px; font-size: .85rem;
+    color: #e2e8f0; cursor: pointer; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis;
+  }
+  .table-combo-option:hover, .table-combo-option.highlighted { background: #1e213a; color: #fff }
+  .table-combo-empty { padding: 8px 10px; font-size: .82rem; color: #64748b }
   #err-truncate-manager { white-space: pre-line }
   .data-toolbar { display: flex; gap: 10px; align-items: end; flex-wrap: wrap }
   .data-toolbar > div { flex: 1 1 180px; min-width: 0 }
   .data-grid-wrap { margin-top: 18px; overflow: auto; max-height: calc(100vh - 330px); min-height: 280px; border: 1px solid #2d3148; border-radius: 9px }
+  .grid-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 10px; flex-wrap: wrap }
+  .grid-toolbar .data-note { margin-top: 0 }
+  .grid-copy-actions { display: flex; gap: 8px; flex-wrap: wrap }
+  .grid-copy-actions .btn { padding: 7px 12px; font-size: .78rem; white-space: nowrap }
+
+  .editor-body { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 20px; align-items: start }
+  .editor-history {
+    background: #141827; border: 1px solid #2d3148; border-radius: 10px;
+    padding: 14px; max-height: calc(100vh - 230px); overflow-y: auto;
+  }
+  .editor-history-head {
+    font-size: .72rem; text-transform: uppercase; letter-spacing: .08em;
+    color: #64748b; margin-bottom: 10px;
+  }
+  .editor-history-empty { color: #4a5568; font-size: .8rem; line-height: 1.5 }
+  .editor-history-list { display: grid; gap: 6px }
+  .editor-history-item {
+    display: flex; align-items: center; border-radius: 8px;
+    background: transparent; transition: background .15s;
+  }
+  .editor-history-item:hover { background: #1a1d2e }
+  .editor-history-item.active { background: #1e213a; box-shadow: inset 2px 0 0 #4f46e5 }
+  .editor-history-label {
+    flex: 1 1 auto; min-width: 0; text-align: left;
+    background: none; border: none; color: #cbd5e1; cursor: pointer;
+    padding: 8px; display: flex; flex-direction: column; gap: 1px;
+  }
+  .editor-history-schema { font-size: .68rem; color: #64748b; text-transform: uppercase; letter-spacing: .04em }
+  .editor-history-table { font-size: .84rem; color: #e2e8f0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+  .editor-history-remove {
+    flex: 0 0 auto; width: 22px; height: 22px; border: none; border-radius: 6px;
+    background: transparent; color: #64748b; cursor: pointer; font-size: .9rem;
+    display: flex; align-items: center; justify-content: center; margin-right: 6px;
+  }
+  .editor-history-remove:hover { background: #3b1824; color: #f87171 }
+  @media (max-width: 860px) {
+    .editor-body { grid-template-columns: 1fr }
+    .editor-history { max-height: 200px }
+  }
   .data-grid { width: max-content; min-width: 100%; border-collapse: separate; border-spacing: 0; font-size: .78rem }
   .data-grid th { position: sticky; top: 0; z-index: 1; background: #111522; color: #94a3b8; padding: 8px 10px; text-align: left; border-bottom: 1px solid #2d3148; white-space: nowrap }
+  .data-grid th.sortable { cursor: pointer; user-select: none }
+  .data-grid th.sortable:hover { color: #cbd5e1 }
+  .data-grid th.sorted { color: #c7d2fe }
+  .data-grid th .sort-arrow { margin-left: 6px; font-size: .68rem; color: #3d4266 }
+  .data-grid th.sorted .sort-arrow { color: #818cf8 }
   .data-grid td { padding: 7px 10px; border-bottom: 1px solid #252840; white-space: nowrap; max-width: 260px; overflow: hidden; text-overflow: ellipsis }
   .data-grid input { min-width: 130px; padding: 6px 8px; font-size: .78rem }
   .data-grid .pk-cell { color: #fbbf24 }
@@ -133,9 +218,11 @@
   .side-panel #card-results .result-detail {
     display: block; color: #64748b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
-  .side-panel #card-results .btn-truncate {
-    grid-column: 4; grid-row: 1; width: auto; justify-content: center;
-    padding: 5px 8px; margin: 0; font-size: .68rem;
+  .side-panel #card-results .result-actions {
+    grid-column: 4; grid-row: 1; display: flex; flex-direction: column; gap: 4px;
+  }
+  .side-panel #card-results .result-actions .btn {
+    width: auto; justify-content: center; padding: 5px 8px; margin: 0; font-size: .68rem;
   }
   .side-panel #card-results .truncate-result { grid-column: 2 / -1; grid-row: 2; margin: 0 }
   .side-panel #card-results > .btn-row {
@@ -185,10 +272,23 @@
     padding: 10px 14px;
     font-size: .9rem;
     outline: none;
-    transition: border-color .15s;
+    transition: border-color .15s, background .15s;
   }
   input:focus, select:focus { border-color: #4f46e5 }
-  select option { background: #1a1d2e }
+  select:hover:not(:disabled) { border-color: #414866 }
+  select {
+    appearance: none; -webkit-appearance: none; -moz-appearance: none;
+    cursor: pointer;
+    padding-right: 36px;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6' fill='none'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%2394a3b8' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 14px center;
+  }
+  select option { background: #1a1d2e; color: #e2e8f0 }
+  select:disabled, input:disabled {
+    background: #14161f; color: #4a5568; border-color: #23263a;
+    cursor: not-allowed; background-image: none;
+  }
 
   .drop-zone {
     border: 2px dashed #2d3148;
@@ -228,19 +328,12 @@
   .btn.danger:disabled { background: #2d3148; color: #64748b }
   .btn-row { display: flex; gap: 10px; margin-top: 18px; flex-wrap: wrap }
 
-  /* Connection banner */
-  .conn-banner {
-    display: flex; align-items: center; justify-content: space-between;
-    background: #14241c; border: 1px solid #1e5f3f; border-radius: 10px;
-    padding: 12px 16px; margin-bottom: 20px;
+  /* Connection status dot (nav tab) */
+  .nav-dot {
+    display: inline-block; width: 7px; height: 7px; border-radius: 50%;
+    background: #4a5568; margin-right: 7px; vertical-align: middle;
   }
-  .conn-banner .info { font-size: .85rem; color: #cbd5e1 }
-  .conn-banner .info strong { color: #4ade80 }
-  .conn-banner .dot { color: #4ade80; margin-right: 6px }
-  .link-btn {
-    background: none; border: none; color: #818cf8; cursor: pointer;
-    font-size: .82rem; text-decoration: underline; padding: 0;
-  }
+  .nav-dot.connected { background: #4ade80; box-shadow: 0 0 0 3px rgba(74, 222, 128, .15) }
 
   /* Preview table */
   .preview-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px }
@@ -328,13 +421,17 @@
   .hidden { display: none !important }
   .divider { border: none; border-top: 1px solid #2d3148; margin: 18px 0 }
   @media (max-width: 1080px) {
-    body { padding: 28px 14px }
-    .container { display: block; max-width: 760px }
+    body { padding: 0 14px 28px }
+    .topbar { margin: 0 -14px }
+    .container { display: block; max-width: 760px; margin-top: 28px }
     .side-panel { position: static; margin-top: 20px }
     .side-panel:has(#card-results:not(.hidden)) { margin-top: 20px }
   }
   @media (max-width: 620px) {
-    body { padding: 18px 10px }
+    body { padding: 0 10px 18px }
+    .topbar { margin: 0 -10px }
+    .topbar-inner { flex-direction: column; align-items: stretch; gap: 10px; padding: 12px }
+    .container { margin-top: 18px }
     .card { padding: 20px 16px }
     .row, .row.trio { grid-template-columns: minmax(0, 1fr) }
     .nav-bar { width: 100% }
@@ -348,25 +445,24 @@
 </style>
 </head>
 <body>
+<header class="topbar">
+  <div class="topbar-inner">
+    <div class="topbar-brand">
+      <span class="topbar-logo">⇄</span>
+      <span>DB Import</span>
+    </div>
+    <nav class="nav-bar" aria-label="Main navigation">
+      <button class="nav-btn active" id="nav-import">Import</button>
+      <button class="nav-btn" id="nav-truncate" disabled>Truncate Table</button>
+      <button class="nav-btn" id="nav-editor" disabled>Data Editor</button>
+      <button class="nav-btn" id="nav-connection" title="Not connected"><span class="nav-dot" id="nav-conn-dot"></span>Connection</button>
+    </nav>
+  </div>
+</header>
 <div class="container">
   <main class="main-column">
   <h1>Excel → SQL Server Importer</h1>
   <p class="subtitle">Upload an Excel file, preview the tables, then import into your database.</p>
-
-  <nav class="nav-bar" aria-label="Main navigation">
-    <button class="nav-btn active" id="nav-import">Import</button>
-    <button class="nav-btn" id="nav-truncate" disabled>Truncate Table</button>
-    <button class="nav-btn" id="nav-editor" disabled>Data Editor</button>
-  </nav>
-
-  <!-- Saved-connection banner (shown when config exists) -->
-  <div class="conn-banner hidden" id="conn-banner">
-    <div class="info">
-      <span class="dot">●</span> Connected to
-      <strong id="conn-summary"></strong>
-    </div>
-    <button class="link-btn" id="btn-edit-conn">Edit connection</button>
-  </div>
 
   <div class="alert info file-change-warning hidden" id="file-change-warning">
     <span>The selected local Excel file has changed.</span>
@@ -433,7 +529,6 @@
       <div>
         <label>Tables</label>
         <div class="multi-table-list" id="truncate-table-list"></div>
-        <datalist id="truncate-table-options"></datalist>
       </div>
     </div>
     <div class="btn-row">
@@ -443,20 +538,37 @@
 
   <div class="card hidden" id="card-data-editor">
     <div class="card-title active"><span class="step">✎</span> Data Editor</div>
-    <div id="err-data-editor" class="alert error hidden"></div>
-    <div id="ok-data-editor" class="alert info hidden"></div>
-    <div class="data-toolbar">
-      <div><label for="editor-schema">Schema</label><select id="editor-schema"><option value="">— select schema —</option></select></div>
-      <div>
-        <label for="editor-table">Table</label>
-        <input type="text" id="editor-table" list="editor-table-options" placeholder="Select a schema first" disabled>
-        <datalist id="editor-table-options"></datalist>
+    <div class="editor-body">
+      <aside class="editor-history">
+        <div class="editor-history-head">Recent tables</div>
+        <div class="editor-history-list" id="editor-history-list"></div>
+      </aside>
+      <div class="editor-main">
+        <div id="err-data-editor" class="alert error hidden"></div>
+        <div id="ok-data-editor" class="alert info hidden"></div>
+        <div class="data-toolbar">
+          <div><label for="editor-schema">Schema</label><select id="editor-schema"><option value="">— select schema —</option></select></div>
+          <div>
+            <label for="editor-table">Table</label>
+            <div class="table-combo">
+              <input type="text" id="editor-table" placeholder="Select a schema first" disabled autocomplete="off">
+              <div class="table-combo-panel hidden" id="editor-table-panel"></div>
+            </div>
+          </div>
+          <button class="btn secondary" id="btn-load-data" disabled>Load data</button>
+          <button class="btn secondary" id="btn-refresh-data" disabled title="Reload this table's data">⟳ Refresh</button>
+          <button class="btn" id="btn-edit-mode" disabled>Edit mode</button>
+        </div>
+        <div class="grid-toolbar">
+          <div class="data-note" id="data-editor-note">Select a schema and table. Up to 100 rows will be shown.</div>
+          <div class="grid-copy-actions">
+            <button class="btn secondary" id="btn-copy-header" disabled title="Copy all rows with column headers">Copy with header</button>
+            <button class="btn secondary" id="btn-copy-plain" disabled title="Copy all rows without headers">Copy without header</button>
+          </div>
+        </div>
+        <div class="data-grid-wrap hidden" id="data-grid-wrap"><table class="data-grid"><thead id="data-grid-head"></thead><tbody id="data-grid-body"></tbody></table></div>
       </div>
-      <button class="btn secondary" id="btn-load-data" disabled>Load data</button>
-      <button class="btn" id="btn-edit-mode" disabled>Edit mode</button>
     </div>
-    <div class="data-note" id="data-editor-note">Select a schema and table. Up to 100 rows will be shown.</div>
-    <div class="data-grid-wrap hidden" id="data-grid-wrap"><table class="data-grid"><thead id="data-grid-head"></thead><tbody id="data-grid-body"></tbody></table></div>
   </div>
 
   <!-- ── Step 1: Upload ──────────────────────────────── -->
@@ -565,23 +677,33 @@ let truncateAvailableTables = []
 let truncateSelectedTables = []
 let editorData = null
 let editorEditMode = false
+let editorSortColumn = null
+let editorSortDir = 'asc'
 let editorAvailableTables = []
+let isConfigured = false
+
+const EDITOR_HISTORY_KEY = 'dbimport_editor_history'
+let editorHistory = []
+try { editorHistory = JSON.parse(localStorage.getItem(EDITOR_HISTORY_KEY) || '[]') } catch (_) { editorHistory = [] }
 
 // ── On load: check saved config ───────────────────────────────────────────────
 fetch('/config').then(r => r.json()).then(data => {
   if (data.configured) {
+    isConfigured = true
     $('nav-truncate').disabled = false
     $('nav-editor').disabled = false
-    fillConnBanner(data.config)
-    show($('conn-banner'))
+    updateConnStatus(data.config)
     show($('card-upload'))
   } else {
     show($('card-conn'))   // first-time setup
+    $('nav-import').classList.remove('active')
+    $('nav-connection').classList.add('active')
   }
 })
 
-function fillConnBanner(cfg) {
-  $('conn-summary').textContent = `${cfg.host}:${cfg.port} / ${cfg.database} (${cfg.username})`
+function updateConnStatus(cfg) {
+  $('nav-connection').title = `Connected to ${cfg.host}:${cfg.port} / ${cfg.database} (${cfg.username})`
+  $('nav-conn-dot').classList.add('connected')
   // pre-fill the edit form too
   $('db-host').value = cfg.host
   $('db-port').value = cfg.port
@@ -594,6 +716,7 @@ function fillConnBanner(cfg) {
 // ── Main navigation ──────────────────────────────────────────────────────────
 $('nav-import').addEventListener('click', () => {
   document.querySelector('.container').classList.remove('editor-layout')
+  hide($('card-conn')); hide($('btn-cancel-conn'))
   hide($('card-truncate-manager'))
   hide($('card-data-editor'))
   show($(lastImportCard))
@@ -601,12 +724,13 @@ $('nav-import').addEventListener('click', () => {
   $('nav-import').classList.add('active')
   $('nav-truncate').classList.remove('active')
   $('nav-editor').classList.remove('active')
+  $('nav-connection').classList.remove('active')
 })
 
 $('nav-truncate').addEventListener('click', () => {
   document.querySelector('.container').classList.remove('editor-layout')
   const visible = ['card-conn', 'card-upload', 'card-preview'].find(id => !$(id).classList.contains('hidden'))
-  if (visible) lastImportCard = visible
+  if (visible && visible !== 'card-conn') lastImportCard = visible
   restoreImportResults = !$('card-results').classList.contains('hidden')
   ;['card-conn', 'card-upload', 'card-preview'].forEach(id => hide($(id)))
   hide($('card-results'))
@@ -615,22 +739,50 @@ $('nav-truncate').addEventListener('click', () => {
   $('nav-truncate').classList.add('active')
   $('nav-import').classList.remove('active')
   $('nav-editor').classList.remove('active')
+  $('nav-connection').classList.remove('active')
   loadTruncateSchemas()
 })
 
-$('nav-editor').addEventListener('click', () => {
+function activateEditorTab() {
   document.querySelector('.container').classList.add('editor-layout')
   const visible = ['card-conn', 'card-upload', 'card-preview'].find(id => !$(id).classList.contains('hidden'))
-  if (visible) lastImportCard = visible
+  if (visible && visible !== 'card-conn') lastImportCard = visible
   restoreImportResults = !$('card-results').classList.contains('hidden')
   ;['card-conn', 'card-upload', 'card-preview', 'card-truncate-manager'].forEach(id => hide($(id)))
   hide($('card-results')); show($('card-data-editor'))
   $('nav-editor').classList.add('active')
   $('nav-import').classList.remove('active'); $('nav-truncate').classList.remove('active')
+  $('nav-connection').classList.remove('active')
+}
+
+$('nav-editor').addEventListener('click', () => {
+  activateEditorTab()
   loadEditorSchemas()
 })
 
-function loadEditorSchemas() {
+// Quick shortcut: jump straight into the Data Editor with a specific table loaded
+// (used by the "Edit" button on freshly-imported tables and by the history list).
+function openTableInEditor(schema, table) {
+  activateEditorTab()
+  loadEditorSchemas({ schema, table })
+}
+
+$('nav-connection').addEventListener('click', () => {
+  document.querySelector('.container').classList.remove('editor-layout')
+  const visible = ['card-conn', 'card-upload', 'card-preview'].find(id => !$(id).classList.contains('hidden'))
+  if (visible && visible !== 'card-conn') lastImportCard = visible
+  restoreImportResults = !$('card-results').classList.contains('hidden')
+  ;['card-conn', 'card-upload', 'card-preview', 'card-truncate-manager', 'card-data-editor'].forEach(id => hide($(id)))
+  hide($('card-results'))
+  show($('card-conn'))
+  if (isConfigured) show($('btn-cancel-conn')); else hide($('btn-cancel-conn'))
+  $('nav-connection').classList.add('active')
+  $('nav-import').classList.remove('active')
+  $('nav-truncate').classList.remove('active')
+  $('nav-editor').classList.remove('active')
+})
+
+function loadEditorSchemas(preselect) {
   const select = $('editor-schema')
   select.disabled = true; select.innerHTML = '<option value="">Loading schemas…</option>'
   fetch('/schemas').then(r => r.json()).then(data => {
@@ -638,68 +790,256 @@ function loadEditorSchemas() {
     select.innerHTML = '<option value="">— select schema —</option>'
     data.schemas.forEach(name => select.add(new Option(name, name)))
     select.disabled = false
-    if (data.default && data.schemas.includes(data.default)) {
-      select.value = data.default; loadEditorTables(data.default)
+    const target = (preselect && data.schemas.includes(preselect.schema)) ? preselect.schema : data.default
+    if (target && data.schemas.includes(target)) {
+      select.value = target
+      loadEditorTables(target, preselect && preselect.schema === target ? preselect.table : null)
     }
   }).catch(error => showErr($('err-data-editor'), error.message))
 }
 
-function loadEditorTables(schema) {
+function loadEditorTables(schema, presetTable) {
   const input = $('editor-table')
   editorAvailableTables = []
-  input.value = ''; input.disabled = true; $('btn-load-data').disabled = true
+  input.value = ''; input.disabled = true
+  $('btn-load-data').disabled = true; $('btn-refresh-data').disabled = true
+  $('btn-copy-header').disabled = true; $('btn-copy-plain').disabled = true
   input.placeholder = schema ? 'Loading tables…' : 'Select a schema first'
-  $('editor-table-options').innerHTML = ''
+  closeEditorTablePanel()
   if (!schema) return
   fetch(`/tables?schema=${encodeURIComponent(schema)}`).then(r => r.json()).then(data => {
     if (data.error) throw new Error(data.error)
     editorAvailableTables = data.tables
-    const options = $('editor-table-options')
-    data.tables.forEach(name => {
-      const option = document.createElement('option'); option.value = name
-      options.appendChild(option)
-    })
     input.placeholder = data.tables.length ? 'Type to search table…' : 'No tables found'
     input.disabled = !data.tables.length
+    if (presetTable && data.tables.includes(presetTable)) {
+      input.value = presetTable
+      $('btn-load-data').disabled = false
+      loadEditorData()
+    }
   }).catch(error => showErr($('err-data-editor'), error.message))
 }
 
 $('editor-schema').addEventListener('change', e => loadEditorTables(e.target.value))
-$('editor-table').addEventListener('input', e => {
-  const value = e.target.value.trim().toLowerCase()
+
+// ── Table combobox (replaces a native <datalist>, which browsers render with
+// their own unstyled popup — this keeps the dropdown consistent with the app's theme) ──
+const editorTableInput = $('editor-table')
+const editorTablePanel = $('editor-table-panel')
+let editorTableHighlight = -1
+
+function closeEditorTablePanel() {
+  editorTablePanel.classList.add('hidden'); editorTablePanel.innerHTML = ''; editorTableHighlight = -1
+}
+
+function pickEditorTable(name) {
+  editorTableInput.value = name
+  closeEditorTablePanel()
+  $('btn-load-data').disabled = false
+  loadEditorData()
+}
+
+function openEditorTablePanel() {
+  if (editorTableInput.disabled) return
+  const q = editorTableInput.value.trim().toLowerCase()
+  const matches = editorAvailableTables.filter(name => !q || name.toLowerCase().includes(q))
+  editorTablePanel.innerHTML = ''
+  if (!matches.length) {
+    const empty = document.createElement('div'); empty.className = 'table-combo-empty'
+    empty.textContent = editorAvailableTables.length ? 'No matching tables' : editorTableInput.placeholder
+    editorTablePanel.appendChild(empty)
+  } else {
+    matches.forEach(name => {
+      const opt = document.createElement('div'); opt.className = 'table-combo-option'
+      opt.textContent = name
+      opt.addEventListener('mousedown', e => { e.preventDefault(); pickEditorTable(name) })
+      editorTablePanel.appendChild(opt)
+    })
+  }
+  editorTableHighlight = -1
+  editorTablePanel.classList.remove('hidden')
+}
+
+editorTableInput.addEventListener('focus', openEditorTablePanel)
+editorTableInput.addEventListener('input', () => {
+  openEditorTablePanel()
+  const value = editorTableInput.value.trim().toLowerCase()
   $('btn-load-data').disabled = !editorAvailableTables.some(name => name.toLowerCase() === value)
 })
-$('editor-table').addEventListener('change', e => {
-  const match = editorAvailableTables.find(name => name.toLowerCase() === e.target.value.trim().toLowerCase())
-  if (match) e.target.value = match
+editorTableInput.addEventListener('keydown', e => {
+  const opts = () => [...editorTablePanel.querySelectorAll('.table-combo-option')]
+  if (e.key === 'ArrowDown') {
+    e.preventDefault()
+    if (editorTablePanel.classList.contains('hidden')) openEditorTablePanel()
+    else { const list = opts(); if (list.length) setEditorTableHighlight((editorTableHighlight + 1) % list.length) }
+  } else if (e.key === 'ArrowUp') {
+    e.preventDefault()
+    const list = opts(); if (list.length) setEditorTableHighlight((editorTableHighlight - 1 + list.length) % list.length)
+  } else if (e.key === 'Enter') {
+    e.preventDefault()
+    const list = opts()
+    if (editorTableHighlight >= 0 && list[editorTableHighlight]) pickEditorTable(list[editorTableHighlight].textContent)
+    else {
+      const match = editorAvailableTables.find(name => name.toLowerCase() === editorTableInput.value.trim().toLowerCase())
+      if (match) pickEditorTable(match)
+    }
+  } else if (e.key === 'Escape') { closeEditorTablePanel(); editorTableInput.blur() }
 })
+editorTableInput.addEventListener('blur', () => setTimeout(closeEditorTablePanel, 120))
+
+function setEditorTableHighlight(index) {
+  const opts = [...editorTablePanel.querySelectorAll('.table-combo-option')]
+  opts.forEach(o => o.classList.remove('highlighted'))
+  editorTableHighlight = index
+  if (opts[editorTableHighlight]) {
+    opts[editorTableHighlight].classList.add('highlighted')
+    opts[editorTableHighlight].scrollIntoView({ block: 'nearest' })
+  }
+}
+
 $('btn-load-data').addEventListener('click', loadEditorData)
+$('btn-refresh-data').addEventListener('click', () => {
+  if (!editorData) return
+  $('editor-schema').value = editorData.schema
+  editorTableInput.value = editorData.table
+  loadEditorData()
+})
 $('btn-edit-mode').addEventListener('click', () => {
   editorEditMode = !editorEditMode
   $('btn-edit-mode').textContent = editorEditMode ? 'Close edit mode' : 'Edit mode'
   renderEditorGrid()
 })
 
+// ── Copy grid to clipboard (TSV — pastes cleanly into Excel/Sheets) ───────────
+function editorDataToTSV(includeHeader) {
+  const lines = []
+  if (includeHeader) lines.push(editorData.columns.map(c => c.name).join('\t'))
+  editorData.rows.forEach(row => {
+    lines.push(row.map(v => (v == null ? '' : String(v)).replace(/[\t\r\n]+/g, ' ')).join('\t'))
+  })
+  return lines.join('\n')
+}
+
+async function copyEditorData(includeHeader, btn) {
+  if (!editorData || !editorData.rows.length) return
+  const text = editorDataToTSV(includeHeader)
+  try {
+    await navigator.clipboard.writeText(text)
+  } catch (_) {
+    const ta = document.createElement('textarea')
+    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0'
+    document.body.appendChild(ta); ta.select()
+    try { document.execCommand('copy') } catch (_) {}
+    document.body.removeChild(ta)
+  }
+  const original = btn.textContent
+  btn.textContent = 'Copied!'
+  setTimeout(() => { btn.textContent = original }, 1200)
+}
+
+$('btn-copy-header').addEventListener('click', () => copyEditorData(true, $('btn-copy-header')))
+$('btn-copy-plain').addEventListener('click', () => copyEditorData(false, $('btn-copy-plain')))
+
 function loadEditorData() {
   const schema = $('editor-schema').value
-  const typedTable = $('editor-table').value.trim()
+  const typedTable = editorTableInput.value.trim()
   const table = editorAvailableTables.find(name => name.toLowerCase() === typedTable.toLowerCase())
   if (!schema || !table) return
-  $('editor-table').value = table
+  editorTableInput.value = table
   const btn = $('btn-load-data'); hide($('err-data-editor')); hide($('ok-data-editor'))
   setLoading(btn, true, 'Loading…')
   return fetch(`/table-data?schema=${encodeURIComponent(schema)}&table=${encodeURIComponent(table)}`)
     .then(r => r.json()).then(data => {
       if (data.error) throw new Error(data.error)
       editorData = data; editorEditMode = false
+      editorSortColumn = null; editorSortDir = 'asc'
       $('btn-edit-mode').textContent = 'Edit mode'
       $('btn-edit-mode').disabled = false
+      $('btn-refresh-data').disabled = false
+      $('btn-copy-header').disabled = !data.rows.length
+      $('btn-copy-plain').disabled = !data.rows.length
       $('data-editor-note').textContent = data.primary_keys.length
         ? `${data.rows.length} row(s) shown. Editable primary key: ${data.primary_keys.join(', ')}`
         : `${data.rows.length} row(s) shown. No primary key: updates match all original row values and save only when exactly one row matches.`
       renderEditorGrid()
+      pushEditorHistory(schema, table)
     }).catch(error => showErr($('err-data-editor'), error.message))
     .finally(() => setLoading(btn, false, 'Load data'))
+}
+
+// ── Recent-tables history (left panel) ────────────────────────────────────────
+function saveEditorHistory() {
+  try { localStorage.setItem(EDITOR_HISTORY_KEY, JSON.stringify(editorHistory)) } catch (_) {}
+}
+
+function pushEditorHistory(schema, table) {
+  editorHistory = editorHistory.filter(h => !(h.schema === schema && h.table === table))
+  editorHistory.unshift({ schema, table })
+  if (editorHistory.length > 15) editorHistory.length = 15
+  saveEditorHistory()
+  renderEditorHistory()
+}
+
+function removeEditorHistory(schema, table) {
+  editorHistory = editorHistory.filter(h => !(h.schema === schema && h.table === table))
+  saveEditorHistory()
+  renderEditorHistory()
+}
+
+function renderEditorHistory() {
+  const list = $('editor-history-list')
+  list.innerHTML = ''
+  if (!editorHistory.length) {
+    list.innerHTML = '<p class="editor-history-empty">No tables opened yet — search or import a table to see it here.</p>'
+    return
+  }
+  editorHistory.forEach(h => {
+    const item = document.createElement('div'); item.className = 'editor-history-item'
+    if (editorData && editorData.schema === h.schema && editorData.table === h.table) item.classList.add('active')
+
+    const label = document.createElement('button')
+    label.type = 'button'; label.className = 'editor-history-label'
+    label.title = `Open ${h.schema}.${h.table}`
+    const schemaEl = document.createElement('span'); schemaEl.className = 'editor-history-schema'; schemaEl.textContent = h.schema
+    const tableEl = document.createElement('span'); tableEl.className = 'editor-history-table'; tableEl.textContent = h.table
+    label.append(schemaEl, tableEl)
+    label.addEventListener('click', () => {
+      $('editor-schema').value = h.schema
+      loadEditorTables(h.schema, h.table)
+    })
+
+    const remove = document.createElement('button')
+    remove.type = 'button'; remove.className = 'editor-history-remove'; remove.title = `Remove ${h.schema}.${h.table} from history`
+    remove.textContent = '×'
+    remove.addEventListener('click', e => { e.stopPropagation(); removeEditorHistory(h.schema, h.table) })
+
+    item.append(label, remove)
+    list.appendChild(item)
+  })
+}
+
+renderEditorHistory()
+
+function sortEditorData(colIndex) {
+  if (editorSortColumn === colIndex) {
+    editorSortDir = editorSortDir === 'asc' ? 'desc' : 'asc'
+  } else {
+    editorSortColumn = colIndex
+    editorSortDir = 'asc'
+  }
+  const dir = editorSortDir === 'asc' ? 1 : -1
+  editorData.rows.sort((a, b) => {
+    const av = a[colIndex], bv = b[colIndex]
+    if (av == null && bv == null) return 0
+    if (av == null) return 1
+    if (bv == null) return -1
+    if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * dir
+    const as = String(av), bs = String(bv)
+    const an = Number(as), bn = Number(bs)
+    if (as.trim() !== '' && bs.trim() !== '' && !isNaN(an) && !isNaN(bn)) return (an - bn) * dir
+    return as.localeCompare(bs, undefined, { numeric: true, sensitivity: 'base' }) * dir
+  })
+  renderEditorGrid()
 }
 
 function renderEditorGrid() {
@@ -707,9 +1047,19 @@ function renderEditorGrid() {
   const head = $('data-grid-head'), body = $('data-grid-body')
   head.innerHTML = ''; body.innerHTML = ''
   const headerRow = document.createElement('tr')
-  editorData.columns.forEach(column => {
-    const th = document.createElement('th'); th.textContent = column.name
-    if (editorData.primary_keys.includes(column.name)) th.textContent += ' 🔑'
+  editorData.columns.forEach((column, colIndex) => {
+    const th = document.createElement('th'); th.className = 'sortable'
+    const label = document.createElement('span')
+    label.textContent = column.name + (editorData.primary_keys.includes(column.name) ? ' 🔑' : '')
+    const arrow = document.createElement('span'); arrow.className = 'sort-arrow'
+    if (editorSortColumn === colIndex) {
+      th.classList.add('sorted')
+      arrow.textContent = editorSortDir === 'asc' ? '▲' : '▼'
+    } else {
+      arrow.textContent = '⇅'
+    }
+    th.append(label, arrow)
+    th.addEventListener('click', () => sortEditorData(colIndex))
     headerRow.appendChild(th)
   })
   if (editorEditMode) { const th = document.createElement('th'); th.textContent = 'Action'; th.className = 'row-action'; headerRow.appendChild(th) }
@@ -799,12 +1149,6 @@ function loadTruncateTables(schema) {
   fetch(`/tables?schema=${encodeURIComponent(schema)}`).then(r => r.json()).then(data => {
     if (data.error) throw new Error(data.error)
     truncateAvailableTables = data.tables
-    const options = $('truncate-table-options')
-    options.innerHTML = ''
-    data.tables.forEach(table => {
-      const option = document.createElement('option'); option.value = table
-      options.appendChild(option)
-    })
     renderTruncateTableInputs(data.tables.length ? 'Type to search table…' : 'No tables found', !data.tables.length)
   }).catch(error => showErr($('err-truncate-manager'), error.message))
 }
@@ -827,20 +1171,83 @@ function renderTruncateTableInputs(placeholder = 'Type to search table…', disa
   })
 
   const row = document.createElement('div'); row.className = 'multi-table-row'
+  const combo = document.createElement('div'); combo.className = 'table-combo'
   const input = document.createElement('input')
-  input.type = 'text'; input.setAttribute('list', 'truncate-table-options')
+  input.type = 'text'; input.autocomplete = 'off'
   input.placeholder = placeholder; input.disabled = disabled
   input.setAttribute('aria-label', 'Search and add table')
-  input.addEventListener('change', () => {
-    const table = input.value.trim()
-    const actual = truncateAvailableTables.find(name => name.toLowerCase() === table.toLowerCase())
-    if (!actual) {
-      input.setCustomValidity('Choose a table from the list.'); input.reportValidity(); return
-    }
-    if (!truncateSelectedTables.includes(actual)) truncateSelectedTables.push(actual)
+
+  const panel = document.createElement('div'); panel.className = 'table-combo-panel hidden'
+  let highlighted = -1
+
+  const matchingTables = () => {
+    const q = input.value.trim().toLowerCase()
+    return truncateAvailableTables
+      .filter(name => !truncateSelectedTables.includes(name))
+      .filter(name => !q || name.toLowerCase().includes(q))
+  }
+
+  const closePanel = () => { panel.classList.add('hidden'); panel.innerHTML = ''; highlighted = -1 }
+
+  const selectTable = name => {
+    if (!truncateSelectedTables.includes(name)) truncateSelectedTables.push(name)
     renderTruncateTableInputs()
+  }
+
+  const setHighlight = index => {
+    const opts = [...panel.querySelectorAll('.table-combo-option')]
+    opts.forEach(o => o.classList.remove('highlighted'))
+    highlighted = index
+    if (opts[highlighted]) {
+      opts[highlighted].classList.add('highlighted')
+      opts[highlighted].scrollIntoView({ block: 'nearest' })
+    }
+  }
+
+  const openPanel = () => {
+    if (input.disabled) return
+    const matches = matchingTables()
+    panel.innerHTML = ''
+    if (!matches.length) {
+      const empty = document.createElement('div'); empty.className = 'table-combo-empty'
+      empty.textContent = truncateAvailableTables.length ? 'No matching tables' : placeholder
+      panel.appendChild(empty)
+    } else {
+      matches.forEach(name => {
+        const opt = document.createElement('div'); opt.className = 'table-combo-option'
+        opt.textContent = name
+        opt.addEventListener('mousedown', e => { e.preventDefault(); selectTable(name) })
+        panel.appendChild(opt)
+      })
+    }
+    highlighted = -1
+    panel.classList.remove('hidden')
+  }
+
+  input.addEventListener('input', openPanel)
+  input.addEventListener('focus', openPanel)
+  input.addEventListener('keydown', e => {
+    const opts = () => [...panel.querySelectorAll('.table-combo-option')]
+    if (e.key === 'ArrowDown') {
+      e.preventDefault()
+      if (panel.classList.contains('hidden')) openPanel()
+      else setHighlight((highlighted + 1) % Math.max(opts().length, 1))
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault()
+      const list = opts()
+      if (list.length) setHighlight((highlighted - 1 + list.length) % list.length)
+    } else if (e.key === 'Enter') {
+      e.preventDefault()
+      const list = opts()
+      if (highlighted >= 0 && list[highlighted]) selectTable(list[highlighted].textContent)
+    } else if (e.key === 'Escape') {
+      closePanel(); input.blur()
+    }
   })
-  row.appendChild(input); list.appendChild(row)
+  input.addEventListener('blur', () => setTimeout(closePanel, 120))
+
+  combo.append(input, panel)
+  row.appendChild(combo); list.appendChild(row)
   $('btn-truncate-selected').disabled = truncateSelectedTables.length === 0
 }
 
@@ -884,15 +1291,9 @@ $('btn-truncate-selected').addEventListener('click', async () => {
 })
 
 // ── Connection: edit / save ───────────────────────────────────────────────────
-$('btn-edit-conn').addEventListener('click', () => {
-  hide($('card-upload')); hide($('card-preview')); hide($('card-results'))
-  show($('btn-cancel-conn'))
-  show($('card-conn'))
-})
-
 $('btn-cancel-conn').addEventListener('click', () => {
-  hide($('card-conn'))
-  show($('card-upload'))
+  hide($('btn-cancel-conn'))
+  $('nav-import').click()
 })
 
 $('btn-save-conn').addEventListener('click', () => {
@@ -920,12 +1321,12 @@ $('btn-save-conn').addEventListener('click', () => {
   .then(data => {
     setLoading($('btn-save-conn'), false, 'Test & Save connection')
     if (data.error) { showErr($('err-conn'), data.error); return }
-    fillConnBanner(payload)
+    updateConnStatus(payload)
+    isConfigured = true
     $('nav-truncate').disabled = false
     $('nav-editor').disabled = false
-    show($('conn-banner'))
-    hide($('card-conn'))
-    show($('card-upload'))
+    hide($('btn-cancel-conn'))
+    $('nav-import').click()
   })
   .catch(e => {
     setLoading($('btn-save-conn'), false, 'Test & Save connection')
@@ -1305,8 +1706,11 @@ function buildResults(results) {
     const status = resultStatus(r.status)
     const errHtml = r.errors && r.errors.length
       ? `<div class="result-errors">${r.errors.map(escapeHtml).join('<br>')}</div>` : ''
-    const truncateButton = (r.status === 'ok' || r.status === 'warn')
-      ? `<button class="btn danger btn-truncate" data-table="${escapeAttr(r.name)}">Truncate</button>`
+    const actions = (r.status === 'ok' || r.status === 'warn')
+      ? `<div class="result-actions">
+          <button class="btn secondary btn-edit-table" data-table="${escapeAttr(r.name)}" title="Open in Data Editor">Edit</button>
+          <button class="btn danger btn-truncate" data-table="${escapeAttr(r.name)}">Truncate</button>
+        </div>`
       : ''
     body.innerHTML += `
       <div class="result-row">
@@ -1318,7 +1722,7 @@ function buildResults(results) {
           ${errHtml}
           <div class="truncate-result hidden"></div>
         </div>
-        ${truncateButton}
+        ${actions}
       </div>`
     if (r.status === 'ok') ok++
     else if (r.status === 'warn') warn++
@@ -1333,6 +1737,17 @@ function buildResults(results) {
   summary.textContent = `${parts.join(', ')} — ${results.length} total tables`
   body.appendChild(summary)
   bindTruncateButtons()
+  bindEditButtons()
+}
+
+function bindEditButtons() {
+  document.querySelectorAll('.btn-edit-table').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const table = btn.dataset.table
+      const schema = $('schema-select').value
+      openTableInEditor(schema, table)
+    })
+  })
 }
 
 function bindTruncateButtons() {
