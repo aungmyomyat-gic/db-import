@@ -73,6 +73,14 @@
   .nav-btn:hover { color: #e2e8f0; background: #1e213a }
   .nav-btn.active { color: #fff; background: #4f46e5 }
   .nav-btn:disabled { color: #4a5568; cursor: not-allowed; background: transparent }
+  .nav-icon-info {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 15px; height: 15px; border-radius: 50%;
+    background: #4f46e5; color: #fff;
+    font-size: .68rem; font-style: italic; font-weight: 700;
+    margin-right: 6px; vertical-align: middle;
+  }
+  .nav-btn.active .nav-icon-info { background: rgba(255, 255, 255, .25); color: #fff }
   .multi-table-list { display: grid; gap: 8px; min-width: 0; width: 100% }
   .multi-table-row { display: flex; gap: 7px; align-items: center; min-width: 0; width: 100% }
   .multi-table-row input { flex: 1 1 auto; min-width: 0; width: 100% }
@@ -334,6 +342,10 @@
     background: #4a5568; margin-right: 7px; vertical-align: middle;
   }
   .nav-dot.connected { background: #4ade80; box-shadow: 0 0 0 3px rgba(74, 222, 128, .15) }
+  .nav-dot.error { background: #f87171; box-shadow: 0 0 0 3px rgba(248, 113, 113, .15) }
+
+  /* Connection card read-mode inputs */
+  #card-conn input:disabled { opacity: .75; cursor: default; background: #1a1d29 }
 
   /* Preview table */
   .preview-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px }
@@ -456,6 +468,7 @@
       <button class="nav-btn" id="nav-truncate" disabled>Truncate Table</button>
       <button class="nav-btn" id="nav-editor" disabled>Data Editor</button>
       <button class="nav-btn" id="nav-connection" title="Not connected"><span class="nav-dot" id="nav-conn-dot"></span>Connection</button>
+      <button class="nav-btn" id="nav-about"><span class="nav-icon-info">i</span>About</button>
     </nav>
   </div>
 </header>
@@ -510,7 +523,11 @@
       </div>
     </div>
 
-    <div class="btn-row">
+    <div class="btn-row" id="conn-view-actions">
+      <button class="btn secondary" id="btn-edit-conn">Edit Connection</button>
+      <button class="btn danger" id="btn-delete-conn">Delete Connection</button>
+    </div>
+    <div class="btn-row hidden" id="conn-edit-actions">
       <button class="btn" id="btn-save-conn">Test &amp; Save connection</button>
       <button class="btn secondary hidden" id="btn-cancel-conn">Cancel</button>
     </div>
@@ -633,22 +650,24 @@
     </div>
   </div>
 
+  <!-- ── About ────────────────────────────────────────── -->
+  <div class="card hidden" id="card-about">
+    <div class="card-title active"><span class="step">i</span> About</div>
+    <p class="subtitle" style="margin-bottom:18px">Excel → SQL Server Importer — how table scanning works.</p>
+    <div class="side-section">
+      <h2>Table တွေကို ဘယ်လိုရှာလဲ</h2>
+      <p>App က user ရွေးထားတဲ့ Excel sheet ထဲက <strong>■ 実施前テストデータ</strong> section ကိုပဲ ဖတ်ပါတယ်။ အဲဒီ section ထဲမှာ <strong>MZAIHP(...)</strong>, <strong>MSHHNP(...)</strong> လို table name တွေကို ရှာပါတယ်။</p>
+      <ul class="side-list">
+        <li><strong>Table row:</strong> table name ရှိတဲ့ row ဖြစ်ပါတယ်။</li>
+        <li><strong>Header row:</strong> table name ရဲ့ အောက် row ကို header row လို့ယူပါတယ်။ <strong>→ 更新前</strong> / <strong>→ 登録前</strong> လို marker row ရှိရင် အဲဒီ row ကိုကျော်ပြီး နောက်တစ် row ကို header row လို့ယူပါတယ်။</li>
+        <li><strong>Column range:</strong> header row မှာ ပထမ column ကနေ blank column မရောက်မချင်း ဖတ်ပါတယ်။ ဥပမာ <strong>B:AI</strong> လို့ပြပါတယ်။</li>
+      </ul>
+    </div>
+  </div>
+
   </main>
 
   <aside class="side-panel">
-    <details class="side-fold hidden">
-      <summary class="side-title">Scan အကြောင်း</summary>
-      <div class="side-section">
-        <h2>Table တွေကို ဘယ်လိုရှာလဲ</h2>
-        <p>App က user ရွေးထားတဲ့ Excel sheet ထဲက <strong>■ 実施前テストデータ</strong> section ကိုပဲ ဖတ်ပါတယ်။ အဲဒီ section ထဲမှာ <strong>MZAIHP(...)</strong>, <strong>MSHHNP(...)</strong> လို table name တွေကို ရှာပါတယ်။</p>
-        <ul class="side-list">
-          <li><strong>Table row:</strong> table name ရှိတဲ့ row ဖြစ်ပါတယ်။</li>
-          <li><strong>Header row:</strong> table name ရဲ့ အောက် row ကို header row လို့ယူပါတယ်။ <strong>→ 更新前</strong> / <strong>→ 登録前</strong> လို marker row ရှိရင် အဲဒီ row ကိုကျော်ပြီး နောက်တစ် row ကို header row လို့ယူပါတယ်။</li>
-          <li><strong>Column range:</strong> header row မှာ ပထမ column ကနေ blank column မရောက်မချင်း ဖတ်ပါတယ်။ ဥပမာ <strong>B:AI</strong> လို့ပြပါတယ်။</li>
-        </ul>
-      </div>
-    </details>
-
     <div class="card hidden" id="card-results">
       <div class="card-title done"><span class="step">✓</span> Import Results</div>
       <div id="results-body"></div>
@@ -681,6 +700,7 @@ let editorSortColumn = null
 let editorSortDir = 'asc'
 let editorAvailableTables = []
 let isConfigured = false
+let savedConfig = null
 
 const EDITOR_HISTORY_KEY = 'dbimport_editor_history'
 let editorHistory = []
@@ -693,8 +713,11 @@ fetch('/config').then(r => r.json()).then(data => {
     $('nav-truncate').disabled = false
     $('nav-editor').disabled = false
     updateConnStatus(data.config)
+    setConnMode('view')
     show($('card-upload'))
   } else {
+    $('nav-conn-dot').classList.add('error')
+    setConnMode('edit')
     show($('card-conn'))   // first-time setup
     $('nav-import').classList.remove('active')
     $('nav-connection').classList.add('active')
@@ -702,8 +725,10 @@ fetch('/config').then(r => r.json()).then(data => {
 })
 
 function updateConnStatus(cfg) {
+  savedConfig = cfg
   $('nav-connection').title = `Connected to ${cfg.host}:${cfg.port} / ${cfg.database} (${cfg.username})`
   $('nav-conn-dot').classList.add('connected')
+  $('nav-conn-dot').classList.remove('error')
   // pre-fill the edit form too
   $('db-host').value = cfg.host
   $('db-port').value = cfg.port
@@ -713,18 +738,36 @@ function updateConnStatus(cfg) {
   $('db-pass').value = cfg.password || ''
 }
 
+// Toggle the Connection card between read-only "view" mode (after a successful
+// connection) and an editable "edit" mode (first-time setup, or Edit Connection).
+function setConnMode(mode) {
+  const fields = ['db-host', 'db-port', 'db-name', 'db-schema', 'db-user', 'db-pass']
+  if (mode === 'view') {
+    fields.forEach(id => { $(id).disabled = true })
+    show($('conn-view-actions'))
+    hide($('conn-edit-actions'))
+  } else {
+    fields.forEach(id => { $(id).disabled = false })
+    hide($('conn-view-actions'))
+    show($('conn-edit-actions'))
+    if (isConfigured) show($('btn-cancel-conn')); else hide($('btn-cancel-conn'))
+  }
+}
+
 // ── Main navigation ──────────────────────────────────────────────────────────
 $('nav-import').addEventListener('click', () => {
   document.querySelector('.container').classList.remove('editor-layout')
   hide($('card-conn')); hide($('btn-cancel-conn'))
   hide($('card-truncate-manager'))
   hide($('card-data-editor'))
+  hide($('card-about'))
   show($(lastImportCard))
   if (restoreImportResults) show($('card-results'))
   $('nav-import').classList.add('active')
   $('nav-truncate').classList.remove('active')
   $('nav-editor').classList.remove('active')
   $('nav-connection').classList.remove('active')
+  $('nav-about').classList.remove('active')
 })
 
 $('nav-truncate').addEventListener('click', () => {
@@ -736,10 +779,12 @@ $('nav-truncate').addEventListener('click', () => {
   hide($('card-results'))
   show($('card-truncate-manager'))
   hide($('card-data-editor'))
+  hide($('card-about'))
   $('nav-truncate').classList.add('active')
   $('nav-import').classList.remove('active')
   $('nav-editor').classList.remove('active')
   $('nav-connection').classList.remove('active')
+  $('nav-about').classList.remove('active')
   loadTruncateSchemas()
 })
 
@@ -748,11 +793,12 @@ function activateEditorTab() {
   const visible = ['card-conn', 'card-upload', 'card-preview'].find(id => !$(id).classList.contains('hidden'))
   if (visible && visible !== 'card-conn') lastImportCard = visible
   restoreImportResults = !$('card-results').classList.contains('hidden')
-  ;['card-conn', 'card-upload', 'card-preview', 'card-truncate-manager'].forEach(id => hide($(id)))
+  ;['card-conn', 'card-upload', 'card-preview', 'card-truncate-manager', 'card-about'].forEach(id => hide($(id)))
   hide($('card-results')); show($('card-data-editor'))
   $('nav-editor').classList.add('active')
   $('nav-import').classList.remove('active'); $('nav-truncate').classList.remove('active')
   $('nav-connection').classList.remove('active')
+  $('nav-about').classList.remove('active')
 }
 
 $('nav-editor').addEventListener('click', () => {
@@ -772,14 +818,30 @@ $('nav-connection').addEventListener('click', () => {
   const visible = ['card-conn', 'card-upload', 'card-preview'].find(id => !$(id).classList.contains('hidden'))
   if (visible && visible !== 'card-conn') lastImportCard = visible
   restoreImportResults = !$('card-results').classList.contains('hidden')
-  ;['card-conn', 'card-upload', 'card-preview', 'card-truncate-manager', 'card-data-editor'].forEach(id => hide($(id)))
+  ;['card-conn', 'card-upload', 'card-preview', 'card-truncate-manager', 'card-data-editor', 'card-about'].forEach(id => hide($(id)))
   hide($('card-results'))
   show($('card-conn'))
-  if (isConfigured) show($('btn-cancel-conn')); else hide($('btn-cancel-conn'))
+  setConnMode(isConfigured ? 'view' : 'edit')
   $('nav-connection').classList.add('active')
   $('nav-import').classList.remove('active')
   $('nav-truncate').classList.remove('active')
   $('nav-editor').classList.remove('active')
+  $('nav-about').classList.remove('active')
+})
+
+$('nav-about').addEventListener('click', () => {
+  document.querySelector('.container').classList.remove('editor-layout')
+  const visible = ['card-conn', 'card-upload', 'card-preview'].find(id => !$(id).classList.contains('hidden'))
+  if (visible && visible !== 'card-conn') lastImportCard = visible
+  restoreImportResults = !$('card-results').classList.contains('hidden')
+  ;['card-conn', 'card-upload', 'card-preview', 'card-truncate-manager', 'card-data-editor'].forEach(id => hide($(id)))
+  hide($('card-results'))
+  show($('card-about'))
+  $('nav-about').classList.add('active')
+  $('nav-import').classList.remove('active')
+  $('nav-truncate').classList.remove('active')
+  $('nav-editor').classList.remove('active')
+  $('nav-connection').classList.remove('active')
 })
 
 function loadEditorSchemas(preselect) {
@@ -1290,10 +1352,50 @@ $('btn-truncate-selected').addEventListener('click', async () => {
   renderTruncateTableInputs()
 })
 
-// ── Connection: edit / save ───────────────────────────────────────────────────
+// ── Connection: view / edit / save / delete ───────────────────────────────────
+$('btn-edit-conn').addEventListener('click', () => {
+  hide($('err-conn'))
+  setConnMode('edit')
+})
+
 $('btn-cancel-conn').addEventListener('click', () => {
-  hide($('btn-cancel-conn'))
-  $('nav-import').click()
+  hide($('err-conn'))
+  if (isConfigured && savedConfig) {
+    updateConnStatus(savedConfig)
+    setConnMode('view')
+  } else {
+    $('nav-import').click()
+  }
+})
+
+$('btn-delete-conn').addEventListener('click', () => {
+  if (!confirm('Delete the saved database connection? You will need to reconnect before importing again.')) return
+  hide($('err-conn'))
+  setLoading($('btn-delete-conn'), true, 'Deleting…')
+  fetch('/config', { method: 'DELETE' })
+    .then(r => r.json())
+    .then(data => {
+      setLoading($('btn-delete-conn'), false, 'Delete Connection')
+      if (data.error) { showErr($('err-conn'), data.error); return }
+      isConfigured = false
+      savedConfig = null
+      $('nav-truncate').disabled = true
+      $('nav-editor').disabled = true
+      $('nav-connection').title = 'Not connected'
+      $('nav-conn-dot').classList.remove('connected')
+      $('nav-conn-dot').classList.add('error')
+      $('db-host').value = 'db'
+      $('db-port').value = '1433'
+      $('db-name').value = ''
+      $('db-schema').value = 'lvapdbf'
+      $('db-user').value = ''
+      $('db-pass').value = ''
+      setConnMode('edit')
+    })
+    .catch(e => {
+      setLoading($('btn-delete-conn'), false, 'Delete Connection')
+      showErr($('err-conn'), 'Delete failed: ' + e)
+    })
 })
 
 $('btn-save-conn').addEventListener('click', () => {
@@ -1325,7 +1427,7 @@ $('btn-save-conn').addEventListener('click', () => {
     isConfigured = true
     $('nav-truncate').disabled = false
     $('nav-editor').disabled = false
-    hide($('btn-cancel-conn'))
+    setConnMode('view')
     $('nav-import').click()
   })
   .catch(e => {
@@ -1708,7 +1810,7 @@ function buildResults(results) {
       ? `<div class="result-errors">${r.errors.map(escapeHtml).join('<br>')}</div>` : ''
     const actions = (r.status === 'ok' || r.status === 'warn')
       ? `<div class="result-actions">
-          <button class="btn secondary btn-edit-table" data-table="${escapeAttr(r.name)}" title="Open in Data Editor">Edit</button>
+          <button class="btn secondary btn-edit-table" data-table="${escapeAttr(r.name)}" title="Open in Data Editor">View</button>
           <button class="btn danger btn-truncate" data-table="${escapeAttr(r.name)}">Truncate</button>
         </div>`
       : ''

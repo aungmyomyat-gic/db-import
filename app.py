@@ -385,6 +385,14 @@ def set_config():
     return jsonify({"ok": True})
 
 
+@app.route("/config", methods=["DELETE"])
+def delete_config():
+    """Remove the saved DB connection so the user can set up a new one."""
+    if CONFIG_PATH.exists():
+        CONFIG_PATH.unlink()
+    return jsonify({"ok": True})
+
+
 def _build_conn_str(host, port, database, username, password):
     drivers = [d for d in pyodbc.drivers() if "SQL Server" in d]
     if not drivers:
