@@ -107,13 +107,68 @@
   #err-truncate-manager { white-space: pre-line }
   .data-toolbar { display: flex; gap: 10px; align-items: end; flex-wrap: wrap }
   .data-toolbar > div { flex: 1 1 180px; min-width: 0 }
-  .data-grid-wrap { margin-top: 18px; overflow: auto; max-height: calc(100vh - 330px); min-height: 280px; border: 1px solid #2d3148; border-radius: 9px }
-  .grid-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 10px; flex-wrap: wrap }
-  .grid-toolbar .data-note { margin-top: 0 }
-  .grid-copy-actions { display: flex; gap: 8px; flex-wrap: wrap }
-  .grid-copy-actions .btn { padding: 7px 12px; font-size: .78rem; white-space: nowrap }
+  .data-grid-wrap { overflow: auto; max-height: calc(100vh - 330px); min-height: 280px }
+  .data-toolbar .btn { flex: 0 0 auto; padding: 10px 22px; border: 1px solid transparent }
+  .table-panel { margin-top: 18px; border: 1px solid #2d3148; border-radius: 10px; background: #141827; overflow: hidden }
+  .table-panel-head {
+    display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap;
+    padding: 12px 14px; border-bottom: 1px solid #2d3148;
+  }
+  .table-panel-title { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; min-width: 0; min-height: 32px }
+  .table-panel-name { font-size: .95rem; font-weight: 600; color: #f0f4ff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
+  .table-panel-name .schema { color: #64748b; font-weight: 500 }
+  .table-panel-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap }
+  .column-search { position: relative; display: flex; align-items: center }
+  .column-search input[type=text] {
+    width: 210px; height: 32px; padding: 0 28px 0 32px; font-size: .78rem;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-3.5-3.5'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: 11px center;
+  }
+  .column-search-clear {
+    position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
+    width: 20px; height: 20px; border: none; border-radius: 5px; background: transparent;
+    color: #64748b; cursor: pointer; font-size: .72rem; display: flex; align-items: center; justify-content: center
+  }
+  .column-search-clear:hover { color: #e2e8f0; background: #252840 }
+  .data-grid .col-hidden { display: none }
+  .paste-hint { font-size: .74rem; color: #64748b; white-space: nowrap }
+  .paste-hint kbd {
+    font-family: inherit; font-size: .7rem; color: #cbd5e1; background: #1e213a;
+    border: 1px solid #2d3148; border-bottom-width: 2px; border-radius: 4px; padding: 1px 5px;
+  }
+  .table-panel-tools .tools-left { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; min-width: 0 }
+  .paste-bar {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+    padding: 9px 14px; background: #0f2a22; border-bottom: 1px solid #14532d; color: #a7f3d0; font-size: .8rem;
+  }
+  .paste-bar strong { color: #6ee7b7 }
+  .paste-bar-actions { display: flex; gap: 8px }
+  .btn.success { background: #059669 }
+  .btn.success:hover { background: #047857 }
+  .data-grid tr.pending-row td { background: #0f2a22; padding: 4px 6px }
+  .data-grid tr.pending-row td.row-num { background: #0f2a22; color: #6ee7b7 }
+  .data-grid tr.pending-row input[type=text] { min-width: 110px; border-color: #14532d; background: #0b1f19 }
+  .data-grid tr.pending-row input[type=text].unmapped { border-style: dashed; border-color: #2d3148; background: transparent }
+  .pending-remove {
+    border: none; background: transparent; color: #6ee7b7; cursor: pointer;
+    font-size: .72rem; padding: 2px 4px; border-radius: 4px;
+  }
+  .pending-remove:hover { background: #3b1824; color: #f87171 }
+  .data-grid-empty { padding: 28px; text-align: center; color: #64748b; font-size: .82rem }
+  .btn.sm { height: 32px; padding: 0 12px; font-size: .78rem; white-space: nowrap; justify-content: center }
+  .table-panel-tools {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
+    padding: 10px 14px; background: #111522; border-bottom: 1px solid #2d3148;
+  }
+  .btn.edit-on { background: #78350f; color: #fde68a }
+  .btn.edit-on:hover { background: #92400e }
+  .btn-group { display: inline-flex }
+  .btn-group .btn { border-radius: 0 }
+  .btn-group .btn:first-child { border-radius: 8px 0 0 8px }
+  .btn-group .btn:last-child { border-radius: 0 8px 8px 0; margin-left: -1px }
+  .btn-group .btn:not(:disabled):hover { position: relative; z-index: 1 }
 
   .editor-body { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 20px; align-items: start }
+  .editor-main { min-width: 0 }
   .editor-history {
     background: #141827; border: 1px solid #2d3148; border-radius: 10px;
     padding: 14px; max-height: calc(100vh - 230px); overflow-y: auto;
@@ -144,8 +199,10 @@
   }
   .editor-history-remove:hover { background: #3b1824; color: #f87171 }
   @media (max-width: 860px) {
-    .editor-body { grid-template-columns: 1fr }
+    .editor-body { grid-template-columns: minmax(0, 1fr) }
     .editor-history { max-height: 200px }
+    .column-search { flex: 1 1 100% }
+    .column-search input[type=text] { width: 100% }
   }
   .data-grid { width: max-content; min-width: 100%; border-collapse: separate; border-spacing: 0; font-size: .78rem }
   .data-grid th { position: sticky; top: 0; z-index: 1; background: #111522; color: #94a3b8; padding: 8px 10px; text-align: left; border-bottom: 1px solid #2d3148; white-space: nowrap }
@@ -155,11 +212,21 @@
   .data-grid th .sort-arrow { margin-left: 6px; font-size: .68rem; color: #3d4266 }
   .data-grid th.sorted .sort-arrow { color: #818cf8 }
   .data-grid td { padding: 7px 10px; border-bottom: 1px solid #252840; white-space: nowrap; max-width: 260px; overflow: hidden; text-overflow: ellipsis }
-  .data-grid input { min-width: 130px; padding: 6px 8px; font-size: .78rem }
+  .data-grid input[type=text] { width: 100%; min-width: 130px; padding: 5px 8px; font-size: .78rem; border-radius: 6px }
   .data-grid .pk-cell { color: #fbbf24 }
   .data-grid .pk-cell input { color: #fbbf24; border-color: #6b5212 }
   .data-grid .row-action { position: sticky; right: 0; background: #111522 }
-  .data-note { margin-top: 10px; color: #64748b; font-size: .78rem }
+  .data-grid .row-num { position: sticky; left: 0; background: #111522; color: #64748b; text-align: right; min-width: 36px; border-right: 1px solid #2d3148 }
+  .data-grid th.row-num { z-index: 2 }
+  .table-summary { display: flex; gap: 6px; flex-wrap: wrap }
+  .table-summary .stat {
+    display: inline-flex; align-items: baseline; gap: 6px;
+    background: #111522; border: 1px solid #2d3148; border-radius: 999px; padding: 4px 11px; font-size: .74rem;
+  }
+  .table-summary .stat-label { color: #64748b }
+  .table-summary .stat-value { font-weight: 600; color: #e2e8f0 }
+  .table-summary .stat.pk .stat-value { color: #fbbf24 }
+  .table-summary .stat-sub { color: #64748b; font-size: .7rem }
   .side-panel {
     position: sticky;
     top: 40px;
@@ -572,18 +639,47 @@
               <div class="table-combo-panel hidden" id="editor-table-panel"></div>
             </div>
           </div>
-          <button class="btn secondary" id="btn-load-data" disabled>Load data</button>
-          <button class="btn secondary" id="btn-refresh-data" disabled title="Reload this table's data">⟳ Refresh</button>
-          <button class="btn" id="btn-edit-mode" disabled>Edit mode</button>
+          <button class="btn" id="btn-load-data" disabled>Load data</button>
         </div>
-        <div class="grid-toolbar">
-          <div class="data-note" id="data-editor-note">Select a schema and table. Up to 100 rows will be shown.</div>
-          <div class="grid-copy-actions">
-            <button class="btn secondary" id="btn-copy-header" disabled title="Copy all rows with column headers">Copy with header</button>
-            <button class="btn secondary" id="btn-copy-plain" disabled title="Copy all rows without headers">Copy without header</button>
+        <div class="table-panel hidden" id="editor-table-summary">
+          <div class="table-panel-head">
+            <div class="table-panel-title">
+              <div class="table-panel-name" id="summary-table-name"></div>
+              <div class="table-summary">
+                <span class="stat pk" id="summary-pk-chip"><span class="stat-label">PK</span><span class="stat-value" id="summary-pk-count">0</span></span>
+                <span class="stat"><span class="stat-label">Rows</span><span class="stat-value" id="summary-row-count">0</span><span class="stat-sub" id="summary-row-shown"></span></span>
+                <span class="stat"><span class="stat-label">Columns</span><span class="stat-value" id="summary-col-count">0</span></span>
+              </div>
+            </div>
+            <div class="table-panel-actions">
+              <button class="btn secondary sm" id="btn-refresh-data" disabled title="Reload this table's data">⟳ Refresh</button>
+              <button class="btn sm" id="btn-edit-mode" disabled>✎ Edit mode</button>
+            </div>
+          </div>
+          <div class="table-panel-tools">
+            <div class="tools-left">
+              <div class="column-search">
+                <input type="text" id="editor-column-search" placeholder="Search column name…" autocomplete="off">
+                <button type="button" class="column-search-clear hidden" id="editor-column-search-clear" title="Clear">✕</button>
+              </div>
+              <span class="paste-hint" title="Copy rows in Excel (with or without the header row), click the table, then paste">Paste rows from Excel with <kbd>Ctrl</kbd>+<kbd>V</kbd></span>
+            </div>
+            <div class="btn-group">
+              <button class="btn secondary sm" id="btn-copy-header" disabled title="Copy all rows with column headers">Copy with header</button>
+              <button class="btn secondary sm" id="btn-copy-plain" disabled title="Copy all rows without headers">Copy without header</button>
+            </div>
+          </div>
+          <div class="paste-bar hidden" id="paste-bar">
+            <div id="paste-bar-text"></div>
+            <div class="paste-bar-actions">
+              <button class="btn secondary sm" id="btn-paste-discard">Discard</button>
+              <button class="btn success sm" id="btn-paste-insert">Insert rows</button>
+            </div>
+          </div>
+          <div class="data-grid-wrap" id="data-grid-wrap"><table class="data-grid"><thead id="data-grid-head"></thead><tbody id="data-grid-body"></tbody></table>
+            <div class="data-grid-empty hidden" id="data-grid-empty">No columns match your search.</div>
           </div>
         </div>
-        <div class="data-grid-wrap hidden" id="data-grid-wrap"><table class="data-grid"><thead id="data-grid-head"></thead><tbody id="data-grid-body"></tbody></table></div>
       </div>
     </div>
   </div>
@@ -696,6 +792,7 @@ let truncateAvailableTables = []
 let truncateSelectedTables = []
 let editorData = null
 let editorEditMode = false
+let editorPending = null   // { mapped: Set<colIndex>, rows: [[value per column]] } — pasted rows not yet inserted
 let editorSortColumn = null
 let editorSortDir = 'asc'
 let editorAvailableTables = []
@@ -968,7 +1065,8 @@ $('btn-refresh-data').addEventListener('click', () => {
 })
 $('btn-edit-mode').addEventListener('click', () => {
   editorEditMode = !editorEditMode
-  $('btn-edit-mode').textContent = editorEditMode ? 'Close edit mode' : 'Edit mode'
+  $('btn-edit-mode').textContent = editorEditMode ? '✕ Close edit mode' : '✎ Edit mode'
+  $('btn-edit-mode').classList.toggle('edit-on', editorEditMode)
   renderEditorGrid()
 })
 
@@ -1013,16 +1111,26 @@ function loadEditorData() {
   return fetch(`/table-data?schema=${encodeURIComponent(schema)}&table=${encodeURIComponent(table)}`)
     .then(r => r.json()).then(data => {
       if (data.error) throw new Error(data.error)
+      if (!editorData || editorData.schema !== data.schema || editorData.table !== data.table) {
+        $('editor-column-search').value = ''
+        editorPending = null
+      }
       editorData = data; editorEditMode = false
       editorSortColumn = null; editorSortDir = 'asc'
-      $('btn-edit-mode').textContent = 'Edit mode'
+      $('btn-edit-mode').textContent = '✎ Edit mode'
+      $('btn-edit-mode').classList.remove('edit-on')
       $('btn-edit-mode').disabled = false
       $('btn-refresh-data').disabled = false
       $('btn-copy-header').disabled = !data.rows.length
       $('btn-copy-plain').disabled = !data.rows.length
-      $('data-editor-note').textContent = data.primary_keys.length
-        ? `${data.rows.length} row(s) shown. Editable primary key: ${data.primary_keys.join(', ')}`
-        : `${data.rows.length} row(s) shown. No primary key: updates match all original row values and save only when exactly one row matches.`
+      const totalRows = Number(data.total_rows ?? data.rows.length)
+      $('summary-table-name').innerHTML = `<span class="schema">${escapeHtml(data.schema)}.</span>${escapeHtml(data.table)}`
+      $('summary-pk-count').textContent = data.primary_keys.length
+      $('summary-pk-chip').title = data.primary_keys.length ? data.primary_keys.join(', ') : 'No primary key'
+      $('summary-row-count').textContent = totalRows.toLocaleString()
+      $('summary-row-shown').textContent = data.rows.length < totalRows ? `(showing ${data.rows.length})` : ''
+      $('summary-col-count').textContent = data.columns.length
+      show($('editor-table-summary'))
       renderEditorGrid()
       pushEditorHistory(schema, table)
     }).catch(error => showErr($('err-data-editor'), error.message))
@@ -1109,8 +1217,10 @@ function renderEditorGrid() {
   const head = $('data-grid-head'), body = $('data-grid-body')
   head.innerHTML = ''; body.innerHTML = ''
   const headerRow = document.createElement('tr')
+  const numTh = document.createElement('th'); numTh.className = 'row-num'; numTh.textContent = '#'
+  headerRow.appendChild(numTh)
   editorData.columns.forEach((column, colIndex) => {
-    const th = document.createElement('th'); th.className = 'sortable'
+    const th = document.createElement('th'); th.className = 'sortable'; th.dataset.col = colIndex
     const label = document.createElement('span')
     label.textContent = column.name + (editorData.primary_keys.includes(column.name) ? ' 🔑' : '')
     const arrow = document.createElement('span'); arrow.className = 'sort-arrow'
@@ -1126,10 +1236,14 @@ function renderEditorGrid() {
   })
   if (editorEditMode) { const th = document.createElement('th'); th.textContent = 'Action'; th.className = 'row-action'; headerRow.appendChild(th) }
   head.appendChild(headerRow)
+  renderPendingRows(body)
   editorData.rows.forEach((row, rowIndex) => {
     const tr = document.createElement('tr')
+    const numTd = document.createElement('td'); numTd.className = 'row-num'; numTd.textContent = rowIndex + 1
+    tr.appendChild(numTd)
     editorData.columns.forEach((column, colIndex) => {
       const td = document.createElement('td'), value = row[colIndex]
+      td.dataset.col = colIndex
       if (editorData.primary_keys.includes(column.name)) td.className = 'pk-cell'
       if (editorEditMode) {
         const input = document.createElement('input'); input.type = 'text'
@@ -1150,8 +1264,175 @@ function renderEditorGrid() {
     }
     body.appendChild(tr)
   })
-  show($('data-grid-wrap'))
+  applyColumnFilter()
+  updatePasteBar()
 }
+
+// ── Paste rows from Excel ─────────────────────────────────────────────────────
+// Excel puts TSV on the clipboard; cells containing tabs/newlines/quotes are
+// wrapped in double quotes with inner quotes doubled.
+function parseClipboardTSV(text) {
+  const rows = [[]]; let cell = '', i = 0, quoted = false
+  text = text.replace(/\r\n?/g, '\n').replace(/\n$/, '')
+  while (i < text.length) {
+    const ch = text[i]
+    if (quoted) {
+      if (ch === '"' && text[i + 1] === '"') { cell += '"'; i += 2; continue }
+      if (ch === '"') { quoted = false; i++; continue }
+      cell += ch; i++; continue
+    }
+    if (ch === '"' && cell === '') { quoted = true; i++; continue }
+    if (ch === '\t') { rows[rows.length - 1].push(cell); cell = ''; i++; continue }
+    if (ch === '\n') { rows[rows.length - 1].push(cell); rows.push([]); cell = ''; i++; continue }
+    cell += ch; i++
+  }
+  rows[rows.length - 1].push(cell)
+  return rows.filter(row => row.some(value => value.trim() !== ''))
+}
+
+function visibleColumnIndexes() {
+  const query = $('editor-column-search').value.trim().toLowerCase()
+  return editorData.columns.map((c, i) => i).filter(i => !query || editorData.columns[i].name.toLowerCase().includes(query))
+}
+
+function handleEditorPaste(text) {
+  const parsed = parseClipboardTSV(text)
+  if (!parsed.length) return
+  const names = editorData.columns.map(c => c.name.toLowerCase())
+  let targets, dataRows = parsed
+  const first = parsed[0].map(v => v.trim().toLowerCase())
+  const headerHits = first.filter(v => v && names.includes(v)).length
+  if (headerHits && headerHits >= first.filter(Boolean).length / 2) {
+    // First row is a header — map by column name
+    const unknown = parsed[0].filter((v, i) => first[i] && !names.includes(first[i]))
+    if (unknown.length) throw new Error(`Pasted header has column(s) not in this table: ${unknown.join(', ')}`)
+    targets = first.map(v => v ? names.indexOf(v) : -1)
+    dataRows = parsed.slice(1)
+    if (!dataRows.length) throw new Error('Only a header row was pasted — copy the data rows too.')
+  } else {
+    const width = Math.max(...parsed.map(r => r.length))
+    const visible = visibleColumnIndexes()
+    if (width === editorData.columns.length) targets = editorData.columns.map((c, i) => i)
+    else if (width === visible.length) targets = visible
+    else throw new Error(
+      `Pasted ${width} column(s), but the table has ${editorData.columns.length}` +
+      (visible.length !== editorData.columns.length ? ` (${visible.length} shown by search)` : '') +
+      '. Copy the header row from Excel too, or use column search to show exactly the columns you are pasting.'
+    )
+  }
+  if (!editorPending) editorPending = { mapped: new Set(), rows: [] }
+  targets.forEach(t => { if (t >= 0) editorPending.mapped.add(t) })
+  dataRows.forEach(src => {
+    const row = editorData.columns.map(() => '')
+    targets.forEach((t, i) => { if (t >= 0) row[t] = src[i] ?? '' })
+    editorPending.rows.push(row)
+  })
+  hide($('err-data-editor')); hide($('ok-data-editor'))
+  renderEditorGrid()
+  $('data-grid-wrap').scrollTop = 0
+}
+
+function renderPendingRows(body) {
+  if (!editorPending) return
+  editorPending.rows.forEach((row, rowIndex) => {
+    const tr = document.createElement('tr'); tr.className = 'pending-row'
+    const numTd = document.createElement('td'); numTd.className = 'row-num'
+    const remove = document.createElement('button'); remove.className = 'pending-remove'
+    remove.textContent = '✕'; remove.title = 'Remove this pasted row'
+    remove.addEventListener('click', () => {
+      editorPending.rows.splice(rowIndex, 1)
+      if (!editorPending.rows.length) editorPending = null
+      renderEditorGrid()
+    })
+    numTd.append('+', remove); tr.appendChild(numTd)
+    editorData.columns.forEach((column, colIndex) => {
+      const td = document.createElement('td'); td.dataset.col = colIndex
+      const input = document.createElement('input'); input.type = 'text'; input.value = row[colIndex]
+      if (!editorPending.mapped.has(colIndex)) { input.classList.add('unmapped'); input.placeholder = 'default' }
+      input.addEventListener('input', () => {
+        row[colIndex] = input.value
+        if (input.value !== '') { editorPending.mapped.add(colIndex); input.classList.remove('unmapped') }
+      })
+      td.appendChild(input); tr.appendChild(td)
+    })
+    if (editorEditMode) tr.appendChild(Object.assign(document.createElement('td'), { className: 'row-action' }))
+    body.appendChild(tr)
+  })
+}
+
+function updatePasteBar() {
+  const count = editorPending ? editorPending.rows.length : 0
+  $('paste-bar').classList.toggle('hidden', !count)
+  if (!count) return
+  $('paste-bar-text').innerHTML =
+    `<strong>${count}</strong> pasted row(s) ready — filling <strong>${editorPending.mapped.size}</strong> of ${editorData.columns.length} column(s). ` +
+    'Review or edit them below, then insert.'
+  $('btn-paste-insert').disabled = false
+  $('btn-paste-insert').innerHTML = `<span>Insert ${count} row(s)</span>`
+}
+
+document.addEventListener('paste', e => {
+  if (!editorData || $('card-data-editor').classList.contains('hidden')) return
+  const text = e.clipboardData && e.clipboardData.getData('text/plain')
+  if (!text) return
+  const target = e.target
+  const inField = target && target.matches && target.matches('input, textarea, select')
+  // Let normal pastes through: toolbar/search fields, and single values pasted into a grid cell
+  if (inField && (!target.closest('#data-grid-wrap') || !/[\t\n]/.test(text.replace(/\r?\n$/, '')))) return
+  if (!inField && !$('card-data-editor').contains(target) && target !== document.body) return
+  e.preventDefault()
+  try { handleEditorPaste(text) } catch (error) { showErr($('err-data-editor'), error.message) }
+})
+
+$('btn-paste-discard').addEventListener('click', () => { editorPending = null; renderEditorGrid() })
+
+$('btn-paste-insert').addEventListener('click', async () => {
+  if (!editorPending || !editorPending.rows.length) return
+  const btn = $('btn-paste-insert'), count = editorPending.rows.length
+  const indexes = [...editorPending.mapped].sort((a, b) => a - b)
+  const payload = {
+    schema: editorData.schema, table: editorData.table,
+    columns: indexes.map(i => editorData.columns[i].name),
+    rows: editorPending.rows.map(row => indexes.map(i => row[i])),
+  }
+  setLoading(btn, true, 'Inserting…'); hide($('err-data-editor')); hide($('ok-data-editor'))
+  try {
+    const response = await fetch('/table-data', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+    })
+    const data = await response.json()
+    if (!response.ok || data.error) throw new Error(data.error || 'Insert failed.')
+    editorPending = null
+    await loadEditorData()
+    $('ok-data-editor').textContent = data.message; show($('ok-data-editor'))
+  } catch (error) {
+    showErr($('err-data-editor'), error.message)
+    setLoading(btn, false, `Insert ${count} row(s)`)
+  }
+})
+
+// ── Column search: hides non-matching columns in place (no re-render, so
+// unsaved edit-mode input values are kept) ────────────────────────────────────
+function applyColumnFilter() {
+  if (!editorData) return
+  const query = $('editor-column-search').value.trim().toLowerCase()
+  const matches = editorData.columns.map(column => !query || column.name.toLowerCase().includes(query))
+  document.querySelectorAll('#data-grid-wrap [data-col]').forEach(cell => {
+    cell.classList.toggle('col-hidden', !matches[cell.dataset.col])
+  })
+  const visible = matches.filter(Boolean).length
+  $('summary-col-count').textContent = query ? `${visible} / ${editorData.columns.length}` : editorData.columns.length
+  $('data-grid-empty').classList.toggle('hidden', visible > 0)
+  $('data-grid-head').parentElement.classList.toggle('hidden', visible === 0)
+  $('editor-column-search-clear').classList.toggle('hidden', !query)
+}
+$('editor-column-search').addEventListener('input', applyColumnFilter)
+$('editor-column-search').addEventListener('keydown', e => {
+  if (e.key === 'Escape') { e.target.value = ''; applyColumnFilter() }
+})
+$('editor-column-search-clear').addEventListener('click', () => {
+  $('editor-column-search').value = ''; applyColumnFilter(); $('editor-column-search').focus()
+})
 
 async function saveEditorRow(rowIndex, tr, button) {
   const row = editorData.rows[rowIndex], keys = {}, values = {}

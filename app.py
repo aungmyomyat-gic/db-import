@@ -597,11 +597,13 @@ def get_table_data():
             order_sql = " ORDER BY " + ", ".join(f"[{key.replace(']', ']]')}]" for key in primary_keys)
         cursor.execute(f"SELECT TOP {limit} * FROM [{safe_schema}].[{safe_table}]{order_sql}")
         rows = [[_json_table_value(value) for value in row] for row in cursor.fetchall()]
+        cursor.execute(f"SELECT COUNT_BIG(*) FROM [{safe_schema}].[{safe_table}]")
+        total_rows = cursor.fetchone()[0]
         return jsonify({
             "schema": schema, "table": table_name, "columns": columns,
             "primary_keys": primary_keys,
             "identifier_columns": primary_keys or [column["name"] for column in columns],
-            "rows": rows, "limit": limit,
+            "rows": rows, "limit": limit, "total_rows": total_rows,
         })
     except pyodbc.Error as e:
         return jsonify({"error": f"Could not load table data: {e}"}), 400
@@ -670,6 +672,77 @@ def update_table_row():
         if conn is not None:
             conn.rollback()
         return jsonify({"error": f"Could not update row: {e}"}), 400
+    finally:
+        if conn is not None:
+            conn.close()
+
+
+@app.route("/table-data", methods=["POST"])
+def insert_table_rows():
+    """Insert pasted rows into a table in a single all-or-nothing transaction."""
+    cfg = load_config()
+    payload = request.json or {}
+    schema = str(payload.get("schema", "")).strip()
+    table_name = str(payload.get("table", "")).strip()
+    names = payload.get("columns") or []
+    rows = payload.get("rows") or []
+    if not cfg or not schema or not table_name or not isinstance(names, list) or not isinstance(rows, list):
+        return jsonify({"error": "Invalid insert request."}), 400
+    if not names or not rows:
+        return jsonify({"error": "No rows to insert."}), 400
+    if len(rows) > 5000:
+        return jsonify({"error": "Paste at most 5000 rows at a time."}), 400
+    if len(set(names)) != len(names) or any(not isinstance(r, list) or len(r) != len(names) for r in rows):
+        return jsonify({"error": "Every row must have one value per column."}), 400
+
+    conn_str, err = _build_conn_str(
+        cfg["host"], cfg["port"], cfg["database"], cfg["username"], cfg["password"]
+    )
+    if err:
+        return jsonify({"error": err}), 500
+    conn = None
+    try:
+        conn = pyodbc.connect(conn_str, timeout=10)
+        cursor = conn.cursor()
+        columns, _ = _table_metadata(cursor, schema, table_name)
+        if not columns:
+            return jsonify({"error": f"Table '{schema}.{table_name}' was not found."}), 404
+        by_name = {column["name"]: column for column in columns}
+        unknown = [name for name in names if name not in by_name]
+        if unknown:
+            return jsonify({"error": f"Unknown column(s): {', '.join(unknown)}"}), 400
+
+        quote = lambda name: "[" + name.replace("]", "]]") + "]"
+        qualified = f"{quote(schema)}.{quote(table_name)}"
+        cursor.execute(
+            "SELECT name FROM sys.columns WHERE object_id = OBJECT_ID(?) AND is_identity = 1", qualified
+        )
+        identity = {row[0] for row in cursor.fetchall()}
+        prefix = f"SET IDENTITY_INSERT {qualified} ON; " if identity & set(names) else ""
+        suffix = f"; SET IDENTITY_INSERT {qualified} OFF" if prefix else ""
+        insert_sql = (
+            f"{prefix}INSERT INTO {qualified} ({', '.join(quote(n) for n in names)}) "
+            f"VALUES ({', '.join('?' for _ in names)}){suffix}"
+        )
+
+        for row_number, row in enumerate(rows, start=1):
+            values = []
+            for name, value in zip(names, row):
+                # Empty Excel cells become NULL, or the type default for NOT NULL columns
+                if value is None or (isinstance(value, str) and value == ""):
+                    value = None if by_name[name]["nullable"] else _type_default(by_name[name]["type"])
+                values.append(value)
+            try:
+                cursor.execute(insert_sql, values)
+            except pyodbc.Error as e:
+                conn.rollback()
+                return jsonify({"error": f"Row {row_number} failed, nothing was inserted: {e}"}), 400
+        conn.commit()
+        return jsonify({"ok": True, "inserted": len(rows), "message": f"{len(rows)} row(s) inserted."})
+    except pyodbc.Error as e:
+        if conn is not None:
+            conn.rollback()
+        return jsonify({"error": f"Could not insert rows: {e}"}), 400
     finally:
         if conn is not None:
             conn.close()
