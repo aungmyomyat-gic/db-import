@@ -1,16 +1,8 @@
 {
-  "version": "2.0.0",
+  "version": "2.1.0",
   "date": "2026-09-25",
   "notes": [
-    "Versioning Feature Add",
-    "Add row insertion functionality with clipboard support and enhance UI for data management",
-    "Add delete functionality for saved DB connection and enhance UI with about section",
-    "WH030UR_バグ修正",
-    "Enhance data management interface with truncate and editor functionalities",
-    "Add batch job triggering functionality and enhance progress tracking in import process",
-    "Implement background import job functionality and enhance import status tracking",
-    "Add Docker configuration and sharing instructions; refactor app logic for improved performance",
-    ":wq"
+    "Add Gist URL"
   ],
-  "update_url": ""
+  "update_url": "https://gist.githubusercontent.com/aungmyomyat-gic/02424e3be1055f007d480a8c7ba689a7/raw/version.json"
 }
