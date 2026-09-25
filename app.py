@@ -684,7 +684,7 @@ def update_table_row():
 # `update_url` (or the UPDATE_CHECK_URL env var) points at a published copy of
 # the latest version.json; leaving it empty disables the check.
 VERSION_PATH = Path(__file__).with_name("version.json")
-UPDATE_CACHE_SECONDS = 30 * 60
+UPDATE_CACHE_SECONDS = 5 * 60
 _update_cache = {"at": 0.0, "data": None}
 
 
@@ -701,6 +701,9 @@ def _version_tuple(version: str) -> tuple:
 
 
 def _fetch_latest_version(url: str) -> dict:
+    # GitHub's raw CDN keeps serving an old Gist for a few minutes after an
+    # edit; a changing query string makes it return the current content.
+    url += ("&" if "?" in url else "?") + f"t={int(time.time())}"
     req = urllib.request.Request(url, headers={"Accept": "application/json", "Cache-Control": "no-cache"})
     with urllib.request.urlopen(req, timeout=5) as resp:
         return json.loads(resp.read().decode("utf-8"))

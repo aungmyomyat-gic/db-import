@@ -106,4 +106,4 @@ Work on `dev`. When it's steady, commit everything and run:
 The script builds release notes from commit messages since the last `v*` tag,
 bumps `version.json`, merges `dev` → `main`, tags and pushes. Finally, paste the
 printed `version.json` into the Gist that `update_url` points to — running apps
-check it (at most every 30 minutes) and show the update popup.
+check it (at most every 5 minutes) and show the update popup.

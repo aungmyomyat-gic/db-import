@@ -80,5 +80,5 @@ It builds release notes from your commit messages since the last `v*` tag
 
 Each running app compares its own `version.json` (the one in its project folder) with
 the file at `update_url` (or the `UPDATE_CHECK_URL` env var), at most every
-30 minutes. If `update_url` is empty, the check is off. The repo is private,
-so `update_url` must point to a copy the container can read without logging in.
+5 minutes; **About → Check for updates** checks immediately. If `update_url` is
+empty, the check is off.
