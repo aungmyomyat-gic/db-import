@@ -28,8 +28,12 @@ access on GitHub.
 ```bash
 git clone https://github.com/aungmyomyat-gic/db-import.git
 cd db-import
-docker compose -f docker-compose.share.yml up -d --build
+docker compose up -d --build
 ```
+
+`docker-compose.yml` joins the `icl-lv-core-system_sazaby-network` Docker
+network, so start the ICL core system first. The project folder is mounted
+into the container, so a `git pull` updates the app straight away.
 
 Open http://localhost:5000, go to **Connection**, and enter your SQL Server
 details. They are saved in `./data` and kept across updates.
@@ -44,29 +48,29 @@ run `./update.sh` (Mac / Linux) in the `db-import` folder. Both run:
 
 ```bash
 git pull --ff-only origin main
-docker compose -f docker-compose.share.yml up -d --build
+docker compose up -d --build
 ```
 
-Then reload the page.
+Then reload the page. The `--build` step is quick when nothing changed; it only
+really rebuilds when `Dockerfile` or `requirements.txt` changed.
 
 ## Stop / start
 
 ```bash
-docker compose -f docker-compose.share.yml down     # stop
-docker compose -f docker-compose.share.yml up -d    # start again
+docker compose down     # stop
+docker compose up -d    # start again
 ```
 
 ## Troubleshooting
 
 | Problem | Fix |
 | --- | --- |
-| `No SQL Server ODBC driver found inside container` | Rebuild: `docker compose -f docker-compose.share.yml up -d --build` |
+| `No SQL Server ODBC driver found inside container` | Rebuild: `docker compose up -d --build` |
 | Can't connect to a database on your own PC | Use `host.docker.internal` as the host and check SQL Server listens on port 1433 |
-| Port 5000 is already in use | Change `"5000:5000"` to e.g. `"5050:5000"` in `docker-compose.share.yml`, then open http://localhost:5050 |
+| Port 5000 is already in use | Change `"5000:5000"` to e.g. `"5050:5000"` in `docker-compose.yml`, then open http://localhost:5050 |
 | `git pull` fails in the update script | You have local changes in the folder. Run `git status`, then `git stash` or discard them, and run the update again |
 
-More sharing options (e.g. sending a built image to someone without internet
-access to the package servers) are in [SHARE.md](SHARE.md).
+More detail on sharing, the database host and releasing is in [SHARE.md](SHARE.md).
 
 ---
 

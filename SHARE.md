@@ -12,7 +12,7 @@ private repo):
 ```bash
 git clone https://github.com/aungmyomyat-gic/db-import.git
 cd db-import
-docker compose -f docker-compose.share.yml up -d --build
+docker compose up -d --build
 ```
 
 Open:
@@ -20,25 +20,6 @@ Open:
 ```text
 http://localhost:5000
 ```
-
-## Share A Built Image
-
-Build and export the image on your machine:
-
-```bash
-docker build -t db-connect:latest .
-docker save db-connect:latest -o db-connect.tar
-```
-
-Send `db-connect.tar` and `docker-compose.image.yml`. Your friend runs:
-
-```bash
-docker load -i db-connect.tar
-docker compose -f docker-compose.image.yml up
-```
-
-This option is useful when your friend cannot build the image because their
-network cannot download the Microsoft ODBC driver packages.
 
 ## Database Host
 
@@ -60,8 +41,7 @@ No SQL Server ODBC driver found inside container.
 ```
 
 they are probably running an old/bad image or running Python outside Docker.
-Rebuild from this Dockerfile, or send them the built image with
-`docker save` / `docker load`.
+Rebuild with `docker compose up -d --build`.
 
 ## When A Rebuild Is Needed
 
@@ -77,7 +57,7 @@ In the `db-import` folder, double-click `update.bat` (Windows) or run
 
 ```bash
 git pull --ff-only origin main
-docker compose -f docker-compose.share.yml up -d --build
+docker compose up -d --build
 ```
 
 The saved DB connection in `./data` is kept.
@@ -98,7 +78,7 @@ It builds release notes from your commit messages since the last `v*` tag
 `dev` → `main`, tags `vX.Y.Z` and pushes. At the end it prints the new
 `version.json` — paste it into the Gist that `update_url` points to.
 
-Each running app compares its own `version.json` (baked into the image) with
+Each running app compares its own `version.json` (the one in its project folder) with
 the file at `update_url` (or the `UPDATE_CHECK_URL` env var), at most every
 30 minutes. If `update_url` is empty, the check is off. The repo is private,
 so `update_url` must point to a copy the container can read without logging in.

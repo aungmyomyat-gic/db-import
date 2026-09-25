@@ -6,5 +6,5 @@ cd "$(dirname "$0")"
 echo "==> Pulling latest version from GitHub (main)..."
 git pull --ff-only origin main
 echo "==> Rebuilding and restarting the app..."
-docker compose -f docker-compose.share.yml up -d --build
+docker compose up -d --build
 echo "==> Done. Open http://localhost:5000 and reload the page."
