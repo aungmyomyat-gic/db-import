@@ -4,12 +4,15 @@ The Docker image includes the Python packages and the Microsoft SQL Server ODBC
 driver. Your friend only needs Docker, unless they choose to run the app outside
 Docker.
 
-## Share Source Code
+## Share Source Code (recommended — gets update notifications)
 
-Send the project folder, then your friend can run:
+Your friend clones the repo over HTTPS once (they need read access to the
+private repo):
 
 ```bash
-docker compose -f docker-compose.share.yml up --build
+git clone https://github.com/aungmyomyat-gic/db-import.git
+cd db-import
+docker compose -f docker-compose.share.yml up -d --build
 ```
 
 Open:
@@ -65,3 +68,37 @@ Rebuild from this Dockerfile, or send them the built image with
 No rebuild is needed for normal app changes in development mode.
 
 A rebuild is needed when `Dockerfile` or `requirements.txt` changes.
+
+## Updating
+
+When a new version is released, the app shows an **Update available** popup.
+In the `db-import` folder, double-click `update.bat` (Windows) or run
+`./update.sh` (Mac / Linux). Both do:
+
+```bash
+git pull --ff-only origin main
+docker compose -f docker-compose.share.yml up -d --build
+```
+
+The saved DB connection in `./data` is kept.
+
+## Releasing A New Version (maintainer)
+
+Work on the `dev` branch. When it's steady, commit everything and run:
+
+```bash
+./release.sh patch            # 1.1.0 → 1.1.1  bug fixes
+./release.sh minor            # 1.1.0 → 1.2.0  new features
+./release.sh major            # 1.1.0 → 2.0.0  big changes
+./release.sh minor --dry-run  # preview only
+```
+
+It builds release notes from your commit messages since the last `v*` tag
+(you can edit them before confirming), bumps `version.json`, merges
+`dev` → `main`, tags `vX.Y.Z` and pushes. At the end it prints the new
+`version.json` — paste it into the Gist that `update_url` points to.
+
+Each running app compares its own `version.json` (baked into the image) with
+the file at `update_url` (or the `UPDATE_CHECK_URL` env var), at most every
+30 minutes. If `update_url` is empty, the check is off. The repo is private,
+so `update_url` must point to a copy the container can read without logging in.

@@ -1,0 +1,11 @@
+{
+  "version": "1.1.0",
+  "date": "2026-09-25",
+  "notes": [
+    "Data Editor: row numbers, table summary (PK / rows / columns)",
+    "Data Editor: search columns by name",
+    "Data Editor: paste rows from Excel and insert them",
+    "Update notification when a new version is released"
+  ],
+  "update_url": ""
+}

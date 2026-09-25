@@ -44,6 +44,40 @@
     display: flex; align-items: center; justify-content: center;
     font-size: .85rem; flex: 0 0 auto;
   }
+  .version-badge {
+    font-size: .68rem; font-weight: 500; color: #94a3b8; background: #1e213a;
+    border: 1px solid #2d3148; border-radius: 999px; padding: 2px 8px; cursor: pointer;
+  }
+  .version-badge.has-update { color: #6ee7b7; border-color: #14532d; background: #0f2a22 }
+  .version-badge.has-update::after { content: ' • update'; }
+  .modal-backdrop {
+    position: fixed; inset: 0; z-index: 200; background: rgba(5, 6, 12, .72);
+    display: flex; align-items: center; justify-content: center; padding: 16px;
+  }
+  .modal {
+    width: 100%; max-width: 520px; background: #1a1d2e; border: 1px solid #2d3148;
+    border-radius: 14px; box-shadow: 0 20px 60px rgba(0, 0, 0, .5); overflow: hidden;
+  }
+  .modal-head { padding: 18px 20px 6px; display: flex; align-items: center; gap: 10px }
+  .modal-head h3 { font-size: 1.05rem; color: #f0f4ff }
+  .modal-icon {
+    width: 30px; height: 30px; border-radius: 8px; background: #059669; color: #fff;
+    display: flex; align-items: center; justify-content: center; font-size: .9rem; flex: 0 0 auto;
+  }
+  .modal-body { padding: 8px 20px 18px; color: #cbd5e1; font-size: .86rem; line-height: 1.55 }
+  .modal-body .version-jump { color: #94a3b8; margin-bottom: 12px }
+  .modal-body .version-jump strong { color: #6ee7b7 }
+  .modal-body ul { margin: 0 0 14px 18px }
+  .modal-body .step-label { font-size: .72rem; color: #64748b; text-transform: uppercase; letter-spacing: .06em; margin: 10px 0 6px }
+  .cmd-box {
+    display: flex; align-items: center; gap: 8px; background: #0f1117; border: 1px solid #2d3148;
+    border-radius: 8px; padding: 8px 8px 8px 12px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-size: .78rem; color: #e2e8f0;
+  }
+  .cmd-box code { flex: 1 1 auto; white-space: pre-wrap; word-break: break-word; line-height: 1.5 }
+  .modal-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 20px; border-top: 1px solid #2d3148; background: #141827 }
+  .version-status { font-size: .84rem; color: #94a3b8; margin: 8px 0 12px }
+  .version-status.ok { color: #6ee7b7 }
   .container {
     width: 100%;
     max-width: 1180px;
@@ -529,6 +563,7 @@
     <div class="topbar-brand">
       <span class="topbar-logo">⇄</span>
       <span>DB Import</span>
+      <span class="version-badge" id="version-badge" title="Version info">v…</span>
     </div>
     <nav class="nav-bar" aria-label="Main navigation">
       <button class="nav-btn active" id="nav-import">Import</button>
@@ -751,6 +786,11 @@
     <div class="card-title active"><span class="step">i</span> About</div>
     <p class="subtitle" style="margin-bottom:18px">Excel → SQL Server Importer — how table scanning works.</p>
     <div class="side-section">
+      <h2>Version</h2>
+      <div class="version-status" id="about-version-status">Current version: <strong id="about-version">…</strong></div>
+      <button class="btn secondary sm" id="btn-check-update">Check for updates</button>
+    </div>
+    <div class="side-section">
       <h2>Table တွေကို ဘယ်လိုရှာလဲ</h2>
       <p>App က user ရွေးထားတဲ့ Excel sheet ထဲက <strong>■ 実施前テストデータ</strong> section ကိုပဲ ဖတ်ပါတယ်။ အဲဒီ section ထဲမှာ <strong>MZAIHP(...)</strong>, <strong>MSHHNP(...)</strong> လို table name တွေကို ရှာပါတယ်။</p>
       <ul class="side-list">
@@ -775,6 +815,25 @@
       </div>
     </div>
   </aside>
+</div>
+
+<div class="modal-backdrop hidden" id="update-modal" role="dialog" aria-modal="true" aria-labelledby="update-modal-title">
+  <div class="modal">
+    <div class="modal-head"><span class="modal-icon">↑</span><h3 id="update-modal-title">Update available</h3></div>
+    <div class="modal-body">
+      <div class="version-jump">You have <span id="update-current"></span> — the latest is <strong id="update-latest"></strong></div>
+      <ul id="update-notes"></ul>
+      <div class="step-label">To update, in your db-import folder run</div>
+      <div class="cmd-box"><code id="update-cmd">git pull origin main &amp;&amp; docker compose -f docker-compose.share.yml up -d --build</code>
+        <button class="btn secondary sm" id="btn-copy-update-cmd">Copy</button></div>
+      <div class="step-label">or double-click</div>
+      <div><code>update.bat</code> (Windows) &nbsp;·&nbsp; <code>./update.sh</code> (Mac / Linux)</div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn secondary sm" id="btn-update-later">Remind me later</button>
+      <button class="btn sm" id="btn-update-ok">Got it</button>
+    </div>
+  </div>
 </div>
 
 <script>
@@ -804,6 +863,67 @@ let editorHistory = []
 try { editorHistory = JSON.parse(localStorage.getItem(EDITOR_HISTORY_KEY) || '[]') } catch (_) { editorHistory = [] }
 
 // ── On load: check saved config ───────────────────────────────────────────────
+// ── Version / update notification ─────────────────────────────────────────────
+const UPDATE_DISMISS_KEY = 'dbimport_update_dismissed'
+let latestVersionInfo = null
+
+function showUpdateModal(info) {
+  $('update-current').textContent = 'v' + info.current
+  $('update-latest').textContent = 'v' + info.latest
+  $('update-notes').innerHTML = (info.latest_notes || []).map(n => `<li>${escapeHtml(n)}</li>`).join('')
+  show($('update-modal'))
+}
+
+function applyVersionInfo(info, fromUser) {
+  latestVersionInfo = info
+  $('version-badge').textContent = 'v' + info.current
+  $('about-version').textContent = 'v' + info.current
+  const status = $('about-version-status')
+  status.classList.remove('ok')
+  $('version-badge').classList.toggle('has-update', !!info.update_available)
+  if (info.check === 'disabled') {
+    status.innerHTML = `Current version: <strong>v${escapeHtml(info.current)}</strong> · update check is not configured`
+  } else if (info.check === 'failed') {
+    status.innerHTML = `Current version: <strong>v${escapeHtml(info.current)}</strong> · could not check for updates (offline?)`
+  } else if (info.update_available) {
+    status.innerHTML = `Current version: <strong>v${escapeHtml(info.current)}</strong> · <strong>v${escapeHtml(info.latest)}</strong> is available`
+    let dismissed = null
+    try { dismissed = localStorage.getItem(UPDATE_DISMISS_KEY) } catch (_) {}
+    if (fromUser || dismissed !== info.latest) showUpdateModal(info)
+  } else {
+    status.classList.add('ok')
+    status.innerHTML = `Current version: <strong>v${escapeHtml(info.current)}</strong> · you are up to date`
+  }
+}
+
+function checkForUpdates(force) {
+  return fetch('/version' + (force ? '?force=1' : '')).then(r => r.json())
+    .then(info => applyVersionInfo(info, force)).catch(() => {})
+}
+
+$('version-badge').addEventListener('click', () => {
+  if (latestVersionInfo && latestVersionInfo.update_available) showUpdateModal(latestVersionInfo)
+  else $('nav-about').click()
+})
+$('btn-check-update').addEventListener('click', async () => {
+  const btn = $('btn-check-update'); setLoading(btn, true, 'Checking…')
+  await checkForUpdates(true); setLoading(btn, false, 'Check for updates')
+})
+$('btn-update-later').addEventListener('click', () => {
+  try { localStorage.setItem(UPDATE_DISMISS_KEY, latestVersionInfo.latest) } catch (_) {}
+  hide($('update-modal'))
+})
+$('btn-update-ok').addEventListener('click', () => hide($('update-modal')))
+$('update-modal').addEventListener('click', e => { if (e.target === $('update-modal')) hide($('update-modal')) })
+$('btn-copy-update-cmd').addEventListener('click', async () => {
+  const btn = $('btn-copy-update-cmd')
+  try { await navigator.clipboard.writeText($('update-cmd').textContent) } catch (_) {}
+  btn.textContent = 'Copied!'; setTimeout(() => { btn.textContent = 'Copy' }, 1200)
+})
+checkForUpdates(false)
+// Long-running tabs: re-check every hour
+setInterval(() => checkForUpdates(false), 60 * 60 * 1000)
+
 fetch('/config').then(r => r.json()).then(data => {
   if (data.configured) {
     isConfigured = true

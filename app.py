@@ -677,6 +677,58 @@ def update_table_row():
             conn.close()
 
 
+# ── Version / update check ────────────────────────────────────────────────────
+# version.json is baked into the image, so it is the version this copy runs.
+# `update_url` (or the UPDATE_CHECK_URL env var) points at a published copy of
+# the latest version.json; leaving it empty disables the check.
+VERSION_PATH = Path(__file__).with_name("version.json")
+UPDATE_CACHE_SECONDS = 30 * 60
+_update_cache = {"at": 0.0, "data": None}
+
+
+def _load_version_info() -> dict:
+    try:
+        return json.loads(VERSION_PATH.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {"version": "0.0.0"}
+
+
+def _version_tuple(version: str) -> tuple:
+    parts = [int(n) for n in re.findall(r"\d+", str(version))[:3]]
+    return tuple(parts + [0] * (3 - len(parts)))
+
+
+def _fetch_latest_version(url: str) -> dict:
+    req = urllib.request.Request(url, headers={"Accept": "application/json", "Cache-Control": "no-cache"})
+    with urllib.request.urlopen(req, timeout=5) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
+@app.route("/version", methods=["GET"])
+def get_version():
+    local = _load_version_info()
+    result = {"current": local.get("version", "0.0.0"), "date": local.get("date"), "notes": local.get("notes", [])}
+    url = os.environ.get("UPDATE_CHECK_URL") or local.get("update_url") or ""
+    if not url:
+        return jsonify({**result, "check": "disabled"})
+
+    now = time.time()
+    force = request.args.get("force") == "1"
+    if force or _update_cache["data"] is None or now - _update_cache["at"] > UPDATE_CACHE_SECONDS:
+        try:
+            _update_cache["data"] = _fetch_latest_version(url)
+            _update_cache["at"] = now
+        except (OSError, ValueError, urllib.error.URLError) as e:
+            return jsonify({**result, "check": "failed", "error": str(e)})
+    latest = _update_cache["data"] or {}
+    latest_version = str(latest.get("version", "0.0.0"))
+    return jsonify({
+        **result, "check": "ok", "latest": latest_version,
+        "latest_date": latest.get("date"), "latest_notes": latest.get("notes", []),
+        "update_available": _version_tuple(latest_version) > _version_tuple(result["current"]),
+    })
+
+
 @app.route("/table-data", methods=["POST"])
 def insert_table_rows():
     """Insert pasted rows into a table in a single all-or-nothing transaction."""
