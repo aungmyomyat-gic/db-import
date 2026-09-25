@@ -7,6 +7,7 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <title>DB Import</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%234f46e5'/%3E%3Cg fill='none' stroke='white' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round' transform='translate(4 4) scale(1)'%3E%3Cellipse cx='12' cy='6' rx='7' ry='2.6'/%3E%3Cpath d='M5 6v12c0 1.44 3.13 2.6 7 2.6s7-1.16 7-2.6V6'/%3E%3Cpath d='M5 12c0 1.44 3.13 2.6 7 2.6s7-1.16 7-2.6'/%3E%3C/g%3E%3C/svg%3E">
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0 }
   body {
@@ -133,13 +134,10 @@
   .nav-btn.active { color: #fff; background: #4f46e5 }
   .nav-btn:disabled { color: #4a5568; cursor: not-allowed; background: transparent }
   .nav-icon-info {
-    display: inline-flex; align-items: center; justify-content: center;
-    width: 15px; height: 15px; border-radius: 50%;
-    background: #4f46e5; color: #fff;
-    font-size: .68rem; font-style: italic; font-weight: 700;
-    margin-right: 6px; vertical-align: middle;
+    display: inline-block; width: 17px; height: 17px; flex: 0 0 auto;
+    margin-right: 7px; vertical-align: -3px; border-radius: 50%;
   }
-  .nav-btn.active .nav-icon-info { background: rgba(255, 255, 255, .25); color: #fff }
+  .nav-btn.active .nav-icon-info { box-shadow: 0 0 0 1.5px rgba(255, 255, 255, .85) }
   .multi-table-list { display: grid; gap: 8px; min-width: 0; width: 100% }
   .multi-table-row { display: flex; gap: 7px; align-items: center; min-width: 0; width: 100% }
   .multi-table-row input { flex: 1 1 auto; min-width: 0; width: 100% }
@@ -386,15 +384,24 @@
     align-items: center;
     gap: 8px;
   }
+  /* Card title icons: filled colour circle with a white glyph */
   .card-title .step {
-    background: #2d3148;
-    border-radius: 50%;
-    width: 22px; height: 22px;
+    --c1: #818cf8; --c2: #4f46e5;
+    width: 26px; height: 26px; border-radius: 50%; flex: 0 0 auto;
     display: flex; align-items: center; justify-content: center;
-    font-size: .75rem; color: #7c85c4;
+    background: linear-gradient(180deg, var(--c1), var(--c2)); color: #fff;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, .35), inset 0 1px 0 rgba(255, 255, 255, .25);
   }
-  .card-title.active .step { background: #4f46e5; color: #fff }
-  .card-title.done .step { background: #10b981; color: #fff }
+  .card-title .step svg { width: 14px; height: 14px }
+  .card-title .step-gear   { --c1: #94a3b8; --c2: #475569 }
+  .card-title .step-trash  { --c1: #f87171; --c2: #dc2626 }
+  .card-title .step-edit   { --c1: #fbbf24; --c2: #d97706 }
+  .card-title .step-file   { --c1: #34d399; --c2: #059669 }
+  .card-title .step-eye    { --c1: #38bdf8; --c2: #0284c7 }
+  .card-title .step-info   { --c1: #4fb3ff; --c2: #1565d8 }
+  .card-title .step-info svg { stroke-width: 3 }
+  .card-title .step-update { --c1: #a78bfa; --c2: #7c3aed }
+  .card-title .step-check  { --c1: #4ade80; --c2: #16a34a }
 
   label { display: block; font-size: .85rem; color: #94a3b8; margin-bottom: 6px }
   input[type=text], input[type=password], select {
@@ -586,7 +593,7 @@
 <header class="topbar">
   <div class="topbar-inner">
     <div class="topbar-brand">
-      <span class="topbar-logo">⇄</span>
+      <span class="topbar-logo"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.66 3.58 3 8 3s8-1.34 8-3V5"/><path d="M4 12c0 1.66 3.58 3 8 3s8-1.34 8-3"/></svg></span>
       <span>DB Import</span>
       <span class="version-badge" id="version-badge" title="Version info">v…</span>
     </div>
@@ -595,7 +602,7 @@
       <button class="nav-btn" id="nav-truncate" disabled>Truncate Table</button>
       <button class="nav-btn" id="nav-editor" disabled>Data Editor</button>
       <button class="nav-btn" id="nav-connection" title="Not connected"><span class="nav-dot" id="nav-conn-dot"></span>Connection</button>
-      <button class="nav-btn" id="nav-about"><span class="nav-icon-info">i</span>About</button>
+      <button class="nav-btn" id="nav-about"><svg class="nav-icon-info" viewBox="0 0 24 24" aria-hidden="true"><defs><linearGradient id="info-grad" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4fb3ff"/><stop offset="1" stop-color="#1565d8"/></linearGradient></defs><circle cx="12" cy="12" r="12" fill="url(#info-grad)"/><circle cx="12" cy="6.8" r="1.9" fill="#fff"/><rect x="10.3" y="10" width="3.4" height="9" rx="1.7" fill="#fff"/></svg>About</button>
     </nav>
   </div>
 </header>
@@ -612,7 +619,7 @@
   <!-- ── Step 0: DB Connection setup ──────────────────── -->
   <div class="card hidden" id="card-conn">
     <div class="card-title active">
-      <span class="step">⚙</span> Database Connection
+      <span class="step step-gear"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></span> Database Connection
     </div>
     <p class="subtitle" style="margin-bottom:18px">
       Enter your database details once — they'll be saved and reused next time.
@@ -661,7 +668,7 @@
   </div>
 
   <div class="card hidden" id="card-truncate-manager">
-    <div class="card-title active"><span class="step">⌫</span> Truncate Table</div>
+    <div class="card-title active"><span class="step step-trash"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg></span> Truncate Table</div>
     <p class="subtitle" style="margin-bottom:18px">Choose exactly which schema and table to empty.</p>
     <div id="err-truncate-manager" class="alert error hidden"></div>
     <div id="ok-truncate-manager" class="alert info hidden"></div>
@@ -681,7 +688,7 @@
   </div>
 
   <div class="card hidden" id="card-data-editor">
-    <div class="card-title active"><span class="step">✎</span> Data Editor</div>
+    <div class="card-title active"><span class="step step-edit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.375 2.625a1 1 0 0 1 3 3l-9.013 9.014a2 2 0 0 1-.853.505l-2.873.84a.5.5 0 0 1-.62-.62l.84-2.873a2 2 0 0 1 .506-.852z"/></svg></span> Data Editor</div>
     <div class="editor-body">
       <aside class="editor-history">
         <div class="editor-history-head">Recent tables</div>
@@ -747,7 +754,7 @@
   <!-- ── Step 1: Upload ──────────────────────────────── -->
   <div class="card hidden" id="card-upload">
     <div class="card-title active">
-      <span class="step">1</span> Select File &amp; Sheet
+      <span class="step step-file"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M8 13h2"/><path d="M14 13h2"/><path d="M8 17h2"/><path d="M14 17h2"/></svg></span> Select File &amp; Sheet
     </div>
     <div id="err-upload" class="alert error hidden"></div>
 
@@ -773,7 +780,7 @@
   <!-- ── Step 2: Preview ──────────────────────────────── -->
   <div class="card hidden" id="card-preview">
     <div class="card-title active">
-      <span class="step">2</span> Preview &amp; Confirm
+      <span class="step step-eye"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/></svg></span> Preview &amp; Confirm
     </div>
     <div id="err-import" class="alert error hidden"></div>
 
@@ -809,7 +816,7 @@
   <!-- ── About ────────────────────────────────────────── -->
   <div class="about-grid">
   <div class="card hidden" id="card-about">
-    <div class="card-title active"><span class="step">i</span> About</div>
+    <div class="card-title active"><span class="step step-info"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 16v-5"/><path d="M12 7.5h.01"/></svg></span> About</div>
     <p class="subtitle" style="margin-bottom:18px">Excel → SQL Server Importer — how table scanning works.</p>
     <div class="side-section">
       <h2>Table တွေကို ဘယ်လိုရှာလဲ</h2>
@@ -823,7 +830,7 @@
   </div>
 
   <div class="card hidden" id="card-updates">
-    <div class="card-title active"><span class="step">↑</span> Updates</div>
+    <div class="card-title active"><span class="step step-update"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></svg></span> Updates</div>
     <div class="updates-row">
       <div class="updates-current">
         <div class="updates-label">Current version</div>
@@ -847,7 +854,7 @@
 
   <aside class="side-panel">
     <div class="card hidden" id="card-results">
-      <div class="card-title done"><span class="step">✓</span> Import Results</div>
+      <div class="card-title done"><span class="step step-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg></span> Import Results</div>
       <div id="results-body"></div>
       <div id="batch-status" class="alert hidden"></div>
       <div class="btn-row">

@@ -1,8 +1,8 @@
 {
-  "version": "2.8.0",
+  "version": "2.9.0",
   "date": "2026-09-25",
   "notes": [
-    "Maintenance release"
+    "UI_Upgrade"
   ],
   "update_url": "https://gist.githubusercontent.com/aungmyomyat-gic/02424e3be1055f007d480a8c7ba689a7/raw/version.json"
 }
