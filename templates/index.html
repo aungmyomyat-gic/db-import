@@ -85,8 +85,20 @@
   .update-progress.error { background: #450a0a; border-color: #7f1d1d; color: #fca5a5 }
   .update-progress pre { margin-top: 8px; white-space: pre-wrap; word-break: break-word; font-size: .72rem; color: inherit; opacity: .85; max-height: 160px; overflow: auto }
   .update-progress code { color: #fde68a }
-  .version-status { font-size: .84rem; color: #94a3b8; margin: 8px 0 12px }
-  .version-status.ok { color: #6ee7b7 }
+  .updates-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap }
+  .updates-label { font-size: .7rem; color: #64748b; text-transform: uppercase; letter-spacing: .06em }
+  .updates-version { font-size: 1.5rem; font-weight: 600; color: #f0f4ff; margin-top: 2px }
+  .updates-date { font-size: .78rem; color: #64748b }
+  .updates-actions { display: flex; gap: 8px; flex-wrap: wrap }
+  .updates-notes { margin-top: 14px; padding-top: 14px; border-top: 1px solid #252840 }
+  .updates-notes .side-list { margin-top: 6px }
+  .version-status {
+    font-size: .82rem; color: #94a3b8; margin-top: 14px; padding: 9px 12px;
+    background: #141827; border: 1px solid #2d3148; border-radius: 8px;
+  }
+  .version-status:empty { display: none }
+  .version-status.ok { color: #6ee7b7; background: #0f2a22; border-color: #14532d }
+  .version-status.available { color: #fde68a; background: #2a2210; border-color: #6b5212 }
   .container {
     width: 100%;
     max-width: 1180px;
@@ -791,14 +803,29 @@
   </div>
 
   <!-- ── About ────────────────────────────────────────── -->
+  <div class="card hidden" id="card-updates">
+    <div class="card-title active"><span class="step">↑</span> Updates</div>
+    <div class="updates-row">
+      <div class="updates-current">
+        <div class="updates-label">Current version</div>
+        <div class="updates-version" id="about-version">…</div>
+        <div class="updates-date" id="about-version-date"></div>
+      </div>
+      <div class="updates-actions">
+        <button class="btn success sm hidden" id="btn-open-update">↑ Update to <span id="btn-open-update-version"></span></button>
+        <button class="btn secondary sm" id="btn-check-update">Check for updates</button>
+      </div>
+    </div>
+    <div class="version-status" id="about-version-status"></div>
+    <div class="updates-notes hidden" id="about-version-notes-wrap">
+      <div class="updates-label">In this version</div>
+      <ul class="side-list" id="about-version-notes"></ul>
+    </div>
+  </div>
+
   <div class="card hidden" id="card-about">
     <div class="card-title active"><span class="step">i</span> About</div>
     <p class="subtitle" style="margin-bottom:18px">Excel → SQL Server Importer — how table scanning works.</p>
-    <div class="side-section">
-      <h2>Version</h2>
-      <div class="version-status" id="about-version-status">Current version: <strong id="about-version">…</strong></div>
-      <button class="btn secondary sm" id="btn-check-update">Check for updates</button>
-    </div>
     <div class="side-section">
       <h2>Table တွေကို ဘယ်လိုရှာလဲ</h2>
       <p>App က user ရွေးထားတဲ့ Excel sheet ထဲက <strong>■ 実施前テストデータ</strong> section ကိုပဲ ဖတ်ပါတယ်။ အဲဒီ section ထဲမှာ <strong>MZAIHP(...)</strong>, <strong>MSHHNP(...)</strong> လို table name တွေကို ရှာပါတယ်။</p>
@@ -955,21 +982,29 @@ function applyVersionInfo(info, fromUser) {
   latestVersionInfo = info
   $('version-badge').textContent = 'v' + info.current
   $('about-version').textContent = 'v' + info.current
+  $('about-version-date').textContent = info.date ? `Released ${info.date}` : ''
+  const notes = info.notes || []
+  $('about-version-notes').innerHTML = notes.map(n => `<li>${escapeHtml(n)}</li>`).join('')
+  $('about-version-notes-wrap').classList.toggle('hidden', !notes.length)
   const status = $('about-version-status')
-  status.classList.remove('ok')
+  status.classList.remove('ok', 'available')
   $('version-badge').classList.toggle('has-update', !!info.update_available)
+  $('btn-open-update').classList.toggle('hidden', !info.update_available)
+  $('btn-open-update-version').textContent = info.latest ? 'v' + info.latest : ''
+  const checkedAt = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
   if (info.check === 'disabled') {
-    status.innerHTML = `Current version: <strong>v${escapeHtml(info.current)}</strong> · update check is not configured`
+    status.textContent = 'Update check is not configured.'
   } else if (info.check === 'failed') {
-    status.innerHTML = `Current version: <strong>v${escapeHtml(info.current)}</strong> · could not check for updates (offline?)`
+    status.textContent = `Could not check for updates (offline?) · ${checkedAt}`
   } else if (info.update_available) {
-    status.innerHTML = `Current version: <strong>v${escapeHtml(info.current)}</strong> · <strong>v${escapeHtml(info.latest)}</strong> is available`
+    status.classList.add('available')
+    status.innerHTML = `<strong>v${escapeHtml(info.latest)}</strong> is available · checked ${checkedAt}`
     let dismissed = null
     try { dismissed = localStorage.getItem(UPDATE_DISMISS_KEY) } catch (_) {}
     if (fromUser || dismissed !== info.latest) showUpdateModal(info)
   } else {
     status.classList.add('ok')
-    status.innerHTML = `Current version: <strong>v${escapeHtml(info.current)}</strong> · you are up to date`
+    status.textContent = `✓ You are up to date · checked ${checkedAt}`
   }
 }
 
@@ -982,6 +1017,7 @@ $('version-badge').addEventListener('click', () => {
   if (latestVersionInfo && latestVersionInfo.update_available) showUpdateModal(latestVersionInfo)
   else $('nav-about').click()
 })
+$('btn-open-update').addEventListener('click', () => { if (latestVersionInfo) showUpdateModal(latestVersionInfo) })
 $('btn-check-update').addEventListener('click', async () => {
   const btn = $('btn-check-update'); setLoading(btn, true, 'Checking…')
   await checkForUpdates(true); setLoading(btn, false, 'Check for updates')
@@ -1054,7 +1090,7 @@ $('nav-import').addEventListener('click', () => {
   hide($('card-conn')); hide($('btn-cancel-conn'))
   hide($('card-truncate-manager'))
   hide($('card-data-editor'))
-  hide($('card-about'))
+  hide($('card-about')); hide($('card-updates'))
   show($(lastImportCard))
   if (restoreImportResults) show($('card-results'))
   $('nav-import').classList.add('active')
@@ -1073,7 +1109,7 @@ $('nav-truncate').addEventListener('click', () => {
   hide($('card-results'))
   show($('card-truncate-manager'))
   hide($('card-data-editor'))
-  hide($('card-about'))
+  hide($('card-about')); hide($('card-updates'))
   $('nav-truncate').classList.add('active')
   $('nav-import').classList.remove('active')
   $('nav-editor').classList.remove('active')
@@ -1087,7 +1123,7 @@ function activateEditorTab() {
   const visible = ['card-conn', 'card-upload', 'card-preview'].find(id => !$(id).classList.contains('hidden'))
   if (visible && visible !== 'card-conn') lastImportCard = visible
   restoreImportResults = !$('card-results').classList.contains('hidden')
-  ;['card-conn', 'card-upload', 'card-preview', 'card-truncate-manager', 'card-about'].forEach(id => hide($(id)))
+  ;['card-conn', 'card-upload', 'card-preview', 'card-truncate-manager', 'card-about', 'card-updates'].forEach(id => hide($(id)))
   hide($('card-results')); show($('card-data-editor'))
   $('nav-editor').classList.add('active')
   $('nav-import').classList.remove('active'); $('nav-truncate').classList.remove('active')
@@ -1112,7 +1148,7 @@ $('nav-connection').addEventListener('click', () => {
   const visible = ['card-conn', 'card-upload', 'card-preview'].find(id => !$(id).classList.contains('hidden'))
   if (visible && visible !== 'card-conn') lastImportCard = visible
   restoreImportResults = !$('card-results').classList.contains('hidden')
-  ;['card-conn', 'card-upload', 'card-preview', 'card-truncate-manager', 'card-data-editor', 'card-about'].forEach(id => hide($(id)))
+  ;['card-conn', 'card-upload', 'card-preview', 'card-truncate-manager', 'card-data-editor', 'card-about', 'card-updates'].forEach(id => hide($(id)))
   hide($('card-results'))
   show($('card-conn'))
   setConnMode(isConfigured ? 'view' : 'edit')
@@ -1130,7 +1166,7 @@ $('nav-about').addEventListener('click', () => {
   restoreImportResults = !$('card-results').classList.contains('hidden')
   ;['card-conn', 'card-upload', 'card-preview', 'card-truncate-manager', 'card-data-editor'].forEach(id => hide($(id)))
   hide($('card-results'))
-  show($('card-about'))
+  show($('card-updates')); show($('card-about'))
   $('nav-about').classList.add('active')
   $('nav-import').classList.remove('active')
   $('nav-truncate').classList.remove('active')
