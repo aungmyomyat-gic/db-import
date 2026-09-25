@@ -1,6 +1,8 @@
 import re
 import os
 import json
+import shutil
+import subprocess
 import threading
 import time
 import unicodedata
@@ -704,10 +706,85 @@ def _fetch_latest_version(url: str) -> dict:
         return json.loads(resp.read().decode("utf-8"))
 
 
+# ── Self-update (git pull inside the container) ───────────────────────────────
+# docker-compose.yml mounts the project folder at /app, so pulling there
+# updates the user's own clone; Flask debug mode reloads the code.
+APP_DIR = Path(__file__).resolve().parent
+DEFAULT_REPO_URL = "https://github.com/aungmyomyat-gic/db-import.git"
+UPDATE_BRANCH = "main"
+REBUILD_FILES = {"Dockerfile", "requirements.txt"}
+_update_lock = threading.Lock()
+
+
+def _git(*args, timeout=30):
+    # Run git as the owner of the project folder so pulled files aren't left
+    # owned by root on the host (Linux / WSL bind mounts).
+    owner = (APP_DIR / ".git").stat()
+    kwargs = {}
+    if os.geteuid() == 0 and owner.st_uid != 0:
+        kwargs = {"user": owner.st_uid, "group": owner.st_gid}
+    env = {**os.environ, "HOME": "/tmp", "GIT_TERMINAL_PROMPT": "0"}
+    return subprocess.run(
+        ["git", "-c", f"safe.directory={APP_DIR}", "-C", str(APP_DIR), *args],
+        capture_output=True, text=True, timeout=timeout, env=env, **kwargs,
+    )
+
+
+def _self_update_status():
+    """Return (ok, reason) — whether the in-app Update button can work here."""
+    if not shutil.which("git"):
+        return False, "git is not installed in the container — rebuild once with docker compose up -d --build"
+    if not (APP_DIR / ".git").exists():
+        return False, "the app folder is not a git clone"
+    branch = _git("rev-parse", "--abbrev-ref", "HEAD")
+    if branch.returncode != 0:
+        return False, branch.stderr.strip() or "could not read the git branch"
+    if branch.stdout.strip() != UPDATE_BRANCH:
+        return False, f"this copy is on branch '{branch.stdout.strip()}', updates only apply to '{UPDATE_BRANCH}'"
+    return True, ""
+
+
+@app.route("/update", methods=["POST"])
+def run_self_update():
+    # JSON-only so a plain cross-site form post can't trigger it
+    if not request.is_json:
+        return jsonify({"error": "Invalid update request."}), 400
+    ok, reason = _self_update_status()
+    if not ok:
+        return jsonify({"error": f"Update is not available: {reason}."}), 400
+    if not _update_lock.acquire(blocking=False):
+        return jsonify({"error": "An update is already running."}), 409
+    try:
+        before = _git("rev-parse", "HEAD").stdout.strip()
+        repo_url = _load_version_info().get("repo_url") or DEFAULT_REPO_URL
+        pull = _git("pull", "--ff-only", repo_url, UPDATE_BRANCH, timeout=120)
+        output = (pull.stdout + pull.stderr).strip()
+        if pull.returncode != 0:
+            return jsonify({"error": "git pull failed.", "output": output}), 400
+        after = _git("rev-parse", "HEAD").stdout.strip()
+        changed = []
+        if before != after:
+            diff = _git("diff", "--name-only", before, after)
+            changed = [line for line in diff.stdout.splitlines() if line]
+        return jsonify({
+            "ok": True, "updated": before != after, "output": output,
+            "version": _load_version_info().get("version"),
+            "needs_rebuild": any(Path(f).name in REBUILD_FILES for f in changed),
+        })
+    except (OSError, subprocess.SubprocessError) as e:
+        return jsonify({"error": f"Update failed: {e}"}), 500
+    finally:
+        _update_lock.release()
+
+
 @app.route("/version", methods=["GET"])
 def get_version():
     local = _load_version_info()
-    result = {"current": local.get("version", "0.0.0"), "date": local.get("date"), "notes": local.get("notes", [])}
+    can_update, update_reason = _self_update_status()
+    result = {
+        "current": local.get("version", "0.0.0"), "date": local.get("date"), "notes": local.get("notes", []),
+        "can_self_update": can_update, "self_update_reason": update_reason,
+    }
     url = os.environ.get("UPDATE_CHECK_URL") or local.get("update_url") or ""
     if not url:
         return jsonify({**result, "check": "disabled"})

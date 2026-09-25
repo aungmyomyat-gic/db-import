@@ -2,7 +2,7 @@ FROM python:3.12-slim
 
 # System deps + unixODBC
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl gnupg2 apt-transport-https unixodbc-dev libgssapi-krb5-2 \
+    curl gnupg2 apt-transport-https unixodbc-dev libgssapi-krb5-2 git \
     && rm -rf /var/lib/apt/lists/*
 
 # Microsoft ODBC Driver 18 for SQL Server

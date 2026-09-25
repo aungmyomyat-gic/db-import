@@ -5,7 +5,7 @@ cd /d "%~dp0"
 echo ==^> Pulling latest version from GitHub (main)...
 git pull --ff-only origin main || goto :error
 echo ==^> Rebuilding and restarting the app...
-docker compose -f docker-compose.share.yml up -d --build || goto :error
+docker compose up -d --build || goto :error
 echo ==^> Done. Open http://localhost:5000 and reload the page.
 pause
 exit /b 0

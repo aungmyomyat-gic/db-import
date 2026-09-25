@@ -76,6 +76,15 @@
   }
   .cmd-box code { flex: 1 1 auto; white-space: pre-wrap; word-break: break-word; line-height: 1.5 }
   .modal-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 20px; border-top: 1px solid #2d3148; background: #141827 }
+  .manual-update { margin-top: 6px }
+  .manual-update summary { cursor: pointer; color: #94a3b8; font-size: .8rem; user-select: none }
+  .manual-update summary:hover { color: #cbd5e1 }
+  .manual-reason { margin-top: 10px; font-size: .76rem; color: #64748b }
+  .update-progress { margin: 4px 0 12px; padding: 10px 12px; border-radius: 8px; font-size: .82rem; background: #1e3a5f; border: 1px solid #1e40af; color: #93c5fd }
+  .update-progress.ok { background: #0f2a22; border-color: #14532d; color: #a7f3d0 }
+  .update-progress.error { background: #450a0a; border-color: #7f1d1d; color: #fca5a5 }
+  .update-progress pre { margin-top: 8px; white-space: pre-wrap; word-break: break-word; font-size: .72rem; color: inherit; opacity: .85; max-height: 160px; overflow: auto }
+  .update-progress code { color: #fde68a }
   .version-status { font-size: .84rem; color: #94a3b8; margin: 8px 0 12px }
   .version-status.ok { color: #6ee7b7 }
   .container {
@@ -823,15 +832,21 @@
     <div class="modal-body">
       <div class="version-jump">You have <span id="update-current"></span> — the latest is <strong id="update-latest"></strong></div>
       <ul id="update-notes"></ul>
-      <div class="step-label">To update, in your db-import folder run</div>
-      <div class="cmd-box"><code id="update-cmd">git pull origin main &amp;&amp; docker compose -f docker-compose.share.yml up -d --build</code>
-        <button class="btn secondary sm" id="btn-copy-update-cmd">Copy</button></div>
-      <div class="step-label">or double-click</div>
-      <div><code>update.bat</code> (Windows) &nbsp;·&nbsp; <code>./update.sh</code> (Mac / Linux)</div>
+      <div class="update-progress hidden" id="update-progress"></div>
+      <details class="manual-update" id="manual-update">
+        <summary>Update manually instead</summary>
+        <div class="step-label">In your db-import folder run</div>
+        <div class="cmd-box"><code id="update-cmd">git pull origin main &amp;&amp; docker compose up -d --build</code>
+          <button class="btn secondary sm" id="btn-copy-update-cmd">Copy</button></div>
+        <div class="step-label">or double-click</div>
+        <div><code>update.bat</code> (Windows) &nbsp;·&nbsp; <code>./update.sh</code> (Mac / Linux)</div>
+        <div class="manual-reason hidden" id="self-update-reason"></div>
+      </details>
     </div>
     <div class="modal-foot">
       <button class="btn secondary sm" id="btn-update-later">Remind me later</button>
-      <button class="btn sm" id="btn-update-ok">Got it</button>
+      <button class="btn sm hidden" id="btn-update-ok">Got it</button>
+      <button class="btn success sm" id="btn-update-now">↑ Update now</button>
     </div>
   </div>
 </div>
@@ -871,8 +886,70 @@ function showUpdateModal(info) {
   $('update-current').textContent = 'v' + info.current
   $('update-latest').textContent = 'v' + info.latest
   $('update-notes').innerHTML = (info.latest_notes || []).map(n => `<li>${escapeHtml(n)}</li>`).join('')
+  hide($('update-progress')); hide($('btn-update-ok')); show($('btn-update-later'))
+  const canUpdate = !!info.can_self_update
+  $('btn-update-now').classList.toggle('hidden', !canUpdate)
+  $('btn-update-now').disabled = false; $('btn-update-now').innerHTML = '<span>↑ Update now</span>'
+  $('manual-update').open = !canUpdate
+  $('self-update-reason').classList.toggle('hidden', canUpdate || !info.self_update_reason)
+  $('self-update-reason').textContent = info.self_update_reason ? `Update now is unavailable: ${info.self_update_reason}.` : ''
   show($('update-modal'))
 }
+
+function setUpdateProgress(kind, html, output) {
+  const box = $('update-progress')
+  box.className = 'update-progress' + (kind ? ' ' + kind : '')
+  box.innerHTML = html + (output ? `<pre>${escapeHtml(output)}</pre>` : '')
+}
+
+// After git pull, Flask's debug reloader restarts the app — wait until it
+// answers with the new version, then reload the page.
+async function waitForNewVersion(target) {
+  for (let i = 0; i < 40; i++) {
+    await new Promise(r => setTimeout(r, 1500))
+    try {
+      const info = await fetch('/version').then(r => r.json())
+      if (!target || info.current === target) return true
+    } catch (_) { /* app is restarting */ }
+  }
+  return false
+}
+
+$('btn-update-now').addEventListener('click', async () => {
+  const btn = $('btn-update-now')
+  setLoading(btn, true, 'Updating…'); hide($('btn-update-later'))
+  setUpdateProgress('', 'Pulling the latest version from GitHub…')
+  try {
+    const response = await fetch('/update', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
+    const data = await response.json()
+    if (!response.ok || data.error) {
+      setUpdateProgress('error', escapeHtml(data.error || 'Update failed.'), data.output)
+      $('manual-update').open = true
+      setLoading(btn, false, 'Try again'); show($('btn-update-later'))
+      return
+    }
+    hide(btn); show($('btn-update-ok'))
+    if (!data.updated) {
+      setUpdateProgress('ok', 'Already up to date with GitHub — the new version may not be pushed yet. Try again in a few minutes.')
+      return
+    }
+    if (data.needs_rebuild) {
+      setUpdateProgress('ok',
+        `Code updated to <strong>v${escapeHtml(data.version)}</strong>. This release changes the Docker setup — ` +
+        'finish by running <code>docker compose up -d --build</code> in your db-import folder.')
+      return
+    }
+    hide($('btn-update-ok'))
+    setUpdateProgress('ok', `Updated to <strong>v${escapeHtml(data.version)}</strong>. Restarting the app…`)
+    const ready = await waitForNewVersion(data.version)
+    if (ready) { location.reload(); return }
+    setUpdateProgress('ok', `Updated to <strong>v${escapeHtml(data.version)}</strong>. Reload the page to finish.`)
+    show($('btn-update-ok'))
+  } catch (error) {
+    setUpdateProgress('error', escapeHtml(error.message))
+    setLoading(btn, false, 'Try again'); show($('btn-update-later'))
+  }
+})
 
 function applyVersionInfo(info, fromUser) {
   latestVersionInfo = info
