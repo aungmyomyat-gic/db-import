@@ -113,6 +113,10 @@
     grid-template-columns: minmax(0, 1fr);
   }
   .container.editor-layout .main-column { width: 100% }
+  .container.about-layout { grid-template-columns: minmax(0, 1fr) }
+  .about-grid { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(300px, 1fr); gap: 20px; align-items: start }
+  .about-grid > .card { margin-bottom: 0 }
+  @media (max-width: 860px) { .about-grid { grid-template-columns: minmax(0, 1fr) } }
   .container.editor-layout #card-data-editor { min-height: calc(100vh - 190px) }
   .main-column { min-width: 0 }
   h1 { font-size: 1.5rem; font-weight: 600; margin-bottom: 8px; color: #f0f4ff }
@@ -803,6 +807,21 @@
   </div>
 
   <!-- ── About ────────────────────────────────────────── -->
+  <div class="about-grid">
+  <div class="card hidden" id="card-about">
+    <div class="card-title active"><span class="step">i</span> About</div>
+    <p class="subtitle" style="margin-bottom:18px">Excel → SQL Server Importer — how table scanning works.</p>
+    <div class="side-section">
+      <h2>Table တွေကို ဘယ်လိုရှာလဲ</h2>
+      <p>App က user ရွေးထားတဲ့ Excel sheet ထဲက <strong>■ 実施前テストデータ</strong> section ကိုပဲ ဖတ်ပါတယ်။ အဲဒီ section ထဲမှာ <strong>MZAIHP(...)</strong>, <strong>MSHHNP(...)</strong> လို table name တွေကို ရှာပါတယ်။</p>
+      <ul class="side-list">
+        <li><strong>Table row:</strong> table name ရှိတဲ့ row ဖြစ်ပါတယ်။</li>
+        <li><strong>Header row:</strong> table name ရဲ့ အောက် row ကို header row လို့ယူပါတယ်။ <strong>→ 更新前</strong> / <strong>→ 登録前</strong> လို marker row ရှိရင် အဲဒီ row ကိုကျော်ပြီး နောက်တစ် row ကို header row လို့ယူပါတယ်။</li>
+        <li><strong>Column range:</strong> header row မှာ ပထမ column ကနေ blank column မရောက်မချင်း ဖတ်ပါတယ်။ ဥပမာ <strong>B:AI</strong> လို့ပြပါတယ်။</li>
+      </ul>
+    </div>
+  </div>
+
   <div class="card hidden" id="card-updates">
     <div class="card-title active"><span class="step">↑</span> Updates</div>
     <div class="updates-row">
@@ -822,19 +841,6 @@
       <ul class="side-list" id="about-version-notes"></ul>
     </div>
   </div>
-
-  <div class="card hidden" id="card-about">
-    <div class="card-title active"><span class="step">i</span> About</div>
-    <p class="subtitle" style="margin-bottom:18px">Excel → SQL Server Importer — how table scanning works.</p>
-    <div class="side-section">
-      <h2>Table တွေကို ဘယ်လိုရှာလဲ</h2>
-      <p>App က user ရွေးထားတဲ့ Excel sheet ထဲက <strong>■ 実施前テストデータ</strong> section ကိုပဲ ဖတ်ပါတယ်။ အဲဒီ section ထဲမှာ <strong>MZAIHP(...)</strong>, <strong>MSHHNP(...)</strong> လို table name တွေကို ရှာပါတယ်။</p>
-      <ul class="side-list">
-        <li><strong>Table row:</strong> table name ရှိတဲ့ row ဖြစ်ပါတယ်။</li>
-        <li><strong>Header row:</strong> table name ရဲ့ အောက် row ကို header row လို့ယူပါတယ်။ <strong>→ 更新前</strong> / <strong>→ 登録前</strong> လို marker row ရှိရင် အဲဒီ row ကိုကျော်ပြီး နောက်တစ် row ကို header row လို့ယူပါတယ်။</li>
-        <li><strong>Column range:</strong> header row မှာ ပထမ column ကနေ blank column မရောက်မချင်း ဖတ်ပါတယ်။ ဥပမာ <strong>B:AI</strong> လို့ပြပါတယ်။</li>
-      </ul>
-    </div>
   </div>
 
   </main>
@@ -1086,7 +1092,7 @@ function setConnMode(mode) {
 
 // ── Main navigation ──────────────────────────────────────────────────────────
 $('nav-import').addEventListener('click', () => {
-  document.querySelector('.container').classList.remove('editor-layout')
+  document.querySelector('.container').classList.remove('editor-layout', 'about-layout')
   hide($('card-conn')); hide($('btn-cancel-conn'))
   hide($('card-truncate-manager'))
   hide($('card-data-editor'))
@@ -1101,7 +1107,7 @@ $('nav-import').addEventListener('click', () => {
 })
 
 $('nav-truncate').addEventListener('click', () => {
-  document.querySelector('.container').classList.remove('editor-layout')
+  document.querySelector('.container').classList.remove('editor-layout', 'about-layout')
   const visible = ['card-conn', 'card-upload', 'card-preview'].find(id => !$(id).classList.contains('hidden'))
   if (visible && visible !== 'card-conn') lastImportCard = visible
   restoreImportResults = !$('card-results').classList.contains('hidden')
@@ -1119,6 +1125,7 @@ $('nav-truncate').addEventListener('click', () => {
 })
 
 function activateEditorTab() {
+  document.querySelector('.container').classList.remove('about-layout')
   document.querySelector('.container').classList.add('editor-layout')
   const visible = ['card-conn', 'card-upload', 'card-preview'].find(id => !$(id).classList.contains('hidden'))
   if (visible && visible !== 'card-conn') lastImportCard = visible
@@ -1144,7 +1151,7 @@ function openTableInEditor(schema, table) {
 }
 
 $('nav-connection').addEventListener('click', () => {
-  document.querySelector('.container').classList.remove('editor-layout')
+  document.querySelector('.container').classList.remove('editor-layout', 'about-layout')
   const visible = ['card-conn', 'card-upload', 'card-preview'].find(id => !$(id).classList.contains('hidden'))
   if (visible && visible !== 'card-conn') lastImportCard = visible
   restoreImportResults = !$('card-results').classList.contains('hidden')
@@ -1161,6 +1168,7 @@ $('nav-connection').addEventListener('click', () => {
 
 $('nav-about').addEventListener('click', () => {
   document.querySelector('.container').classList.remove('editor-layout')
+  document.querySelector('.container').classList.add('about-layout')
   const visible = ['card-conn', 'card-upload', 'card-preview'].find(id => !$(id).classList.contains('hidden'))
   if (visible && visible !== 'card-conn') lastImportCard = visible
   restoreImportResults = !$('card-results').classList.contains('hidden')
