@@ -568,6 +568,85 @@ def _json_table_value(value):
     return str(value)
 
 
+QUERY_MAX_ROWS = 500
+QUERY_MAX_LENGTH = 100_000
+QUERY_TIMEOUT_SECONDS = 30
+
+
+@app.route("/query", methods=["POST"])
+def run_query():
+    """Execute SQL from the query-runner tab and return bounded result sets."""
+    cfg = load_config()
+    if not cfg:
+        return jsonify({"error": "No DB connection saved."}), 400
+
+    payload = request.json or {}
+    sql = str(payload.get("sql", "")).strip()
+    if not sql:
+        return jsonify({"error": "Enter a SQL query to run."}), 400
+    if len(sql) > QUERY_MAX_LENGTH:
+        return jsonify({"error": f"Query is too long (maximum {QUERY_MAX_LENGTH:,} characters)."}), 400
+
+    conn_str, err = _build_conn_str(
+        cfg["host"], cfg["port"], cfg["database"], cfg["username"], cfg["password"]
+    )
+    if err:
+        return jsonify({"error": err}), 500
+
+    conn = None
+    started = time.perf_counter()
+    try:
+        conn = pyodbc.connect(conn_str, timeout=10)
+        conn.timeout = QUERY_TIMEOUT_SECONDS
+        cursor = conn.cursor()
+        cursor.execute(sql)
+
+        result_sets = []
+        while True:
+            if cursor.description:
+                columns = [column[0] for column in cursor.description]
+                fetched = cursor.fetchmany(QUERY_MAX_ROWS + 1)
+                truncated = len(fetched) > QUERY_MAX_ROWS
+                rows = fetched[:QUERY_MAX_ROWS]
+                result_sets.append({
+                    "columns": columns,
+                    "rows": [[_json_table_value(value) for value in row] for row in rows],
+                    "row_count": len(rows),
+                    "truncated": truncated,
+                })
+            elif cursor.rowcount != -1:
+                result_sets.append({
+                    "columns": [],
+                    "rows": [],
+                    "affected_rows": cursor.rowcount,
+                })
+
+            if not cursor.nextset():
+                break
+
+        conn.commit()
+        elapsed_ms = round((time.perf_counter() - started) * 1000)
+        return jsonify({
+            "ok": True,
+            "message": "Query completed successfully.",
+            "result_sets": result_sets,
+            "max_rows": QUERY_MAX_ROWS,
+            "elapsed_ms": elapsed_ms,
+        })
+    except pyodbc.Error as e:
+        if conn is not None:
+            conn.rollback()
+        return jsonify({"error": f"Query failed: {e}"}), 400
+    except Exception as e:
+        if conn is not None:
+            conn.rollback()
+        app.logger.exception("Unexpected query runner error")
+        return jsonify({"error": f"Query runner failed unexpectedly: {e}"}), 500
+    finally:
+        if conn is not None:
+            conn.close()
+
+
 @app.route("/table-data", methods=["GET"])
 def get_table_data():
     """Return a bounded table preview plus metadata for safe row editing."""
