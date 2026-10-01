@@ -611,6 +611,12 @@
     display: flex; align-items: center; justify-content: space-between; padding: 0 9px 6px;
     color: #64748b; font-size: .66rem; font-weight: 600; letter-spacing: .09em; text-transform: uppercase;
   }
+  .query-count {
+    min-width: 20px; height: 19px; display: inline-flex; align-items: center; justify-content: center;
+    padding: 0 6px; border: 1px solid #3730a3; border-radius: 999px;
+    color: #c7d2fe; background: #25205b; font-size: .63rem; letter-spacing: 0;
+  }
+  .query-count:empty { display: none }
   .query-sidebar-list { display: grid; gap: 3px }
   .query-sidebar-empty { padding: 7px 9px; color: #4a5568; font-size: .74rem; line-height: 1.4 }
   .query-file-item { display: flex; align-items: center; min-width: 0; border-radius: 7px }
@@ -642,8 +648,14 @@
   .query-head-actions { display: flex; gap: 8px; flex: 0 0 auto }
   .query-save-status { align-self: center; color: #6ee7b7; font-size: .72rem; opacity: 0; transition: opacity .15s }
   .query-save-status.visible { opacity: 1 }
+  .btn.query-save-btn {
+    border: 1px solid #047857; background: linear-gradient(180deg, #10b981, #059669);
+    box-shadow: 0 4px 12px rgba(5, 150, 105, .22);
+  }
+  .btn.query-save-btn:hover { background: linear-gradient(180deg, #34d399, #059669) }
+  .query-save-btn svg { width: 14px; height: 14px; flex: 0 0 auto }
   .query-toolbar {
-    display: flex; align-items: end; justify-content: space-between; gap: 16px;
+    display: flex; align-items: center; justify-content: flex-end; gap: 16px;
     margin-bottom: 14px; flex-wrap: wrap;
   }
   .query-schema-field { width: min(320px, 100%) }
@@ -892,16 +904,12 @@
         <button class="query-sidebar-link" id="btn-query-data-editor"><span>▦</span><span>Data editor</span></button>
         <div class="query-sidebar-divider"></div>
         <section class="query-sidebar-section">
-          <div class="query-sidebar-label"><span>Current</span><span id="query-draft-count"></span></div>
+          <div class="query-sidebar-label"><span>Current</span><span class="query-count" id="query-draft-count"></span></div>
           <div class="query-sidebar-list" id="query-draft-list"></div>
         </section>
         <section class="query-sidebar-section">
-          <div class="query-sidebar-label"><span>Saved SQL</span><span id="query-saved-count"></span></div>
+          <div class="query-sidebar-label"><span>Saved SQL</span><span class="query-count" id="query-saved-count"></span></div>
           <div class="query-sidebar-list" id="query-saved-list"></div>
-        </section>
-        <section class="query-sidebar-section history">
-          <div class="query-sidebar-label"><span>History</span><span id="query-history-count"></span></div>
-          <div class="query-sidebar-list" id="query-history-list"></div>
         </section>
       </aside>
 
@@ -913,24 +921,21 @@
           </div>
           <div class="query-head-actions">
             <span class="query-save-status" id="query-save-status">Saved</span>
-            <button class="btn secondary sm" id="btn-save-query">Save SQL</button>
+            <button class="btn sm query-save-btn" id="btn-save-query"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></svg><span>Save SQL</span></button>
           </div>
         </div>
         <div id="err-query" class="alert error hidden"></div>
 
+        <select class="hidden" id="query-schema" disabled aria-hidden="true"><option value="">Loading schemas…</option></select>
         <div class="query-toolbar">
-          <div class="query-schema-field">
-            <label for="query-schema">Suggestion schema</label>
-            <select id="query-schema" disabled><option value="">Loading schemas…</option></select>
-          </div>
           <div class="query-shortcut"><kbd>Ctrl</kbd>/<kbd>⌘</kbd> + <kbd>Enter</kbd> to run · selected SQL runs when highlighted</div>
         </div>
 
         <div class="query-editor-wrap">
-          <textarea id="sql-query" spellcheck="false" autocomplete="off" aria-autocomplete="list" aria-controls="sql-suggestions" placeholder="SELECT TOP 100 *&#10;FROM "></textarea>
+          <textarea id="sql-query" spellcheck="false" autocomplete="off" placeholder="SELECT TOP 100 *&#10;FROM "></textarea>
           <div class="sql-suggestions hidden" id="sql-suggestions" role="listbox"></div>
         </div>
-        <div class="sql-hint">Type to see <strong>SQL keywords</strong> and <strong>table names</strong>. Use <kbd>↑</kbd>/<kbd>↓</kbd> to choose and <kbd>Tab</kbd> or <kbd>Enter</kbd> to insert.</div>
+        <div class="sql-hint">Highlight part of the SQL to run only the selected statements.</div>
 
         <div class="query-actions">
           <button class="btn" id="btn-run-query">▶ Run query</button>
@@ -2717,10 +2722,8 @@ function renderQueryFileList(listId, items, type) {
 function renderQuerySidebar() {
   renderQueryFileList('query-draft-list', queryWorkspace.drafts, 'draft')
   renderQueryFileList('query-saved-list', queryWorkspace.saved, 'saved')
-  renderQueryFileList('query-history-list', queryWorkspace.history, 'history')
   $('query-draft-count').textContent = queryWorkspace.drafts.length
   $('query-saved-count').textContent = queryWorkspace.saved.length || ''
-  $('query-history-count').textContent = queryWorkspace.history.length || ''
 }
 
 function resetQueryResults() {
@@ -2807,6 +2810,8 @@ function querySuggestionPool(range) {
 }
 
 function renderQuerySuggestions() {
+  closeQuerySuggestions()
+  return
   if (document.activeElement !== queryEditor) return
   const range = queryTokenRange()
   const normalized = range.token.replace(/[\[\]]/g, '').toLowerCase()
