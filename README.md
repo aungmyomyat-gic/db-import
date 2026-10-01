@@ -17,6 +17,9 @@ the tables afterwards. It runs in Docker and opens at http://localhost:5000.
   - edit rows in place (Edit mode)
   - copy rows to Excel, with or without the header
   - paste rows copied from Excel (Ctrl+V), review them, then insert
+- **SQL Runner** — run all or selected SQL with schema-aware table-name and SQL
+  keyword suggestions, multiple result grids, write-query confirmation, and
+  one-click copying for the first result.
 - **Update notification** — when a new version is released, the app shows an
   "Update available" popup with the changes.
 
