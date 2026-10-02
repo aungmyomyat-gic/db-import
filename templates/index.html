@@ -402,6 +402,7 @@
   .card-title .step-info svg { width: 100%; height: 100% }
   .card-title .step-update { --c1: #a78bfa; --c2: #7c3aed }
   .card-title .step-check  { --c1: #4ade80; --c2: #16a34a }
+  .card-title .step-schema { --c1: #2dd4bf; --c2: #0d9488 }
 
   label { display: block; font-size: .85rem; color: #94a3b8; margin-bottom: 6px }
   input[type=text], input[type=password], select {
@@ -517,6 +518,12 @@
   }
   input[type=checkbox] { width: 16px; height: 16px; accent-color: #4f46e5; cursor: pointer; vertical-align: middle }
   .tbl tr.unchecked td:not(:first-child) { opacity: .4 }
+  .schema-create { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: end; margin-bottom: 22px }
+  .schema-create .btn { height: 41px; white-space: nowrap }
+  .schema-list-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; font-size: .85rem; color: #94a3b8 }
+  .schema-empty { text-align: center; color: #64748b }
+  .tbl tr.schema-new td { background: #0f2e2b }
+  .tbl select.schema-row { width: auto; min-width: 130px; padding: 5px 30px 5px 10px; font-size: .8rem; background-position: right 10px center }
 
   /* Results */
   .result-row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid #1e213a }
@@ -583,6 +590,8 @@
     .nav-btn { flex: 1; padding-inline: 8px }
     #card-truncate-manager .btn-row { display: grid }
     #card-truncate-manager .btn-row .btn { width: 100%; justify-content: center }
+    .schema-create { grid-template-columns: minmax(0, 1fr) }
+    .schema-create .btn { width: 100%; justify-content: center }
     .container.editor-layout { max-width: 100% }
     .container.editor-layout #card-data-editor { min-height: calc(100vh - 150px) }
     .data-grid-wrap { max-height: calc(100vh - 300px) }
@@ -743,6 +752,7 @@
       <button class="nav-btn" id="nav-truncate" disabled>Truncate Table</button>
       <button class="nav-btn" id="nav-editor" disabled>Data Editor</button>
       <button class="nav-btn" id="nav-query" disabled>SQL Runner</button>
+      <button class="nav-btn" id="nav-schema" disabled>Schema</button>
       <button class="nav-btn" id="nav-connection" title="Not connected"><span class="nav-dot" id="nav-conn-dot"></span>Connection</button>
       <button class="nav-btn" id="nav-about"><svg class="nav-icon-info" viewBox="0 0 24 24" aria-hidden="true"><defs><linearGradient id="info-grad" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4fb3ff"/><stop offset="1" stop-color="#1565d8"/></linearGradient></defs><circle cx="12" cy="12" r="12" fill="url(#info-grad)"/><circle cx="12" cy="6.8" r="1.9" fill="#fff"/><rect x="10.3" y="10" width="3.4" height="9" rx="1.7" fill="#fff"/></svg>About</button>
     </nav>
@@ -827,6 +837,28 @@
     <div class="btn-row">
       <button class="btn danger" id="btn-truncate-selected" disabled>Truncate selected table</button>
     </div>
+  </div>
+
+  <div class="card hidden" id="card-schema-manager">
+    <div class="card-title active"><span class="step step-schema"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/></svg></span> Schema</div>
+    <p class="subtitle" style="margin-bottom:18px">Schemas in <strong id="schema-db-name">your database</strong>. New schemas are created empty.</p>
+    <div id="err-schema-manager" class="alert error hidden"></div>
+    <div id="ok-schema-manager" class="alert info hidden"></div>
+    <form class="schema-create" id="schema-create-form" autocomplete="off">
+      <div>
+        <label for="new-schema-name">New schema name</label>
+        <input type="text" id="new-schema-name" placeholder="e.g. lvapdbf_test" maxlength="128" spellcheck="false">
+      </div>
+      <button type="submit" class="btn" id="btn-create-schema" disabled><span>Create schema</span></button>
+    </form>
+    <div class="schema-list-head">
+      <span>Current schemas <span class="badge blue" id="schema-count">0</span></span>
+      <button type="button" class="btn secondary sm" id="btn-refresh-schemas">Refresh</button>
+    </div>
+    <table class="tbl">
+      <thead><tr><th>Schema</th><th>Owner</th><th>Tables</th></tr></thead>
+      <tbody id="schema-body"></tbody>
+    </table>
   </div>
 
   <div class="card hidden" id="card-data-editor">
@@ -995,17 +1027,10 @@
       </div>
     </div>
 
-    <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px">
-      <label for="schema-select" style="margin:0;white-space:nowrap">Import into schema</label>
-      <select id="schema-select" style="max-width:260px">
-        <option value="lvapdbf">lvapdbf</option>
-      </select>
-    </div>
-
     <table class="tbl" id="preview-tbl">
       <thead><tr>
         <th style="width:36px"><input type="checkbox" id="chk-all" checked></th>
-        <th>#</th><th>Table Name</th><th>Status</th><th>Range</th><th>Rows</th><th>Columns</th>
+        <th>#</th><th>Table Name</th><th>Schema</th><th>Status</th><th>Range</th><th>Rows</th><th>Columns</th>
       </tr></thead>
       <tbody id="preview-body"></tbody>
     </table>
@@ -1258,6 +1283,7 @@ fetch('/config').then(r => r.json()).then(data => {
     isConfigured = true
     $('nav-truncate').disabled = false
     $('nav-editor').disabled = false
+    $('nav-schema').disabled = false
     updateConnStatus(data.config)
     setConnMode('view')
     show($('card-upload'))
@@ -2113,6 +2139,7 @@ $('btn-delete-conn').addEventListener('click', () => {
       savedConfig = null
       $('nav-truncate').disabled = true
       $('nav-editor').disabled = true
+      $('nav-schema').disabled = true
       $('nav-connection').title = 'Not connected'
       $('nav-conn-dot').classList.remove('connected')
       $('nav-conn-dot').classList.add('error')
@@ -2159,6 +2186,7 @@ $('btn-save-conn').addEventListener('click', () => {
     isConfigured = true
     $('nav-truncate').disabled = false
     $('nav-editor').disabled = false
+    $('nav-schema').disabled = false
     setConnMode('view')
     $('nav-import').click()
   })
@@ -2322,6 +2350,9 @@ function buildPreview(tables, sheet) {
       <td><input type="checkbox" class="chk-row" data-name="${escapeAttr(t.name)}" checked></td>
       <td>${i + 1}</td>
       <td><strong>${escapeHtml(t.name)}</strong></td>
+      <td><select class="schema-row" data-name="${escapeAttr(t.name)}" aria-label="Schema for ${escapeAttr(t.name)}">
+        <option value="${DEFAULT_IMPORT_SCHEMA}">${DEFAULT_IMPORT_SCHEMA}</option>
+      </select></td>
       <td class="status-cell" data-status-name="${escapeAttr(t.name)}">${statusPill('ready')}</td>
       <td><span class="range-code">${escapeHtml(t.col_range || '-')}</span></td>
       <td><span class="badge blue">${t.records ?? 0}</span></td>
@@ -2333,19 +2364,24 @@ function buildPreview(tables, sheet) {
   updateSelectCount()
 }
 
+const DEFAULT_IMPORT_SCHEMA = 'lvapdbf'
+
+function schemaSelects() { return Array.from(document.querySelectorAll('.schema-row')) }
+
 function loadSchemas() {
   fetch('/schemas').then(r => r.json()).then(data => {
-    const sel = $('schema-select')
     if (data.error || !data.schemas || !data.schemas.length) return  // keep default option
-    const def = data.default || 'lvapdbf'
-    sel.innerHTML = ''
-    data.schemas.forEach(s => {
-      const o = document.createElement('option')
-      o.value = s; o.textContent = s
-      if (s === def) o.selected = true
-      sel.appendChild(o)
+    const def = data.default || DEFAULT_IMPORT_SCHEMA
+    schemaSelects().forEach(sel => {
+      sel.innerHTML = ''
+      data.schemas.forEach(s => sel.add(new Option(s, s, false, s === def)))
     })
   }).catch(() => {})
+}
+
+function schemaFor(tableName) {
+  const sel = schemaSelects().find(s => s.dataset.name === tableName)
+  return sel ? sel.value : DEFAULT_IMPORT_SCHEMA
 }
 
 function rowChecks() { return Array.from(document.querySelectorAll('.chk-row')) }
@@ -2392,7 +2428,7 @@ $('btn-import').addEventListener('click', () => {
   fetch('/import', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ tables, schema: $('schema-select').value })
+    body: JSON.stringify({ tables, schemas: Object.fromEntries(tables.map(name => [name, schemaFor(name)])) })
   })
   .then(r => r.json())
   .then(data => {
@@ -2423,7 +2459,7 @@ function clearImportPolling() {
 function setImportControlsDisabled(disabled) {
   rowChecks().forEach(chk => { chk.disabled = disabled })
   $('chk-all').disabled = disabled
-  $('schema-select').disabled = disabled
+  schemaSelects().forEach(sel => { sel.disabled = disabled })
   $('btn-change-sheet').disabled = disabled
   $('btn-rescan').disabled = disabled
 }
@@ -2542,8 +2578,8 @@ function buildResults(results) {
       ? `<div class="result-errors">${r.errors.map(escapeHtml).join('<br>')}</div>` : ''
     const actions = (r.status === 'ok' || r.status === 'warn')
       ? `<div class="result-actions">
-          <button class="btn secondary btn-edit-table" data-table="${escapeAttr(r.name)}" title="Open in Data Editor">View</button>
-          <button class="btn danger btn-truncate" data-table="${escapeAttr(r.name)}">Truncate</button>
+          <button class="btn secondary btn-edit-table" data-table="${escapeAttr(r.name)}" data-schema="${escapeAttr(r.schema || schemaFor(r.name))}" title="Open in Data Editor">View</button>
+          <button class="btn danger btn-truncate" data-table="${escapeAttr(r.name)}" data-schema="${escapeAttr(r.schema || schemaFor(r.name))}">Truncate</button>
         </div>`
       : ''
     body.innerHTML += `
@@ -3181,7 +3217,7 @@ function activateQueryTab() {
   hide($('card-results'))
   show($('card-query-runner'))
   $('nav-query').classList.add('active')
-  ;['nav-import', 'nav-truncate', 'nav-editor', 'nav-connection', 'nav-about'].forEach(function(id) {
+  ;['nav-import', 'nav-truncate', 'nav-editor', 'nav-schema', 'nav-connection', 'nav-about'].forEach(function(id) {
     $(id).classList.remove('active')
   })
   renderQuerySidebar()
@@ -3192,7 +3228,7 @@ function activateQueryTab() {
 
 $('nav-query').addEventListener('click', activateQueryTab)
 
-;['nav-import', 'nav-truncate', 'nav-editor', 'nav-connection', 'nav-about'].forEach(function(id) {
+;['nav-import', 'nav-truncate', 'nav-editor', 'nav-schema', 'nav-connection', 'nav-about'].forEach(function(id) {
   $(id).addEventListener('click', function() {
     hide($('card-query-runner'))
     $('nav-query').classList.remove('active')
@@ -3208,11 +3244,98 @@ new MutationObserver(syncQueryNavAvailability).observe($('nav-editor'), {
   attributeFilter: ['disabled']
 })
 syncQueryNavAvailability()
+
+// ── Schema manager ───────────────────────────────────────────────────────────
+const SCHEMA_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/
+
+$('nav-schema').addEventListener('click', () => {
+  document.querySelector('.container').classList.remove('editor-layout', 'about-layout')
+  const visible = ['card-conn', 'card-upload', 'card-preview'].find(id => !$(id).classList.contains('hidden'))
+  if (visible && visible !== 'card-conn') lastImportCard = visible
+  restoreImportResults = !$('card-results').classList.contains('hidden')
+  ;['card-conn', 'card-upload', 'card-preview', 'card-truncate-manager', 'card-data-editor', 'card-about', 'card-updates', 'card-results'].forEach(id => hide($(id)))
+  show($('card-schema-manager'))
+  $('nav-schema').classList.add('active')
+  ;['nav-import', 'nav-truncate', 'nav-editor', 'nav-connection', 'nav-about'].forEach(id => $(id).classList.remove('active'))
+  hide($('err-schema-manager')); hide($('ok-schema-manager'))
+  loadSchemaList()
+})
+
+;['nav-import', 'nav-truncate', 'nav-editor', 'nav-query', 'nav-connection', 'nav-about'].forEach(id => {
+  $(id).addEventListener('click', () => {
+    hide($('card-schema-manager'))
+    $('nav-schema').classList.remove('active')
+  })
+})
+
+function loadSchemaList(highlight) {
+  const body = $('schema-body')
+  body.innerHTML = '<tr><td colspan="3" class="schema-empty">Loading schemas…</td></tr>'
+  return fetch('/schemas/list').then(r => r.json()).then(data => {
+    if (data.error) throw new Error(data.error)
+    $('schema-db-name').textContent = data.database
+    $('schema-count').textContent = data.schemas.length
+    body.innerHTML = data.schemas.length ? '' : '<tr><td colspan="3" class="schema-empty">No schemas found</td></tr>'
+    data.schemas.forEach(s => {
+      const tr = document.createElement('tr')
+      if (s.name === highlight) tr.className = 'schema-new'
+      const defaultBadge = s.name === data.default ? ' <span class="badge green">default</span>' : ''
+      tr.innerHTML = `<td><strong>${escapeHtml(s.name)}</strong>${defaultBadge}</td>
+        <td>${escapeHtml(s.owner || '-')}</td>
+        <td><span class="badge blue">${s.tables}</span></td>`
+      body.appendChild(tr)
+    })
+  }).catch(error => {
+    body.innerHTML = '<tr><td colspan="3" class="schema-empty">Could not load schemas</td></tr>'
+    showErr($('err-schema-manager'), error.message)
+  })
+}
+
+$('btn-refresh-schemas').addEventListener('click', () => {
+  hide($('err-schema-manager')); hide($('ok-schema-manager'))
+  loadSchemaList()
+})
+
+$('new-schema-name').addEventListener('input', e => {
+  $('btn-create-schema').disabled = !e.target.value.trim()
+})
+
+$('schema-create-form').addEventListener('submit', e => {
+  e.preventDefault()
+  const btn = $('btn-create-schema')
+  const name = $('new-schema-name').value.trim()
+  if (!name || btn.disabled) return
+  hide($('err-schema-manager')); hide($('ok-schema-manager'))
+  if (!SCHEMA_NAME_RE.test(name)) {
+    showErr($('err-schema-manager'), 'Schema name must start with a letter or underscore and use only letters, digits, and underscores.')
+    return
+  }
+  setLoading(btn, true, 'Creating…')
+  fetch('/schemas', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ name })
+  })
+  .then(async response => ({ response, data: await response.json() }))
+  .then(({ response, data }) => {
+    if (!response.ok || data.error) throw new Error(data.error || 'Create failed.')
+    setLoading(btn, false, 'Create schema')
+    btn.disabled = true
+    $('new-schema-name').value = ''
+    $('ok-schema-manager').textContent = data.message
+    show($('ok-schema-manager'))
+    loadSchemaList(data.name)
+  })
+  .catch(error => {
+    setLoading(btn, false, 'Create schema')
+    showErr($('err-schema-manager'), error.message)
+  })
+})
 function bindEditButtons() {
   document.querySelectorAll('.btn-edit-table').forEach(btn => {
     btn.addEventListener('click', () => {
       const table = btn.dataset.table
-      const schema = $('schema-select').value
+      const schema = btn.dataset.schema
       openTableInEditor(schema, table)
     })
   })
@@ -3222,7 +3345,7 @@ function bindTruncateButtons() {
   document.querySelectorAll('.btn-truncate').forEach(btn => {
     btn.addEventListener('click', () => {
       const table = btn.dataset.table
-      const schema = $('schema-select').value
+      const schema = btn.dataset.schema
       if (!window.confirm(`Delete ALL rows from ${schema}.${table}? This cannot be undone.`)) return
 
       const result = btn.closest('.result-row').querySelector('.truncate-result')

@@ -503,6 +503,80 @@ def get_schemas():
     return jsonify({"schemas": schemas, "default": cfg.get("schema") or "lvapdbf"})
 
 
+SCHEMA_NAME_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]{0,127}")
+
+
+@app.route("/schemas/list", methods=["GET"])
+def list_all_schemas():
+    """List every user schema (including empty ones) for the Schema page."""
+    cfg = load_config()
+    if not cfg:
+        return jsonify({"error": "No DB connection saved."}), 400
+    conn_str, err = _build_conn_str(
+        cfg["host"], cfg["port"], cfg["database"], cfg["username"], cfg["password"]
+    )
+    if err:
+        return jsonify({"error": err}), 500
+    try:
+        conn = pyodbc.connect(conn_str, timeout=10)
+        cur = conn.cursor()
+        # schema_id >= 16384 are the fixed db_* role schemas.
+        cur.execute(
+            "SELECT s.name, USER_NAME(s.principal_id), "
+            "(SELECT COUNT(*) FROM sys.tables t WHERE t.schema_id = s.schema_id) "
+            "FROM sys.schemas s "
+            "WHERE s.schema_id < 16384 AND s.name NOT IN ('sys', 'INFORMATION_SCHEMA', 'guest') "
+            "ORDER BY s.name"
+        )
+        schemas = [{"name": r[0], "owner": r[1], "tables": r[2]} for r in cur.fetchall()]
+        conn.close()
+    except pyodbc.Error as e:
+        return jsonify({"error": f"Could not list schemas: {e}"}), 400
+    return jsonify({
+        "schemas": schemas,
+        "database": cfg["database"],
+        "default": cfg.get("schema") or "lvapdbf",
+    })
+
+
+@app.route("/schemas", methods=["POST"])
+def create_schema():
+    """Create a new, empty schema in the connected database."""
+    cfg = load_config()
+    if not cfg:
+        return jsonify({"error": "No DB connection saved."}), 400
+    name = str((request.json or {}).get("name", "")).strip()
+    if not SCHEMA_NAME_RE.fullmatch(name):
+        return jsonify({"error": "Schema name must start with a letter or underscore and "
+                                 "use only letters, digits, and underscores (max 128)."}), 400
+
+    conn_str, err = _build_conn_str(
+        cfg["host"], cfg["port"], cfg["database"], cfg["username"], cfg["password"]
+    )
+    if err:
+        return jsonify({"error": err}), 500
+
+    conn = None
+    try:
+        conn = pyodbc.connect(conn_str, timeout=10)
+        cursor = conn.cursor()
+        cursor.execute("SELECT name FROM sys.schemas WHERE name = ?", name)
+        existing = cursor.fetchone()
+        if existing is not None:
+            return jsonify({"error": f"Schema '{existing[0]}' already exists."}), 409
+        # Name is validated above, so bracket-quoting is safe.
+        cursor.execute(f"CREATE SCHEMA [{name}]")
+        conn.commit()
+        return jsonify({"ok": True, "name": name, "message": f"Schema '{name}' created."})
+    except pyodbc.Error as e:
+        if conn is not None:
+            conn.rollback()
+        return jsonify({"error": f"Could not create schema '{name}': {e}"}), 400
+    finally:
+        if conn is not None:
+            conn.close()
+
+
 @app.route("/tables", methods=["GET"])
 def get_tables():
     """List base tables in one schema for the maintenance UI."""
@@ -987,9 +1061,15 @@ def do_import():
     if err:
         return jsonify({"error": err}), 500
 
-    # Schema chosen in the UI dropdown wins; fall back to saved config, then default.
-    preferred_schema = payload.get("schema", "").strip() \
+    # Each table can target its own schema (per-row dropdown in the UI);
+    # anything not listed falls back to saved config, then default.
+    preferred_schema = str(payload.get("schema", "")).strip() \
         or cfg.get("schema") or "lvapdbf"
+    raw_schemas = payload.get("schemas")
+    table_schemas = {}
+    if isinstance(raw_schemas, dict):
+        table_schemas = {str(name): str(schema).strip()
+                         for name, schema in raw_schemas.items() if str(schema).strip()}
 
     _cleanup_import_jobs()
     job_id = uuid.uuid4().hex
@@ -1000,7 +1080,7 @@ def do_import():
 
     worker = threading.Thread(
         target=_run_import_job,
-        args=(job_id, cfg, str(tmp_path), sheet_name, selected_names, preferred_schema),
+        args=(job_id, cfg, str(tmp_path), sheet_name, selected_names, preferred_schema, table_schemas),
         daemon=True,
     )
     worker.start()
@@ -1142,7 +1222,7 @@ def _set_job_state(job_id, state, error=None):
         job["updated_at"] = time.time()
 
 
-def _mark_job_table(job_id, table_name, status, message, errors=None):
+def _mark_job_table(job_id, table_name, status, message, errors=None, schema=None):
     final_statuses = {"ok", "warn", "skip", "failed"}
     with IMPORT_JOBS_LOCK:
         job = IMPORT_JOBS.get(job_id)
@@ -1161,6 +1241,8 @@ def _mark_job_table(job_id, table_name, status, message, errors=None):
             "message": message,
             "errors": errors or [],
         })
+        if schema:
+            existing["schema"] = schema
         if status in final_statuses and not was_final:
             job["completed"] += 1
         job["updated_at"] = time.time()
@@ -1205,7 +1287,9 @@ def _fail_import_job(job_id, message):
         job["updated_at"] = time.time()
 
 
-def _run_import_job(job_id, cfg, tmp_path, sheet_name, selected_names, preferred_schema):
+def _run_import_job(job_id, cfg, tmp_path, sheet_name, selected_names, preferred_schema,
+                    table_schemas=None):
+    table_schemas = table_schemas or {}
     conn = None
     wb = None
     try:
@@ -1236,14 +1320,15 @@ def _run_import_job(job_id, cfg, tmp_path, sheet_name, selected_names, preferred
             if table_name not in selected_set:
                 continue
             pending.discard(table_name)
-            _mark_job_table(job_id, table_name, "running", "Importing")
+            schema = table_schemas.get(table_name) or preferred_schema
+            _mark_job_table(job_id, table_name, "running", "Importing", schema=schema)
             try:
                 headers, rows = extract_table(ws, meta)
                 if not headers:
                     result = {"name": table_name, "status": "skip", "message": "Header row empty", "errors": []}
                 else:
                     progress_cb = lambda done, total, tn=table_name: _mark_job_progress(job_id, tn, done, total)
-                    result = _import_one(conn, table_name, headers, rows, preferred_schema, progress_cb)
+                    result = _import_one(conn, table_name, headers, rows, schema, progress_cb)
             except Exception as e:
                 try:
                     conn.rollback()
@@ -1256,6 +1341,7 @@ def _run_import_job(job_id, cfg, tmp_path, sheet_name, selected_names, preferred
                 result.get("status", "failed"),
                 result.get("message", ""),
                 result.get("errors", []),
+                schema=schema,
             )
 
         for table_name in pending:
