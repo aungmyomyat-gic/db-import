@@ -1,10 +1,8 @@
 {
-  "version": "2.10.0",
-  "date": "2026-10-01",
+  "version": "2.11.0",
+  "date": "2026-10-02",
   "notes": [
-    "Add query count display and enhance save button styling",
-    "WR111UR_バグ対応",
-    "UI_Upgrade"
+    "Table တစ်ခုချင်းစီအတွက် schema ရွေးချယ်ခြင်းနှင့် Schema tab ထည့်သွင်း"
   ],
   "update_url": "https://gist.githubusercontent.com/aungmyomyat-gic/02424e3be1055f007d480a8c7ba689a7/raw/version.json"
 }
