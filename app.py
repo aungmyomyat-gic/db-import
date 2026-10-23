@@ -723,13 +723,12 @@ def run_query():
 
 @app.route("/table-data", methods=["GET"])
 def get_table_data():
-    """Return a bounded table preview plus metadata for safe row editing."""
+    """Return all table rows plus metadata for safe row editing."""
     cfg = load_config()
     if not cfg:
         return jsonify({"error": "No DB connection saved."}), 400
     schema = request.args.get("schema", "").strip()
     table_name = request.args.get("table", "").strip()
-    limit = min(max(request.args.get("limit", 100, type=int), 1), 500)
     if not schema or not table_name:
         return jsonify({"error": "Schema and table are required."}), 400
 
@@ -750,15 +749,13 @@ def get_table_data():
         order_sql = ""
         if primary_keys:
             order_sql = " ORDER BY " + ", ".join(f"[{key.replace(']', ']]')}]" for key in primary_keys)
-        cursor.execute(f"SELECT TOP {limit} * FROM [{safe_schema}].[{safe_table}]{order_sql}")
+        cursor.execute(f"SELECT * FROM [{safe_schema}].[{safe_table}]{order_sql}")
         rows = [[_json_table_value(value) for value in row] for row in cursor.fetchall()]
-        cursor.execute(f"SELECT COUNT_BIG(*) FROM [{safe_schema}].[{safe_table}]")
-        total_rows = cursor.fetchone()[0]
         return jsonify({
             "schema": schema, "table": table_name, "columns": columns,
             "primary_keys": primary_keys,
             "identifier_columns": primary_keys or [column["name"] for column in columns],
-            "rows": rows, "limit": limit, "total_rows": total_rows,
+            "rows": rows, "total_rows": len(rows),
         })
     except pyodbc.Error as e:
         return jsonify({"error": f"Could not load table data: {e}"}), 400

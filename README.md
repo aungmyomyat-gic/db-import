@@ -11,7 +11,7 @@ the tables afterwards. It runs in Docker and opens at http://localhost:5000.
   If the file name contains `day job 12` / `month job 3`, the matching batch job
   can be triggered after the import.
 - **Truncate Table** — empty one or more tables in a schema.
-- **Data Editor** — browse up to 100 rows of any table:
+- **Data Editor** — browse every record in any table:
   - row numbers, and a summary of primary keys, total rows and columns
   - sort by clicking a column header; search columns by name
   - edit rows in place (Edit mode)
