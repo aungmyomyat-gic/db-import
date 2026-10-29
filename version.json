@@ -1,8 +1,8 @@
 {
-  "version": "2.11.1",
-  "date": "2026-10-23",
+  "version": "2.11.2",
+  "date": "2026-10-29",
   "notes": [
-    "Show every record in Data Editor"
+    "Preserve date formatting when copying Data Editor rows"
   ],
   "update_url": "https://gist.githubusercontent.com/aungmyomyat-gic/02424e3be1055f007d480a8c7ba689a7/raw/version.json"
 }
