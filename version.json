@@ -1,8 +1,8 @@
 {
-  "version": "2.11.2",
-  "date": "2026-10-29",
+  "version": "2.11.3",
+  "date": "2026-10-30",
   "notes": [
-    "Preserve date formatting when copying Data Editor rows"
+    "Restore v2.11.1 Data Editor clipboard behavior"
   ],
   "update_url": "https://gist.githubusercontent.com/aungmyomyat-gic/02424e3be1055f007d480a8c7ba689a7/raw/version.json"
 }
