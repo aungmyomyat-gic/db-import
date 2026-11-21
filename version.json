@@ -1,8 +1,8 @@
 {
-  "version": "2.11.3",
-  "date": "2026-10-30",
+  "version": "2.12.0",
+  "date": "2026-11-21",
   "notes": [
-    "Restore v2.11.1 Data Editor clipboard behavior"
+    "Import header-less CSV files, using the file name as the table name"
   ],
   "update_url": "https://gist.githubusercontent.com/aungmyomyat-gic/02424e3be1055f007d480a8c7ba689a7/raw/version.json"
 }

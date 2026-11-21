@@ -1,3 +1,5 @@
+import csv
+import io
 import re
 import os
 import json
@@ -339,6 +341,59 @@ def extract_table(ws, meta):
     return headers, rows
 
 
+# ── CSV helpers ───────────────────────────────────────────────────────────────
+# A CSV upload holds ONE table with NO header row: the table name comes from the
+# file name (MDNNOP.csv, "MDNNOP (1).csv" -> MDNNOP) and the columns are matched
+# to the DB table's columns by position.
+
+CSV_TABLE_NAME_RE = re.compile(r"[A-Z][A-Z0-9_]*")
+CSV_ENCODINGS = ("utf-8-sig", "cp932")   # UTF-8 (with/without BOM), then Shift-JIS
+
+
+def is_csv_filename(filename):
+    return bool(filename) and filename.lower().endswith(".csv")
+
+
+def csv_table_name(filename):
+    stem = normalize_cell(Path(filename or "").stem).upper()
+    m = CSV_TABLE_NAME_RE.match(stem)
+    return m.group(0) if m else None
+
+
+def read_csv_rows(path):
+    """Read every non-blank row; short rows are padded so all rows have the same width."""
+    raw = Path(path).read_bytes()
+    for encoding in CSV_ENCODINGS:
+        try:
+            text = raw.decode(encoding)
+            break
+        except UnicodeDecodeError:
+            continue
+    else:
+        raise ValueError("CSV is not UTF-8 or Shift-JIS text")
+    rows = [row for row in csv.reader(io.StringIO(text, newline=""))
+            if any(cell.strip() for cell in row)]
+    width = max((len(row) for row in rows), default=0)
+    return [row + [""] * (width - len(row)) for row in rows], width
+
+
+def _csv_preview(table_name, rows, width):
+    return {
+        "name": table_name,
+        "columns": width,
+        "records": len(rows),
+        "col_range": "No header",
+        "row_range": f"1:{len(rows)}" if rows else "-",
+    }
+
+
+def _csv_value(value, dtype):
+    """CSV text -> insert value. Blank becomes NULL (NOT NULL columns get a default later)."""
+    if dtype not in STRING_TYPES:
+        value = value.strip()
+    return None if value == "" else value
+
+
 # ── Routes ────────────────────────────────────────────────────────────────────
 
 @app.route("/")
@@ -429,13 +484,22 @@ def upload():
     if not file or not file.filename:
         return jsonify({"error": "No file selected."}), 400
 
-    tmp = Path(tempfile.gettempdir()) / f"{uuid.uuid4()}.xlsx"
+    is_csv = is_csv_filename(file.filename)
+    table_name = csv_table_name(file.filename) if is_csv else None
+    if is_csv and not table_name:
+        return jsonify({"error": "CSV file name must start with the table name, e.g. MDNNOP.csv."}), 400
+
+    tmp = Path(tempfile.gettempdir()) / f"{uuid.uuid4()}{'.csv' if is_csv else '.xlsx'}"
     file.save(tmp)
 
     try:
-        wb = openpyxl.load_workbook(tmp, data_only=True, read_only=True)
-        sheets = wb.sheetnames
-        wb.close()
+        if is_csv:
+            read_csv_rows(tmp)
+            sheets = [table_name]   # a CSV is one "sheet" holding one table
+        else:
+            wb = openpyxl.load_workbook(tmp, data_only=True, read_only=True)
+            sheets = wb.sheetnames
+            wb.close()
     except Exception as e:
         tmp.unlink(missing_ok=True)
         return jsonify({"error": f"Cannot open file: {e}"}), 400
@@ -447,7 +511,14 @@ def upload():
 
     session["tmp_path"] = str(tmp)
     session["orig_filename"] = file.filename
-    return jsonify({"sheets": sheets, "batch_job": derive_batch_job(file.filename)})
+    session["file_kind"] = "csv" if is_csv else "excel"
+    session["csv_table"] = table_name
+    return jsonify({
+        "sheets": sheets,
+        "kind": session["file_kind"],
+        "table": table_name,
+        "batch_job": derive_batch_job(file.filename),
+    })
 
 
 @app.route("/scan", methods=["POST"])
@@ -461,6 +532,14 @@ def scan():
         return jsonify({"error": "Session expired — please re-upload the file."}), 400
     if not sheet_name:
         return jsonify({"error": "Sheet name is required."}), 400
+
+    if session.get("file_kind") == "csv":
+        try:
+            rows, width = read_csv_rows(tmp_path)
+        except Exception as e:
+            return jsonify({"error": f"Cannot open file: {e}"}), 400
+        session["sheet_name"] = sheet_name
+        return jsonify({"tables": [_csv_preview(session.get("csv_table"), rows, width)], "kind": "csv"})
 
     try:
         wb = openpyxl.load_workbook(tmp_path, data_only=True, read_only=True)
@@ -1077,7 +1156,8 @@ def do_import():
 
     worker = threading.Thread(
         target=_run_import_job,
-        args=(job_id, cfg, str(tmp_path), sheet_name, selected_names, preferred_schema, table_schemas),
+        args=(job_id, cfg, str(tmp_path), sheet_name, selected_names, preferred_schema, table_schemas,
+              session.get("csv_table") if session.get("file_kind") == "csv" else None),
         daemon=True,
     )
     worker.start()
@@ -1285,7 +1365,7 @@ def _fail_import_job(job_id, message):
 
 
 def _run_import_job(job_id, cfg, tmp_path, sheet_name, selected_names, preferred_schema,
-                    table_schemas=None):
+                    table_schemas=None, csv_table=None):
     table_schemas = table_schemas or {}
     conn = None
     wb = None
@@ -1298,6 +1378,12 @@ def _run_import_job(job_id, cfg, tmp_path, sheet_name, selected_names, preferred
             _fail_import_job(job_id, err)
             return
         conn = pyodbc.connect(conn_str, timeout=10)
+
+        if csv_table:
+            _run_csv_import(job_id, conn, tmp_path, csv_table, selected_names,
+                            table_schemas.get(csv_table) or preferred_schema)
+            _finish_import_job(job_id)
+            return
 
         wb = openpyxl.load_workbook(tmp_path, data_only=True, read_only=True)
         if sheet_name not in wb.sheetnames:
@@ -1359,6 +1445,28 @@ def _run_import_job(job_id, cfg, tmp_path, sheet_name, selected_names, preferred
                 pass
 
 
+def _run_csv_import(job_id, conn, tmp_path, table_name, selected_names, schema):
+    if selected_names is None:
+        _replace_job_queue(job_id, [table_name])
+    elif table_name not in selected_names:
+        for name in selected_names:
+            _mark_job_table(job_id, name, "skip", "Table not found in file", [])
+        return
+    _mark_job_table(job_id, table_name, "running", "Importing", schema=schema)
+    try:
+        rows, _ = read_csv_rows(tmp_path)
+        progress_cb = lambda done, total: _mark_job_progress(job_id, table_name, done, total)
+        result = _import_one(conn, table_name, None, rows, schema, progress_cb)
+    except Exception as e:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        result = {"name": table_name, "status": "failed", "message": f"Failed: {e}", "errors": []}
+    _mark_job_table(job_id, table_name, result.get("status", "failed"), result.get("message", ""),
+                    result.get("errors", []), schema=schema)
+
+
 def _values_for_insert(row, plan, db_cols):
     values = []
     for col_name, src in plan:
@@ -1395,6 +1503,10 @@ def _insert_batch(cursor, insert_sql, batch, error_samples):
 
 
 def _import_one(conn, table_name, headers, rows, preferred_schema="lvapdbf", progress_cb=None):
+    """
+    Replace the table's rows. headers=None means a header-less CSV: the row
+    values are matched to the table's columns by position.
+    """
     cursor = conn.cursor()
 
     # Resolve the actual schema (e.g. 'lvapdbf'), not the login default ('dbo').
@@ -1427,6 +1539,15 @@ def _import_one(conn, table_name, headers, rows, preferred_schema="lvapdbf", pro
             "nullable": nullable == "YES",
             "has_default": default is not None,
         }
+
+    extra_csv_cols = 0
+    if headers is None:
+        width = max((len(row) for row in rows), default=0)
+        ordered = list(db_cols.values())
+        headers = [info["name"] for info in ordered[:width]]
+        extra_csv_cols = max(0, width - len(ordered))
+        types = [info["type"] for info in ordered[:width]]
+        rows = [[_csv_value(v, t) for v, t in zip(row, types)] for row in rows]
 
     # Which sheet header maps to which DB column?
     sheet_idx = {h.upper(): i for i, h in enumerate(headers) if h.upper() in db_cols}
@@ -1489,6 +1610,8 @@ def _import_one(conn, table_name, headers, rows, preferred_schema="lvapdbf", pro
         msg += f" ({len(filled_cols)} required cols auto-filled: {', '.join(filled_cols)})"
     if unmapped:
         msg += f" ({unmapped} sheet cols skipped — not in table)"
+    if extra_csv_cols:
+        msg += f" ({extra_csv_cols} CSV cols skipped — table has only {len(db_cols)} columns)"
 
     return {
         "name": table_name,
@@ -1497,6 +1620,9 @@ def _import_one(conn, table_name, headers, rows, preferred_schema="lvapdbf", pro
         "inserted": inserted,
         "errors": error_samples,
     }
+
+
+STRING_TYPES = {"char", "varchar", "nchar", "nvarchar", "text", "ntext"}
 
 
 def _type_default(dtype: str):
