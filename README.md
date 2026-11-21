@@ -10,6 +10,10 @@ the tables afterwards. It runs in Docker and opens at http://localhost:5000.
   Preview them, choose which to import, and insert them into the target schema.
   If the file name contains `day job 12` / `month job 3`, the matching batch job
   can be triggered after the import.
+- **CSV import** — choose a `.csv` file with **no header row** and the file name
+  is used as the table name (`MDNNOP.csv` or `MDNNOP (1).csv` → `MDNNOP`). Columns
+  are matched to the table by position, and blank values become NULL, or the
+  type's default for NOT NULL columns. UTF-8 and Shift-JIS files both work.
 - **Truncate Table** — empty one or more tables in a schema.
 - **Data Editor** — browse every record in any table:
   - row numbers, and a summary of primary keys, total rows and columns

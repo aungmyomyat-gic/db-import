@@ -448,6 +448,7 @@
   .drop-icon { font-size: 2rem; margin-bottom: 8px }
   .drop-label { color: #94a3b8; font-size: .9rem }
   .drop-label span { color: #818cf8; text-decoration: underline }
+  .drop-hint { color: #64748b; font-size: .78rem; margin-top: 6px }
   .file-name { color: #10b981; font-size: .85rem; margin-top: 8px; font-weight: 500 }
 
   .row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px }
@@ -994,9 +995,10 @@
     <div id="err-upload" class="alert error hidden"></div>
 
     <div class="drop-zone" id="drop-zone">
-      <input type="file" id="file-input" accept=".xlsx,.xls">
+      <input type="file" id="file-input" accept=".xlsx,.xls,.csv">
       <div class="drop-icon">📂</div>
-      <div class="drop-label"><span>Click to browse</span> or drag &amp; drop your Excel file</div>
+      <div class="drop-label"><span>Click to browse</span> or drag &amp; drop your Excel or CSV file</div>
+      <div class="drop-hint">CSV: no header row, file name = table name (e.g. MDNNOP.csv → MDNNOP)</div>
       <div class="file-name hidden" id="file-name"></div>
     </div>
 
@@ -1125,6 +1127,7 @@ const show = el => el.classList.remove('hidden')
 const hide = el => el.classList.add('hidden')
 let importPollTimer = null
 let currentBatchJob = null
+let currentFileKind = 'excel'
 let currentFileHandle = null
 let currentFileStamp = null
 let fileWatchTimer = null
@@ -2229,9 +2232,10 @@ async function chooseLocalFile() {
   try {
     const handles = await window.showOpenFilePicker({
       multiple: false,
-      types: [{ description: 'Excel files', accept: {
+      types: [{ description: 'Excel or CSV files', accept: {
         'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
-        'application/vnd.ms-excel': ['.xls']
+        'application/vnd.ms-excel': ['.xls'],
+        'text/csv': ['.csv']
       }}]
     })
     currentFileHandle = handles[0]
@@ -2258,17 +2262,29 @@ function handleFile(file) {
       currentFileStamp = `${file.lastModified}:${file.size}`
       hide($('file-change-warning'))
       currentBatchJob = data.batch_job || null
+      setFileKind(data.kind === 'csv' ? 'csv' : 'excel')
       const sel = $('sheet-select')
       sel.innerHTML = '<option value="">— select a sheet —</option>'
       data.sheets.forEach(s => {
-        const o = document.createElement('option'); o.value = s; o.textContent = s
+        const label = currentFileKind === 'csv' ? `${s} (CSV, no header)` : s
+        const o = document.createElement('option'); o.value = s; o.textContent = label
         sel.appendChild(o)
       })
       sel.disabled = false
       if (data.sheets.length === 1) { sel.value = data.sheets[0]; $('btn-scan').disabled = false }
+      // A CSV holds exactly one table, so go straight to the preview.
+      if (currentFileKind === 'csv') return scanSheet($('btn-scan')).then(() => data)
       return data
     })
     .catch(e => showErr($('err-upload'), 'Upload failed: ' + e))
+}
+
+function setFileKind(kind) {
+  currentFileKind = kind
+  // A CSV has no sheets to switch between.
+  ;['btn-change-sheet', 'btn-change-sheet-results'].forEach(id => {
+    $(id).classList.toggle('hidden', kind === 'csv')
+  })
 }
 
 function startFileWatcher() {
@@ -2293,7 +2309,7 @@ $('btn-refresh-file').addEventListener('click', async () => {
   setLoading(btn, true, 'Refreshing…')
   try {
     const data = await handleFile(await currentFileHandle.getFile())
-    if (!data || data.error) return
+    if (!data || data.error || data.kind === 'csv') return
     if (previousSheet && data.sheets.includes(previousSheet)) {
       $('sheet-select').value = previousSheet
       await scanSheet($('btn-scan'))
@@ -2341,8 +2357,10 @@ function scanSheet(btn) {
 }
 
 function buildPreview(tables, sheet) {
-  $('preview-summary').innerHTML =
-    `Found <strong>${tables.length}</strong> table${tables.length !== 1 ? 's' : ''} in sheet
+  $('preview-summary').innerHTML = currentFileKind === 'csv'
+    ? `CSV <strong>${escapeHtml($('file-name').textContent)}</strong> → table
+       <strong>${escapeHtml(sheet)}</strong> · no header row, columns are matched by position`
+    : `Found <strong>${tables.length}</strong> table${tables.length !== 1 ? 's' : ''} in sheet
      <strong>${escapeHtml(sheet)}</strong>`
   const tbody = $('preview-body'); tbody.innerHTML = ''
   tables.forEach((t, i) => {
@@ -3410,6 +3428,7 @@ function resetToFileUpload() {
   currentFileHandle = null
   currentFileStamp = null
   currentBatchJob = null
+  setFileKind('excel')
   hide($('file-change-warning'))
   hide($('batch-status'))
   hide($('btn-call-batch'))
