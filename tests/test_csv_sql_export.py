@@ -4,6 +4,7 @@ import csv
 import io
 import tempfile
 import time
+import threading
 import unittest
 from decimal import Decimal
 from pathlib import Path
@@ -12,6 +13,9 @@ from unittest.mock import patch
 import pyodbc
 
 import app as importer
+
+
+CONFIG = dict(host="example", port=1433, database="test", username="user", password="secret")
 
 
 METADATA = [
@@ -199,7 +203,7 @@ class CsvSqlExportTests(unittest.TestCase):
 
     def test_large_exports_split_values_into_valid_batches(self):
         columns = {"CODE": {"name": "CODE", "type": "varchar", "nullable": False}}
-        plan = [("CODE", ("sheet", 0))]
+        plan = [("CODE", ("csv", 0))]
         path = Path(self.directory.name) / "large.sql"
         for count, expected_sizes in ((1, [1]), (1000, [1000]), (1001, [1000, 1]),
                                       (2000, [1000, 1000]), (2001, [1000, 1000, 1])):
@@ -216,7 +220,7 @@ class CsvSqlExportTests(unittest.TestCase):
     def test_reserved_schema_and_table_names_are_delimited(self):
         path = Path(self.directory.name) / "reserved.sql"
         columns = {"CODE": {"name": "CODE", "type": "varchar", "nullable": False}}
-        importer._write_import_sql(path, "order", "SELECT", [("CODE", ("sheet", 0))], [["0001"]], columns)
+        importer._write_import_sql(path, "order", "SELECT", [("CODE", ("csv", 0))], [["0001"]], columns)
         self.assertEqual(path.read_text(encoding="utf-8-sig"), (
             "DELETE FROM [order].[SELECT];\nINSERT INTO [order].[SELECT]\nVALUES\n(N'0001');\n"
         ))
@@ -254,13 +258,15 @@ class CsvSqlExportTests(unittest.TestCase):
         self.assertIsNone(connection.committed)
         self.assertNotIn("sql_download_url", importer._job_snapshot(job))
 
-    def test_excel_import_still_runs_without_an_export(self):
-        connection = FakeConnection()
-        result = importer._import_one(connection, "MDNNOP", ["CODE", "DESCRIPTION"],
-                                      [["0001", "Excel 日本語"]])
-        self.assertEqual(result["status"], "ok")
-        self.assertEqual(connection.committed[0][0], "0001")
-        self.assertEqual(connection.committed[0][1], "Excel 日本語")
+    def test_non_csv_and_empty_uploads_are_rejected(self):
+        client = importer.app.test_client()
+        for filename, content in [("data.xlsx", b"workbook"), ("MDNNOP.csv", b"\n,\n")]:
+            with self.subTest(filename=filename):
+                response = client.post("/upload", data={"file": (io.BytesIO(content), filename)})
+                self.assertEqual(response.status_code, 400)
+                self.assertIn("error", response.json)
+        with client.session_transaction() as browser_session:
+            self.assertNotIn("uploads", browser_session)
 
     def test_sql_literals_keep_quotes_unicode_numeric_precision_and_binary(self):
         self.assertEqual(importer._sql_literal("O'Brien 日本語"), "N'O''Brien 日本語'")
@@ -298,7 +304,7 @@ class CsvSqlExportTests(unittest.TestCase):
             upload = client.post("/upload", data={"file": (io.BytesIO(raw), "MDNNOP.csv")})
             self.assertEqual(upload.status_code, 200)
             with client.session_transaction() as browser_session:
-                uploaded_path = Path(browser_session["tmp_path"])
+                uploaded_path = Path(browser_session["uploads"]["import"]["path"])
             self.addCleanup(uploaded_path.unlink, missing_ok=True)
             self.assertEqual(client.post("/scan", json={"sheet": "MDNNOP"}).status_code, 200)
             response = client.post("/import", json={"tables": ["MDNNOP"], "schema": "lvapdbf"})
@@ -336,6 +342,197 @@ class CsvSqlExportTests(unittest.TestCase):
             job["updated_at"] = 0
             self.assertEqual(client.get(download_url).status_code, 404)
             self.assertFalse(export_path.exists())
+
+
+    def upload_csv(self, client, raw, purpose="import", filename="MDNNOP.csv"):
+        response = client.post("/upload", data={"file": (io.BytesIO(raw), filename), "purpose": purpose})
+        self.assertEqual(response.status_code, 200, response.json)
+        with client.session_transaction() as browser_session:
+            path = Path(browser_session["uploads"][purpose]["path"])
+        self.addCleanup(path.unlink, missing_ok=True)
+        return response.json
+
+    def await_job(self, client, response):
+        self.assertEqual(response.status_code, 202, response.json)
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline:
+            status = client.get(response.json["status_url"])
+            self.assertEqual(status.status_code, 200)
+            if status.json["state"] in {"done", "failed"}:
+                return status.json
+            time.sleep(0.01)
+        self.fail("CSV job did not finish")
+
+    def test_standalone_generation_matches_import_sql_without_database_writes(self):
+        raw = self.write_csv([["0001", "12.50", "日本語 O'Brien", "", ""],
+                              ["0002", "", "next row", "1", "2026-11-22"]])
+        imported = self.run_csv(FakeConnection(), [["0001", "12.50", "日本語 O'Brien", "", ""],
+                                                  ["0002", "", "next row", "1", "2026-11-22"]])
+        expected = Path(imported["sql_path"]).read_bytes()
+        client = importer.app.test_client()
+        self.upload_csv(client, raw, "generate")
+        connection = FakeConnection()
+        with patch.object(importer, "load_config", return_value=CONFIG), \
+             patch.object(importer, "_build_conn_str", return_value=("mock", None)), \
+             patch.object(importer.pyodbc, "connect", return_value=connection):
+            snapshot = self.await_job(client, client.post("/generate-sql", json={"schema": "lvapdbf"}))
+        self.assertEqual(snapshot["state"], "done")
+        self.assertEqual(snapshot["operation"], "generate")
+        self.assertIsNone(connection.committed)
+        self.assertEqual(connection.pending, [])
+        self.assertEqual(connection.rollbacks, 0)
+        self.assertTrue(connection.closed)
+        self.assertTrue(all(sql.startswith("SELECT ") for sql in connection.statements))
+        download = client.get(snapshot["sql_download_url"])
+        self.assertEqual(download.status_code, 200)
+        self.assertEqual(download.data, expected)
+        download.close()
+        stranger = importer.app.test_client()
+        self.assertEqual(stranger.get(snapshot["sql_download_url"]).status_code, 404)
+        self.assertEqual(stranger.get(snapshot["status_url"]).status_code, 404)
+        job = importer.IMPORT_JOBS[snapshot["job_id"]]
+        job["updated_at"] = 0
+        export = Path(job["sql_path"])
+        self.assertEqual(client.get(snapshot["sql_download_url"]).status_code, 404)
+        self.assertFalse(export.exists())
+
+    def test_both_tabs_keep_their_own_csv(self):
+        client = importer.app.test_client()
+        self.upload_csv(client, b"IMPORT_ONLY\n", "import")
+        self.upload_csv(client, b"GENERATE_ONLY\n", "generate", "OTHER.csv")
+        imported, generated = FakeConnection(), FakeConnection()
+        with patch.object(importer, "load_config", return_value=CONFIG), \
+             patch.object(importer, "_build_conn_str", return_value=("mock", None)), \
+             patch.object(importer.pyodbc, "connect", side_effect=[generated, imported]):
+            sql_job = self.await_job(client, client.post("/generate-sql", json={"schema": "lvapdbf"}))
+            import_job = self.await_job(client, client.post("/import", json={"schema": "lvapdbf"}))
+        self.assertEqual(imported.committed[0][0], "IMPORT_ONLY")
+        download = client.get(sql_job["sql_download_url"])
+        self.assertIn("INSERT INTO lvapdbf.OTHER", download.data.decode("utf-8-sig"))
+        self.assertIn("N'GENERATE_ONLY'", download.data.decode("utf-8-sig"))
+        self.assertNotIn("IMPORT_ONLY", download.data.decode("utf-8-sig"))
+        download.close()
+        self.assertEqual(import_job["results"][0]["name"], "MDNNOP")
+        self.assertIsNone(generated.committed)
+
+    def test_reupload_cannot_replace_a_queued_jobs_input(self):
+        client = importer.app.test_client()
+        self.upload_csv(client, b"ORIGINAL\n")
+        original_worker = importer._run_import_job
+        release_worker = threading.Event()
+        worker_finished = threading.Event()
+        captured = []
+
+        def delayed_worker(*args):
+            captured.append(args[2])
+            try:
+                if release_worker.wait(timeout=3):
+                    original_worker(*args)
+            finally:
+                worker_finished.set()
+
+        connection = FakeConnection()
+        with patch.object(importer, "load_config", return_value=CONFIG), \
+             patch.object(importer, "_build_conn_str", return_value=("mock", None)), \
+             patch.object(importer.pyodbc, "connect", return_value=connection), \
+             patch.object(importer, "_run_import_job", side_effect=delayed_worker):
+            response = client.post("/import", json={"schema": "lvapdbf"})
+            self.assertEqual(response.status_code, 202)
+            self.upload_csv(client, b"REPLACEMENT\n")
+            release_worker.set()
+            self.assertTrue(worker_finished.wait(timeout=3))
+            snapshot = self.await_job(client, response)
+        self.assertEqual(snapshot["state"], "done")
+        self.assertEqual(connection.committed[0][0], "ORIGINAL")
+        self.assertTrue(captured)
+        self.assertFalse(Path(captured[0]).exists())
+
+    def test_elapsed_time_increases_then_freezes_on_completion(self):
+        with patch.object(importer.time, "perf_counter", return_value=100):
+            job = importer._new_import_job(self.job_id, ["MDNNOP"])
+        importer.IMPORT_JOBS[self.job_id] = job
+        with patch.object(importer.time, "perf_counter", return_value=101.125):
+            self.assertEqual(importer._job_snapshot(job)["elapsed_seconds"], 1.125)
+            importer._set_job_state(self.job_id, "running")
+        with patch.object(importer.time, "perf_counter", return_value=105.5):
+            importer._finish_import_job(self.job_id)
+        with patch.object(importer.time, "perf_counter", return_value=999):
+            snapshot = importer._job_snapshot(job)
+            self.assertEqual(snapshot["elapsed_seconds"], 5.5)
+        self.assertNotIn("started_at", snapshot)
+        self.assertNotIn("finished_at", snapshot)
+
+    def test_elapsed_time_freezes_on_failure(self):
+        with patch.object(importer.time, "perf_counter", return_value=100):
+            job = importer._new_import_job(self.job_id, ["MDNNOP"])
+        importer.IMPORT_JOBS[self.job_id] = job
+        with patch.object(importer.time, "perf_counter", return_value=102.25):
+            importer._fail_import_job(self.job_id, "Connection lost")
+        with patch.object(importer.time, "perf_counter", return_value=999):
+            snapshot = importer._job_snapshot(job)
+        self.assertEqual(snapshot["elapsed_seconds"], 2.25)
+        self.assertEqual(snapshot["state"], "failed")
+        self.assertNotIn("sql_download_url", snapshot)
+
+    def test_generator_failure_keeps_database_unchanged_and_hides_download(self):
+        for failure in ("missing_table", "write_error"):
+            with self.subTest(failure=failure):
+                client = importer.app.test_client()
+                self.upload_csv(client, b"0001\n", "generate")
+                connection = FakeConnection(table_exists=failure != "missing_table")
+                writer = importer._write_import_sql
+                if failure == "write_error":
+                    def writer(path, *args):
+                        Path(path).write_text("partial SQL")
+                        raise OSError("Disk full")
+                with patch.object(importer, "load_config", return_value=CONFIG), \
+                     patch.object(importer, "_build_conn_str", return_value=("mock", None)), \
+                     patch.object(importer.pyodbc, "connect", return_value=connection), \
+                     patch.object(importer, "_write_import_sql", side_effect=writer):
+                    snapshot = self.await_job(client, client.post("/generate-sql", json={"schema": "lvapdbf"}))
+                self.assertEqual(snapshot["state"], "failed")
+                self.assertEqual(snapshot["results"][0]["status"], "failed")
+                self.assertNotIn("sql_download_url", snapshot)
+                self.assertFalse((Path(importer.SQL_EXPORT_DIR.name) / f"{snapshot['job_id']}.sql").exists())
+                self.assertEqual(connection.rollbacks, 0)
+                self.assertIsNone(connection.committed)
+                self.assertTrue(connection.closed)
+                self.assertTrue(all(sql.startswith("SELECT ") for sql in connection.statements))
+
+    def test_connection_failure_cleans_job_input_and_reports_failure(self):
+        client = importer.app.test_client()
+        self.upload_csv(client, b"0001\n")
+        with patch.object(importer, "load_config", return_value=CONFIG), \
+             patch.object(importer, "_build_conn_str", return_value=("mock", None)), \
+             patch.object(importer.pyodbc, "connect", side_effect=pyodbc.Error("Cannot connect")):
+            snapshot = self.await_job(client, client.post("/import", json={"schema": "lvapdbf"}))
+        self.assertEqual(snapshot["state"], "failed")
+        self.assertIn("Cannot connect", snapshot["error"])
+        self.assertNotIn("sql_download_url", snapshot)
+        self.assertGreaterEqual(snapshot["elapsed_seconds"], 0)
+        self.assertFalse((Path(importer.UPLOAD_DIR.name) / f"job-{snapshot['job_id']}.csv").exists())
+
+    def test_removed_features_have_no_routes(self):
+        client = importer.app.test_client()
+        for endpoint in ("/query", "/tables", "/table-data", "/truncate", "/call-batch",
+                         "/schemas/list", "/version", "/update"):
+            for method in ("GET", "POST", "PATCH", "DELETE"):
+                with self.subTest(endpoint=endpoint, method=method):
+                    self.assertEqual(client.open(endpoint, method=method).status_code, 404)
+        self.assertEqual(client.post("/schemas", json={"name": "new_schema"}).status_code, 405)
+
+    def test_each_workflow_requires_its_own_upload_and_connection(self):
+        client = importer.app.test_client()
+        with patch.object(importer, "load_config", return_value={}):
+            for endpoint in ("/import", "/generate-sql"):
+                response = client.post(endpoint, json={})
+                self.assertEqual(response.status_code, 400)
+                self.assertIn("connection", response.json["error"])
+        self.upload_csv(client, b"0001\n", "import")
+        with patch.object(importer, "load_config", return_value=CONFIG):
+            response = client.post("/generate-sql", json={})
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("upload", response.json["error"])
 
 
 if __name__ == "__main__":

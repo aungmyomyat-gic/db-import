@@ -3,3473 +3,457 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0">
-<meta http-equiv="Pragma" content="no-cache">
-<meta http-equiv="Expires" content="0">
-<title>DB Import</title>
-<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%234f46e5'/%3E%3Cg fill='none' stroke='white' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round' transform='translate(4 4) scale(1)'%3E%3Cellipse cx='12' cy='6' rx='7' ry='2.6'/%3E%3Cpath d='M5 6v12c0 1.44 3.13 2.6 7 2.6s7-1.16 7-2.6V6'/%3E%3Cpath d='M5 12c0 1.44 3.13 2.6 7 2.6s7-1.16 7-2.6'/%3E%3C/g%3E%3C/svg%3E">
+<title>DB Import · CSV &amp; SQL</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%234f46e5'/%3E%3Cpath d='M9 8h14M9 16h14M9 24h14' stroke='white' stroke-width='3'/%3E%3C/svg%3E">
 <style>
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0 }
-  body {
-    font-family: 'Segoe UI', system-ui, sans-serif;
-    background: #0f1117;
-    color: #e2e8f0;
-    min-height: 100vh;
-    padding: 0 16px 40px;
-  }
-  .topbar {
-    position: sticky;
-    top: 0;
-    z-index: 100;
-    margin: 0 -16px;
-    background: rgba(15, 17, 23, .92);
-    backdrop-filter: blur(8px);
-    border-bottom: 1px solid #2d3148;
-  }
-  .topbar-inner {
-    max-width: 1180px;
-    margin: 0 auto;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 16px;
-    padding: 12px 16px;
-  }
-  .topbar-brand {
-    display: flex; align-items: center; gap: 9px;
-    font-weight: 600; color: #f0f4ff; font-size: .95rem; white-space: nowrap;
-  }
-  .topbar-logo {
-    width: 28px; height: 28px; border-radius: 8px;
-    background: #4f46e5; color: #fff;
-    display: flex; align-items: center; justify-content: center;
-    font-size: .85rem; flex: 0 0 auto;
-  }
-  .version-badge {
-    font-size: .68rem; font-weight: 500; color: #94a3b8; background: #1e213a;
-    border: 1px solid #2d3148; border-radius: 999px; padding: 2px 8px; cursor: pointer;
-  }
-  .version-badge.has-update { color: #6ee7b7; border-color: #14532d; background: #0f2a22 }
-  .version-badge.has-update::after { content: ' • update'; }
-  .modal-backdrop {
-    position: fixed; inset: 0; z-index: 200; background: rgba(5, 6, 12, .72);
-    display: flex; align-items: center; justify-content: center; padding: 16px;
-  }
-  .modal {
-    width: 100%; max-width: 520px; background: #1a1d2e; border: 1px solid #2d3148;
-    border-radius: 14px; box-shadow: 0 20px 60px rgba(0, 0, 0, .5); overflow: hidden;
-  }
-  .modal-head { padding: 18px 20px 6px; display: flex; align-items: center; gap: 10px }
-  .modal-head h3 { font-size: 1.05rem; color: #f0f4ff }
-  .modal-icon {
-    width: 30px; height: 30px; border-radius: 8px; background: #059669; color: #fff;
-    display: flex; align-items: center; justify-content: center; font-size: .9rem; flex: 0 0 auto;
-  }
-  .modal-body { padding: 8px 20px 18px; color: #cbd5e1; font-size: .86rem; line-height: 1.55 }
-  .modal-body .version-jump { color: #94a3b8; margin-bottom: 12px }
-  .modal-body .version-jump strong { color: #6ee7b7 }
-  .modal-body ul { margin: 0 0 14px 18px }
-  .modal-body .step-label { font-size: .72rem; color: #64748b; text-transform: uppercase; letter-spacing: .06em; margin: 10px 0 6px }
-  .cmd-box {
-    display: flex; align-items: center; gap: 8px; background: #0f1117; border: 1px solid #2d3148;
-    border-radius: 8px; padding: 8px 8px 8px 12px; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    font-size: .78rem; color: #e2e8f0;
-  }
-  .cmd-box code { flex: 1 1 auto; white-space: pre-wrap; word-break: break-word; line-height: 1.5 }
-  .modal-foot { display: flex; justify-content: flex-end; gap: 8px; padding: 12px 20px; border-top: 1px solid #2d3148; background: #141827 }
-  .manual-update { margin-top: 6px }
-  .manual-update summary { cursor: pointer; color: #94a3b8; font-size: .8rem; user-select: none }
-  .manual-update summary:hover { color: #cbd5e1 }
-  .manual-reason { margin-top: 10px; font-size: .76rem; color: #64748b }
-  .update-progress { margin: 4px 0 12px; padding: 10px 12px; border-radius: 8px; font-size: .82rem; background: #1e3a5f; border: 1px solid #1e40af; color: #93c5fd }
-  .update-progress.ok { background: #0f2a22; border-color: #14532d; color: #a7f3d0 }
-  .update-progress.error { background: #450a0a; border-color: #7f1d1d; color: #fca5a5 }
-  .update-progress pre { margin-top: 8px; white-space: pre-wrap; word-break: break-word; font-size: .72rem; color: inherit; opacity: .85; max-height: 160px; overflow: auto }
-  .update-progress code { color: #fde68a }
-  .updates-row { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap }
-  .updates-label { font-size: .7rem; color: #64748b; text-transform: uppercase; letter-spacing: .06em }
-  .updates-version { font-size: 1.5rem; font-weight: 600; color: #f0f4ff; margin-top: 2px }
-  .updates-date { font-size: .78rem; color: #64748b }
-  .updates-actions { display: flex; gap: 8px; flex-wrap: wrap }
-  .updates-notes { margin-top: 14px; padding-top: 14px; border-top: 1px solid #252840 }
-  .updates-notes .side-list { margin-top: 6px }
-  .version-status {
-    font-size: .82rem; color: #94a3b8; margin-top: 14px; padding: 9px 12px;
-    background: #141827; border: 1px solid #2d3148; border-radius: 8px;
-  }
-  .version-status:empty { display: none }
-  .version-status.ok { color: #6ee7b7; background: #0f2a22; border-color: #14532d }
-  .version-status.available { color: #fde68a; background: #2a2210; border-color: #6b5212 }
-  .container {
-    width: 100%;
-    max-width: 1180px;
-    margin: 40px auto 0;
-    display: grid;
-    grid-template-columns: minmax(0, 760px) minmax(280px, 360px);
-    gap: 24px;
-    align-items: start;
-  }
-  .container.editor-layout {
-    max-width: calc(100vw - 32px);
-    grid-template-columns: minmax(0, 1fr);
-  }
-  .container.editor-layout .main-column { width: 100% }
-  .container.about-layout { grid-template-columns: minmax(0, 1fr) }
-  .about-grid { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(300px, 1fr); gap: 20px; align-items: start }
-  .about-grid > .card { margin-bottom: 0 }
-  @media (max-width: 860px) { .about-grid { grid-template-columns: minmax(0, 1fr) } }
-  .container.editor-layout #card-data-editor { min-height: calc(100vh - 190px) }
-  .main-column { min-width: 0 }
-  h1 { font-size: 1.5rem; font-weight: 600; margin-bottom: 8px; color: #f0f4ff }
-  .subtitle { color: #64748b; font-size: .9rem; margin-bottom: 32px }
-  .nav-bar {
-    display: flex; gap: 6px; padding: 5px;
-    width: fit-content; background: #141827; border: 1px solid #2d3148; border-radius: 10px;
-  }
-  .nav-btn {
-    border: 0; border-radius: 7px; padding: 8px 16px;
-    color: #94a3b8; background: transparent; cursor: pointer; font-size: .85rem;
-  }
-  .nav-btn:hover { color: #e2e8f0; background: #1e213a }
-  .nav-btn.active { color: #fff; background: #4f46e5 }
-  .nav-btn:disabled { color: #4a5568; cursor: not-allowed; background: transparent }
-  .nav-icon-info {
-    display: inline-block; width: 17px; height: 17px; flex: 0 0 auto;
-    margin-right: 7px; vertical-align: -3px; border-radius: 50%;
-  }
-  .nav-btn.active .nav-icon-info { box-shadow: 0 0 0 1.5px rgba(255, 255, 255, .85) }
-  .multi-table-list { display: grid; gap: 8px; min-width: 0; width: 100% }
-  .multi-table-row { display: flex; gap: 7px; align-items: center; min-width: 0; width: 100% }
-  .multi-table-row input { flex: 1 1 auto; min-width: 0; width: 100% }
-  .remove-table {
-    width: 38px; height: 38px; border: 1px solid #45303b; border-radius: 8px;
-    background: #27151d; color: #f87171; cursor: pointer; font-size: 1rem;
-  }
-  .remove-table:hover { background: #3b1824 }
-  .table-combo { position: relative; flex: 1 1 auto; min-width: 0; width: 100% }
-  .table-combo-panel {
-    position: absolute; top: calc(100% + 6px); left: 0; right: 0;
-    max-height: 220px; overflow-y: auto; z-index: 20;
-    background: #141827; border: 1px solid #2d3148; border-radius: 8px;
-    box-shadow: 0 10px 28px rgba(0, 0, 0, .4);
-    padding: 4px;
-  }
-  .table-combo-option {
-    padding: 8px 10px; border-radius: 6px; font-size: .85rem;
-    color: #e2e8f0; cursor: pointer; white-space: nowrap;
-    overflow: hidden; text-overflow: ellipsis;
-  }
-  .table-combo-option:hover, .table-combo-option.highlighted { background: #1e213a; color: #fff }
-  .table-combo-empty { padding: 8px 10px; font-size: .82rem; color: #64748b }
-  #err-truncate-manager { white-space: pre-line }
-  .data-toolbar { display: flex; gap: 10px; align-items: end; flex-wrap: wrap }
-  .data-toolbar > div { flex: 1 1 180px; min-width: 0 }
-  .data-grid-wrap { overflow: auto; max-height: calc(100vh - 330px); min-height: 280px }
-  .data-toolbar .btn { flex: 0 0 auto; padding: 10px 22px; border: 1px solid transparent }
-  .table-panel { margin-top: 18px; border: 1px solid #2d3148; border-radius: 10px; background: #141827; overflow: hidden }
-  .table-panel-head {
-    display: flex; align-items: center; justify-content: space-between; gap: 14px; flex-wrap: wrap;
-    padding: 12px 14px; border-bottom: 1px solid #2d3148;
-  }
-  .table-panel-title { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; min-width: 0; min-height: 32px }
-  .table-panel-name { font-size: .95rem; font-weight: 600; color: #f0f4ff; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
-  .table-panel-name .schema { color: #64748b; font-weight: 500 }
-  .table-panel-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap }
-  .column-search { position: relative; display: flex; align-items: center }
-  .column-search input[type=text] {
-    width: 210px; height: 32px; padding: 0 28px 0 32px; font-size: .78rem;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='7'/%3E%3Cpath d='m20 20-3.5-3.5'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: 11px center;
-  }
-  .column-search-clear {
-    position: absolute; right: 6px; top: 50%; transform: translateY(-50%);
-    width: 20px; height: 20px; border: none; border-radius: 5px; background: transparent;
-    color: #64748b; cursor: pointer; font-size: .72rem; display: flex; align-items: center; justify-content: center
-  }
-  .column-search-clear:hover { color: #e2e8f0; background: #252840 }
-  .data-grid .col-hidden { display: none }
-  .paste-hint { font-size: .74rem; color: #64748b; white-space: nowrap }
-  .paste-hint kbd {
-    font-family: inherit; font-size: .7rem; color: #cbd5e1; background: #1e213a;
-    border: 1px solid #2d3148; border-bottom-width: 2px; border-radius: 4px; padding: 1px 5px;
-  }
-  .table-panel-tools .tools-left { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; min-width: 0 }
-  .paste-bar {
-    display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
-    padding: 9px 14px; background: #0f2a22; border-bottom: 1px solid #14532d; color: #a7f3d0; font-size: .8rem;
-  }
-  .paste-bar strong { color: #6ee7b7 }
-  .paste-bar-actions { display: flex; gap: 8px }
-  .btn.success { background: #059669 }
-  .btn.success:hover { background: #047857 }
-  .data-grid tr.pending-row td { background: #0f2a22; padding: 4px 6px }
-  .data-grid tr.pending-row td.row-num { background: #0f2a22; color: #6ee7b7 }
-  .data-grid tr.pending-row input[type=text] { min-width: 110px; border-color: #14532d; background: #0b1f19 }
-  .data-grid tr.pending-row input[type=text].unmapped { border-style: dashed; border-color: #2d3148; background: transparent }
-  .pending-remove {
-    border: none; background: transparent; color: #6ee7b7; cursor: pointer;
-    font-size: .72rem; padding: 2px 4px; border-radius: 4px;
-  }
-  .pending-remove:hover { background: #3b1824; color: #f87171 }
-  .data-grid-empty { padding: 28px; text-align: center; color: #64748b; font-size: .82rem }
-  .btn.sm { height: 32px; padding: 0 12px; font-size: .78rem; white-space: nowrap; justify-content: center }
-  .table-panel-tools {
-    display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap;
-    padding: 10px 14px; background: #111522; border-bottom: 1px solid #2d3148;
-  }
-  .btn.edit-on { background: #78350f; color: #fde68a }
-  .btn.edit-on:hover { background: #92400e }
-  .btn-group { display: inline-flex }
-  .btn-group .btn { border-radius: 0 }
-  .btn-group .btn:first-child { border-radius: 8px 0 0 8px }
-  .btn-group .btn:last-child { border-radius: 0 8px 8px 0; margin-left: -1px }
-  .btn-group .btn:not(:disabled):hover { position: relative; z-index: 1 }
-
-  .editor-body { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 20px; align-items: start }
-  .editor-main { min-width: 0 }
-  .editor-history {
-    background: #141827; border: 1px solid #2d3148; border-radius: 10px;
-    padding: 14px; max-height: calc(100vh - 230px); overflow-y: auto;
-  }
-  .editor-history-head {
-    font-size: .72rem; text-transform: uppercase; letter-spacing: .08em;
-    color: #64748b; margin-bottom: 10px;
-  }
-  .editor-history-empty { color: #4a5568; font-size: .8rem; line-height: 1.5 }
-  .editor-history-list { display: grid; gap: 6px }
-  .editor-history-item {
-    display: flex; align-items: center; border-radius: 8px;
-    background: transparent; transition: background .15s;
-  }
-  .editor-history-item:hover { background: #1a1d2e }
-  .editor-history-item.active { background: #1e213a; box-shadow: inset 2px 0 0 #4f46e5 }
-  .editor-history-label {
-    flex: 1 1 auto; min-width: 0; text-align: left;
-    background: none; border: none; color: #cbd5e1; cursor: pointer;
-    padding: 8px; display: flex; flex-direction: column; gap: 1px;
-  }
-  .editor-history-schema { font-size: .68rem; color: #64748b; text-transform: uppercase; letter-spacing: .04em }
-  .editor-history-table { font-size: .84rem; color: #e2e8f0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap }
-  .editor-history-remove {
-    flex: 0 0 auto; width: 22px; height: 22px; border: none; border-radius: 6px;
-    background: transparent; color: #64748b; cursor: pointer; font-size: .9rem;
-    display: flex; align-items: center; justify-content: center; margin-right: 6px;
-  }
-  .editor-history-remove:hover { background: #3b1824; color: #f87171 }
-  @media (max-width: 860px) {
-    .editor-body { grid-template-columns: minmax(0, 1fr) }
-    .editor-history { max-height: 200px }
-    .column-search { flex: 1 1 100% }
-    .column-search input[type=text] { width: 100% }
-  }
-  .data-grid { width: max-content; min-width: 100%; border-collapse: separate; border-spacing: 0; font-size: .78rem }
-  .data-grid th { position: sticky; top: 0; z-index: 1; background: #111522; color: #94a3b8; padding: 8px 10px; text-align: left; border-bottom: 1px solid #2d3148; white-space: nowrap }
-  .data-grid th.sortable { cursor: pointer; user-select: none }
-  .data-grid th.sortable:hover { color: #cbd5e1 }
-  .data-grid th.sorted { color: #c7d2fe }
-  .data-grid th .sort-arrow { margin-left: 6px; font-size: .68rem; color: #3d4266 }
-  .data-grid th.sorted .sort-arrow { color: #818cf8 }
-  .data-grid td { padding: 7px 10px; border-bottom: 1px solid #252840; white-space: nowrap; max-width: 260px; overflow: hidden; text-overflow: ellipsis }
-  .data-grid input[type=text] { width: 100%; min-width: 130px; padding: 5px 8px; font-size: .78rem; border-radius: 6px }
-  .data-grid .pk-cell { color: #fbbf24 }
-  .data-grid .pk-cell input { color: #fbbf24; border-color: #6b5212 }
-  .data-grid .row-action { position: sticky; right: 0; background: #111522 }
-  .data-grid .row-num { position: sticky; left: 0; background: #111522; color: #64748b; text-align: right; min-width: 36px; border-right: 1px solid #2d3148 }
-  .data-grid th.row-num { z-index: 2 }
-  .table-summary { display: flex; gap: 6px; flex-wrap: wrap }
-  .table-summary .stat {
-    display: inline-flex; align-items: baseline; gap: 6px;
-    background: #111522; border: 1px solid #2d3148; border-radius: 999px; padding: 4px 11px; font-size: .74rem;
-  }
-  .table-summary .stat-label { color: #64748b }
-  .table-summary .stat-value { font-weight: 600; color: #e2e8f0 }
-  .table-summary .stat.pk .stat-value { color: #fbbf24 }
-  .table-summary .stat-sub { color: #64748b; font-size: .7rem }
-  .side-panel {
-    position: sticky;
-    top: 40px;
-    margin-top: 86px;
-    background: #141827;
-    border: 1px solid #2d3148;
-    border-radius: 12px;
-    padding: 22px;
-  }
-  .side-title {
-    font-size: .75rem;
-    text-transform: uppercase;
-    letter-spacing: .1em;
-    color: #818cf8;
-    margin-bottom: 16px;
-  }
-  .side-section { padding: 14px 0; border-top: 1px solid #252840 }
-  .side-section:first-of-type { border-top: none; padding-top: 0 }
-  .side-section h2 { font-size: .95rem; font-weight: 600; color: #f0f4ff; margin-bottom: 7px }
-  .side-section p { color: #94a3b8; font-size: .84rem; line-height: 1.55 }
-  .side-list { list-style: none; display: grid; gap: 8px; margin-top: 10px }
-  .side-list li { color: #cbd5e1; font-size: .82rem; line-height: 1.45 }
-  .side-list strong { color: #e2e8f0 }
-
-  .side-fold summary { cursor: pointer; list-style: none }
-  .side-fold summary::-webkit-details-marker { display: none }
-  .side-fold summary::before {
-    content: '▸'; display: inline-block; margin-right: 6px;
-    transition: transform .15s; color: #818cf8;
-  }
-  .side-fold[open] summary::before { transform: rotate(90deg) }
-  .side-fold .side-section { padding-top: 14px }
-  .side-panel:has(#card-results.hidden) { display: none }
-  .side-panel:has(#card-results:not(.hidden)) { position: static; margin-top: 86px }
-  .side-panel #card-results {
-    margin: 0; padding: 0; border: 0; background: transparent;
-  }
-  .side-panel #card-results .card-title {
-    color: #a5b4fc; font-size: .78rem; letter-spacing: .12em;
-    margin-bottom: 16px;
-  }
-  .side-panel #card-results .result-row {
-    display: grid; grid-template-columns: 22px minmax(62px, auto) minmax(0, 1fr) auto;
-    gap: 8px; align-items: center;
-    padding: 8px 9px; margin-bottom: 6px;
-    background: #111522; border: 1px solid #292e45; border-radius: 10px;
-    transition: border-color .15s, transform .15s;
-  }
-  .side-panel #card-results .result-row:hover {
-    border-color: #414866; transform: translateY(-1px);
-  }
-  .side-panel #card-results .status-icon {
-    grid-column: 1; grid-row: 1; width: 20px; height: 20px; font-size: .68rem;
-  }
-  .side-panel #card-results .result-name {
-    grid-column: 2; grid-row: 1; min-width: 0;
-    font-size: .82rem; overflow-wrap: anywhere;
-  }
-  .side-panel #card-results .result-msg {
-    grid-column: 3; grid-row: 1; min-width: 0; padding: 0;
-    line-height: 1.25; font-size: .72rem; overflow: hidden;
-  }
-  .side-panel #card-results .status-text { display: block; white-space: nowrap }
-  .side-panel #card-results .result-detail {
-    display: block; color: #64748b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  }
-  .side-panel #card-results .result-actions {
-    grid-column: 4; grid-row: 1; display: flex; flex-direction: column; gap: 4px;
-  }
-  .side-panel #card-results .result-actions .btn {
-    width: auto; justify-content: center; padding: 5px 8px; margin: 0; font-size: .68rem;
-  }
-  .side-panel #card-results .truncate-result { grid-column: 2 / -1; grid-row: 2; margin: 0 }
-  .side-panel #card-results > .btn-row {
-    display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
-  }
-  .side-panel #card-results > .btn-row .btn { justify-content: center; padding: 9px 10px }
-  .side-panel #card-results > .btn-row #btn-call-batch,
-  .side-panel #card-results > .btn-row #btn-download-sql { grid-column: 1 / -1 }
-  #btn-download-sql { text-decoration: none }
-  .results-summary {
-    margin: 14px 2px 4px; padding-top: 12px;
-    border-top: 1px solid #2d3148; font-size: .8rem; color: #94a3b8;
-  }
-
-  .card {
-    background: #1a1d2e;
-    border: 1px solid #2d3148;
-    border-radius: 12px;
-    padding: 28px;
-    margin-bottom: 20px;
-  }
-  .card-title {
-    font-size: .7rem;
-    text-transform: uppercase;
-    letter-spacing: .1em;
-    color: #4a5568;
-    margin-bottom: 18px;
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-  /* Card title icons: filled colour circle with a white glyph */
-  .card-title .step {
-    --c1: #818cf8; --c2: #4f46e5;
-    width: 26px; height: 26px; border-radius: 50%; flex: 0 0 auto;
-    display: flex; align-items: center; justify-content: center;
-    background: linear-gradient(180deg, var(--c1), var(--c2)); color: #fff;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, .35), inset 0 1px 0 rgba(255, 255, 255, .25);
-  }
-  .card-title .step svg { width: 14px; height: 14px }
-  .card-title .step-gear   { --c1: #94a3b8; --c2: #475569 }
-  .card-title .step-trash  { --c1: #f87171; --c2: #dc2626 }
-  .card-title .step-edit   { --c1: #fbbf24; --c2: #d97706 }
-  .card-title .step-file   { --c1: #34d399; --c2: #059669 }
-  .card-title .step-eye    { --c1: #38bdf8; --c2: #0284c7 }
-  .card-title .step-info   { --c1: #4fb3ff; --c2: #1565d8 }
-  .card-title .step-info svg { width: 100%; height: 100% }
-  .card-title .step-update { --c1: #a78bfa; --c2: #7c3aed }
-  .card-title .step-check  { --c1: #4ade80; --c2: #16a34a }
-  .card-title .step-schema { --c1: #2dd4bf; --c2: #0d9488 }
-
-  label { display: block; font-size: .85rem; color: #94a3b8; margin-bottom: 6px }
-  input[type=text], input[type=password], select {
-    width: 100%;
-    background: #0f1117;
-    border: 1px solid #2d3148;
-    border-radius: 8px;
-    color: #e2e8f0;
-    padding: 10px 14px;
-    font-size: .9rem;
-    outline: none;
-    transition: border-color .15s, background .15s;
-  }
-  input:focus, select:focus { border-color: #4f46e5 }
-  select:hover:not(:disabled) { border-color: #414866 }
-  select {
-    appearance: none; -webkit-appearance: none; -moz-appearance: none;
-    cursor: pointer;
-    padding-right: 36px;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6' fill='none'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%2394a3b8' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
-    background-repeat: no-repeat;
-    background-position: right 14px center;
-  }
-  select option { background: #1a1d2e; color: #e2e8f0 }
-  select:disabled, input:disabled {
-    background: #14161f; color: #4a5568; border-color: #23263a;
-    cursor: not-allowed; background-image: none;
-  }
-
-  .drop-zone {
-    border: 2px dashed #2d3148;
-    border-radius: 10px;
-    padding: 36px;
-    text-align: center;
-    cursor: pointer;
-    transition: border-color .2s, background .2s;
-    position: relative;
-  }
-  .drop-zone:hover, .drop-zone.drag-over { border-color: #4f46e5; background: #1e213a }
-  .drop-zone input[type=file] {
-    display: none;
-  }
-  .drop-icon { font-size: 2rem; margin-bottom: 8px }
-  .drop-label { color: #94a3b8; font-size: .9rem }
-  .drop-label span { color: #818cf8; text-decoration: underline }
-  .drop-hint { color: #64748b; font-size: .78rem; margin-top: 6px }
-  .file-name { color: #10b981; font-size: .85rem; margin-top: 8px; font-weight: 500 }
-
-  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 14px }
-  .row.trio { grid-template-columns: 2fr 1fr }
-  .row > div { min-width: 0 }
-
-  .btn {
-    display: inline-flex; align-items: center; gap: 8px;
-    background: #4f46e5; color: #fff;
-    border: none; border-radius: 8px;
-    padding: 11px 22px; font-size: .9rem; font-weight: 500;
-    cursor: pointer; transition: background .15s;
-  }
-  .btn:hover { background: #4338ca }
-  .btn:disabled { background: #2d3148; color: #4a5568; cursor: not-allowed }
-  .btn.secondary { background: #1e213a; border: 1px solid #2d3148 }
-  .btn.secondary:hover { background: #252840 }
-  .btn.danger { background: #7f1d1d; padding: 7px 12px; font-size: .78rem; white-space: nowrap }
-  .btn.danger:hover { background: #991b1b }
-  .btn.danger:disabled { background: #2d3148; color: #64748b }
-  .btn-row { display: flex; gap: 10px; margin-top: 18px; flex-wrap: wrap }
-
-  /* Connection status dot (nav tab) */
-  .nav-dot {
-    display: inline-block; width: 7px; height: 7px; border-radius: 50%;
-    background: #4a5568; margin-right: 7px; vertical-align: middle;
-  }
-  .nav-dot.connected { background: #4ade80; box-shadow: 0 0 0 3px rgba(74, 222, 128, .15) }
-  .nav-dot.error { background: #f87171; box-shadow: 0 0 0 3px rgba(248, 113, 113, .15) }
-
-  /* Connection card read-mode inputs */
-  #card-conn input:disabled { opacity: .75; cursor: default; background: #1a1d29 }
-
-  /* Preview table */
-  .preview-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px }
-  .preview-header .summary { font-size: .9rem; color: #94a3b8 }
-  .preview-header .summary strong { color: #818cf8 }
-  .tbl { width: 100%; border-collapse: collapse; font-size: .875rem }
-  .tbl th {
-    text-align: left; padding: 8px 12px;
-    background: #0f1117; color: #4a5568;
-    font-size: .72rem; text-transform: uppercase; letter-spacing: .07em;
-    border-bottom: 1px solid #2d3148;
-  }
-  .tbl td { padding: 10px 12px; border-bottom: 1px solid #1e213a; color: #cbd5e1 }
-  .tbl tr:last-child td { border-bottom: none }
-  .tbl tr:hover td { background: #1e213a }
-  .badge { display: inline-block; padding: 2px 8px; border-radius: 99px; font-size: .75rem; font-weight: 500 }
-  .badge.blue { background: #1e3a5f; color: #60a5fa }
-  .badge.green { background: #14532d; color: #4ade80 }
-  .badge.yellow { background: #3d2f00; color: #fbbf24 }
-  .badge.red { background: #450a0a; color: #f87171 }
-  .status-pill {
-    display: inline-flex; align-items: center; gap: 6px;
-    min-width: 82px; justify-content: center;
-    padding: 2px 8px; border-radius: 99px;
-    font-size: .75rem; font-weight: 600; white-space: nowrap;
-  }
-  .status-pill.gray { background: #252840; color: #94a3b8 }
-  .status-pill.blue { background: #1e3a5f; color: #60a5fa }
-  .status-pill.green { background: #14532d; color: #4ade80 }
-  .status-pill.yellow { background: #3d2f00; color: #fbbf24 }
-  .status-pill.red { background: #450a0a; color: #f87171 }
-  .range-code {
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    color: #cbd5e1;
-    font-size: .8rem;
-  }
-  input[type=checkbox] { width: 16px; height: 16px; accent-color: #4f46e5; cursor: pointer; vertical-align: middle }
-  .tbl tr.unchecked td:not(:first-child) { opacity: .4 }
-  .schema-create { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; align-items: end; margin-bottom: 22px }
-  .schema-create .btn { height: 41px; white-space: nowrap }
-  .schema-list-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; font-size: .85rem; color: #94a3b8 }
-  .schema-empty { text-align: center; color: #64748b }
-  .tbl tr.schema-new td { background: #0f2e2b }
-  .tbl select.schema-row { width: auto; min-width: 130px; padding: 5px 30px 5px 10px; font-size: .8rem; background-position: right 10px center }
-
-  /* Results */
-  .result-row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid #1e213a }
-  .result-row:last-child { border-bottom: none }
-  .status-icon {
-    width: 22px; height: 22px; border-radius: 50%;
-    display: inline-flex; align-items: center; justify-content: center;
-    font-size: .78rem; font-weight: 700; flex: 0 0 auto;
-  }
-  .status-icon.green { background: #14532d; color: #4ade80 }
-  .status-icon.yellow { background: #3d2f00; color: #fbbf24 }
-  .status-icon.red { background: #450a0a; color: #f87171 }
-  .result-name { font-weight: 500; min-width: 120px; color: #e2e8f0 }
-  .result-msg { color: #94a3b8; font-size: .875rem; flex: 1 }
-  .status-text { font-weight: 600 }
-  .status-text.green { color: #4ade80 }
-  .status-text.yellow { color: #fbbf24 }
-  .status-text.red { color: #f87171 }
-  .result-errors { font-size: .78rem; color: #f87171; margin-top: 3px }
-  .truncate-result { font-size: .78rem; margin-top: 4px }
-  .truncate-result.ok { color: #4ade80 }
-  .truncate-result.error { color: #f87171 }
-
-  .progress-ring {
-    position: relative;
-    display: inline-flex; align-items: center; justify-content: center;
-    width: 34px; height: 34px; vertical-align: middle;
-  }
-  .progress-ring svg circle { transition: stroke-dasharray .3s ease }
-  .progress-ring-label {
-    position: absolute;
-    font-size: .58rem; font-weight: 700; color: #e2e8f0;
-  }
-
-  .spinner {
-    display: inline-block; width: 16px; height: 16px;
-    border: 2px solid #4f46e5; border-top-color: transparent;
-    border-radius: 50%; animation: spin .7s linear infinite;
-  }
-  @keyframes spin { to { transform: rotate(360deg) } }
-
-  .alert { border-radius: 8px; padding: 12px 16px; font-size: .875rem; margin-bottom: 14px }
-  .alert.error { background: #450a0a; border: 1px solid #7f1d1d; color: #fca5a5 }
-  .alert.info  { background: #1e3a5f; border: 1px solid #1e40af; color: #93c5fd }
-  .file-change-warning { display: flex; align-items: center; justify-content: space-between; gap: 14px }
-
+  body { font-family: 'Segoe UI', system-ui, sans-serif; background: #0f1117; color: #e2e8f0; min-height: 100vh }
+  button, input, select { font: inherit }
+  button, a, input, select { outline-offset: 4px }
+  .topbar { border-bottom: 1px solid #2d3148; background: #141722 }
+  .topbar-inner { max-width: 1050px; margin: auto; padding: 18px 24px; display: flex; align-items: center; justify-content: space-between; gap: 20px; flex-wrap: wrap }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 650; white-space: nowrap }
+  .logo { display: grid; place-items: center; width: 32px; height: 32px; background: #4f46e5; border-radius: 9px; color: white }
+  .brand small { font-weight: 400; color: #94a3b8; margin-left: 5px }
+  nav { display: flex; gap: 6px; flex-wrap: wrap }
+  .nav-btn { border: 0; color: #94a3b8; padding: 9px 14px; border-radius: 8px; background: transparent; cursor: pointer }
+  .nav-btn:hover { background: #24283b; color: #fff }
+  .nav-btn.active { background: #4f46e5; color: white }
+  main { max-width: 900px; margin: 36px auto; padding: 0 24px 40px }
+  h1 { font-size: 1.65rem; font-weight: 650; margin-bottom: 10px }
+  h2 { font-size: 1rem; font-weight: 600; margin-bottom: 16px }
+  p { line-height: 1.65 }
+  .subtitle { color: #94a3b8; font-size: .9rem; margin-bottom: 24px }
+  .card { background: #1a1d2e; border: 1px solid #2d3148; border-radius: 12px; padding: 24px; margin-top: 18px }
   .hidden { display: none !important }
-  .divider { border: none; border-top: 1px solid #2d3148; margin: 18px 0 }
-  @media (max-width: 1080px) {
-    body { padding: 0 14px 28px }
-    .topbar { margin: 0 -14px }
-    .container { display: block; max-width: 760px; margin-top: 28px }
-    .side-panel { position: static; margin-top: 20px }
-    .side-panel:has(#card-results:not(.hidden)) { margin-top: 20px }
-  }
-  @media (max-width: 620px) {
-    body { padding: 0 10px 18px }
-    .topbar { margin: 0 -10px }
-    .topbar-inner { flex-direction: column; align-items: stretch; gap: 10px; padding: 12px }
-    .container { margin-top: 18px }
-    .card { padding: 20px 16px }
-    .row, .row.trio { grid-template-columns: minmax(0, 1fr) }
-    .nav-bar { width: 100% }
-    .nav-btn { flex: 1; padding-inline: 8px }
-    #card-truncate-manager .btn-row { display: grid }
-    #card-truncate-manager .btn-row .btn { width: 100%; justify-content: center }
-    .schema-create { grid-template-columns: minmax(0, 1fr) }
-    .schema-create .btn { width: 100%; justify-content: center }
-    .container.editor-layout { max-width: 100% }
-    .container.editor-layout #card-data-editor { min-height: calc(100vh - 150px) }
-    .data-grid-wrap { max-height: calc(100vh - 300px) }
-  }
-  .container.editor-layout #card-query-runner { min-height: calc(100vh - 150px) }
-  #card-query-runner { padding: 0; overflow: hidden }
-  .card-title .step-query { --c1: #22d3ee; --c2: #2563eb }
-  .query-workspace { display: grid; grid-template-columns: 260px minmax(0, 1fr); min-height: calc(100vh - 150px) }
-  .query-sidebar {
-    display: flex; flex-direction: column; min-width: 0; padding: 18px 12px;
-    background: #111522; border-right: 1px solid #2d3148;
-  }
-  .query-sidebar-brand { display: flex; align-items: center; gap: 9px; padding: 0 8px 16px; color: #f0f4ff; font-size: .86rem; font-weight: 600 }
-  .query-sidebar-brand .step { width: 25px; height: 25px; border-radius: 8px; display: grid; place-items: center; background: linear-gradient(180deg, #22d3ee, #2563eb); color: #fff }
-  .query-sidebar-brand svg { width: 14px; height: 14px }
-  .query-new { width: 100%; justify-content: center; margin-bottom: 10px; padding: 9px 12px }
-  .query-sidebar-link {
-    width: 100%; display: flex; align-items: center; gap: 9px; padding: 9px 10px;
-    border: 0; border-radius: 8px; color: #94a3b8; background: transparent; cursor: pointer; text-align: left;
-  }
-  .query-sidebar-link:hover { color: #e2e8f0; background: #1e213a }
-  .query-sidebar-divider { border-top: 1px solid #252840; margin: 12px 4px }
-  .query-sidebar-section { margin-top: 10px; min-height: 0 }
-  .query-sidebar-section.history { margin-top: 18px }
-  .query-sidebar-label {
-    display: flex; align-items: center; justify-content: space-between; padding: 0 9px 6px;
-    color: #64748b; font-size: .66rem; font-weight: 600; letter-spacing: .09em; text-transform: uppercase;
-  }
-  .query-count {
-    min-width: 20px; height: 19px; display: inline-flex; align-items: center; justify-content: center;
-    padding: 0 6px; border: 1px solid #3730a3; border-radius: 999px;
-    color: #c7d2fe; background: #25205b; font-size: .63rem; letter-spacing: 0;
-  }
-  .query-count:empty { display: none }
-  .query-sidebar-list { display: grid; gap: 3px }
-  .query-sidebar-empty { padding: 7px 9px; color: #4a5568; font-size: .74rem; line-height: 1.4 }
-  .query-file-item { display: flex; align-items: center; min-width: 0; border-radius: 7px }
-  .query-file-item:hover { background: #1a1d2e }
-  .query-file-item.active { background: #1e213a; box-shadow: inset 2px 0 0 #4f46e5 }
-  .query-file-open {
-    flex: 1 1 auto; min-width: 0; display: flex; align-items: center; gap: 8px; padding: 8px 7px 8px 9px;
-    color: #cbd5e1; background: transparent; border: 0; cursor: pointer; text-align: left;
-  }
-  .query-file-icon { flex: 0 0 auto; color: #64748b; font-size: .75rem }
-  .query-file-copy { min-width: 0; display: grid; gap: 2px }
-  .query-file-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: .78rem }
-  .query-file-meta { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #4a5568; font-size: .65rem }
-  .query-file-remove {
-    flex: 0 0 auto; width: 24px; height: 24px; margin-right: 5px; border: 0; border-radius: 5px;
-    color: #4a5568; background: transparent; cursor: pointer; opacity: 0;
-  }
-  .query-file-item:hover .query-file-remove, .query-file-remove:focus { opacity: 1 }
-  .query-file-remove:hover { color: #f87171; background: #3b1824 }
-  .query-main { min-width: 0; padding: 26px 28px 32px }
-  .query-head { display: flex; align-items: start; justify-content: space-between; gap: 16px; margin-bottom: 22px }
-  .query-title-wrap { min-width: 0; flex: 1 1 auto }
-  #query-name {
-    width: min(520px, 100%); padding: 0; border: 0; border-bottom: 1px solid transparent; border-radius: 0;
-    background: transparent; color: #f0f4ff; font-size: 1.22rem; font-weight: 600;
-  }
-  #query-name:hover, #query-name:focus { border-bottom-color: #414866 }
-  .query-subtitle { color: #64748b; font-size: .78rem; margin-top: 5px }
-  .query-head-actions { display: flex; gap: 8px; flex: 0 0 auto }
-  .query-save-status { align-self: center; color: #6ee7b7; font-size: .72rem; opacity: 0; transition: opacity .15s }
-  .query-save-status.visible { opacity: 1 }
-  .btn.query-save-btn {
-    border: 1px solid #047857; background: linear-gradient(180deg, #10b981, #059669);
-    box-shadow: 0 4px 12px rgba(5, 150, 105, .22);
-  }
-  .btn.query-save-btn:hover { background: linear-gradient(180deg, #34d399, #059669) }
-  .query-save-btn svg { width: 14px; height: 14px; flex: 0 0 auto }
-  .query-toolbar {
-    display: flex; align-items: center; justify-content: flex-end; gap: 16px;
-    margin-bottom: 14px; flex-wrap: wrap;
-  }
-  .query-schema-field { width: min(320px, 100%) }
-  .query-shortcut { color: #64748b; font-size: .76rem }
-  .query-shortcut kbd, .sql-hint kbd {
-    font-family: inherit; font-size: .7rem; color: #cbd5e1; background: #111522;
-    border: 1px solid #2d3148; border-bottom-width: 2px; border-radius: 4px; padding: 1px 5px;
-  }
-  .query-editor-wrap { position: relative }
-  #sql-query {
-    display: block; width: 100%; min-height: 230px; resize: vertical;
-    background: #0f1117; border: 1px solid #2d3148; border-radius: 10px;
-    color: #e2e8f0; padding: 16px; outline: none;
-    font: .88rem/1.6 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    tab-size: 2; transition: border-color .15s, box-shadow .15s;
-  }
-  #sql-query:focus { border-color: #4f46e5; box-shadow: 0 0 0 3px rgba(79, 70, 229, .14) }
-  #sql-query::placeholder { color: #4a5568 }
-  .sql-suggestions {
-    position: absolute; top: calc(100% + 6px); left: 8px; right: 8px; z-index: 40;
-    max-height: 260px; overflow-y: auto; padding: 5px;
-    background: #141827; border: 1px solid #2d3148; border-radius: 9px;
-    box-shadow: 0 14px 34px rgba(0, 0, 0, .48);
-  }
-  .sql-suggestion {
-    width: 100%; display: flex; align-items: center; justify-content: space-between; gap: 12px;
-    border: 0; border-radius: 6px; padding: 8px 10px;
-    background: transparent; color: #e2e8f0; cursor: pointer; text-align: left;
-    font: .82rem ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-  }
-  .sql-suggestion:hover, .sql-suggestion.highlighted { color: #fff; background: #1e213a }
-  .sql-suggestion-type {
-    flex: 0 0 auto; color: #64748b; font: .65rem 'Segoe UI', system-ui, sans-serif;
-    letter-spacing: .06em; text-transform: uppercase;
-  }
-  .sql-suggestion.table .sql-suggestion-type { color: #22d3ee }
-  .sql-hint { margin-top: 9px; color: #64748b; font-size: .75rem; line-height: 1.5 }
-  .query-actions { display: flex; align-items: center; gap: 8px; margin-top: 18px; flex-wrap: wrap }
-  .query-actions .query-warning { margin-left: auto; color: #fbbf24; font-size: .72rem }
-  .query-results { margin-top: 24px; border-top: 1px solid #2d3148; padding-top: 18px }
-  .query-result-head {
-    display: flex; align-items: center; justify-content: space-between; gap: 12px;
-    margin-bottom: 12px; flex-wrap: wrap;
-  }
-  .query-result-summary { color: #94a3b8; font-size: .82rem }
-  .query-result-set { margin-top: 14px; border: 1px solid #2d3148; border-radius: 10px; overflow: hidden }
-  .query-result-set:first-child { margin-top: 0 }
-  .query-result-title {
-    display: flex; align-items: center; gap: 8px; padding: 9px 12px;
-    color: #94a3b8; background: #111522; border-bottom: 1px solid #2d3148; font-size: .76rem;
-  }
-  .query-result-title strong { color: #cbd5e1 }
-  .query-result-title .truncated { color: #fbbf24 }
-  .query-grid-wrap { overflow: auto; max-height: 440px }
-  .query-grid-wrap .data-grid td { max-width: 420px }
-  .query-null { color: #64748b; font-style: italic }
-  .query-command-result { padding: 18px; color: #a7f3d0; font-size: .84rem }
-  .query-empty-result { padding: 24px; color: #64748b; text-align: center; font-size: .82rem }
-
-  @media (max-width: 620px) {
-    .nav-bar { overflow-x: auto }
-    .nav-btn { flex: 0 0 auto }
-    .container.editor-layout #card-query-runner { min-height: calc(100vh - 150px) }
-    .query-actions .query-warning { width: 100%; margin-left: 0 }
-  }
-  @media (max-width: 820px) {
-    .query-workspace { grid-template-columns: minmax(0, 1fr) }
-    .query-sidebar { border-right: 0; border-bottom: 1px solid #2d3148 }
-    .query-sidebar-list { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)) }
-    .query-main { padding: 22px 18px 28px }
-    .query-head { align-items: center }
+  .drop-zone { display: grid; place-items: center; text-align: center; border: 2px dashed #414762; border-radius: 10px; padding: 30px 18px; cursor: pointer; color: #cbd5e1; background: #151827 }
+  .drop-zone:hover, .drop-zone.drag-over { border-color: #818cf8; background: #20213c }
+  .drop-zone.disabled { opacity: .55; cursor: wait }
+  .drop-icon { color: #a5b4fc; font-size: 1.7rem; font-weight: 700; margin-bottom: 10px }
+  .drop-zone strong { color: #a5b4fc }
+  .hint { color: #94a3b8; font-size: .8rem; line-height: 1.6; margin-top: 8px }
+  .filename { color: #c7d2fe; font-size: .9rem; margin-top: 14px; overflow-wrap: anywhere }
+  .preview { display: flex; flex-wrap: wrap; gap: 28px; background: #151827; border-radius: 9px; padding: 18px; margin-bottom: 20px }
+  .preview dt { color: #94a3b8; font-size: .75rem; margin-bottom: 6px }
+  .preview dd { font-size: 1rem; font-weight: 600; overflow-wrap: anywhere }
+  label { display: block; font-size: .82rem; color: #cbd5e1; margin-bottom: 7px }
+  input, select { width: 100%; padding: 10px 12px; color: #e2e8f0; background: #10131f; border: 1px solid #414762; border-radius: 7px }
+  input:focus, select:focus { border-color: #818cf8 }
+  input:disabled, select:disabled { opacity: .65 }
+  .schema-field { max-width: 320px }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 18px }
+  .btn-row { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 20px }
+  .btn { display: inline-flex; justify-content: center; align-items: center; padding: 10px 17px; border: 1px solid transparent; background: #4f46e5; border-radius: 8px; color: #fff; text-decoration: none; font-size: .86rem; font-weight: 600; cursor: pointer }
+  .btn:hover { background: #6366f1 }
+  .btn:disabled { opacity: .5; cursor: not-allowed }
+  .btn.secondary { background: #24283b; border-color: #414762; color: #cbd5e1 }
+  .btn.danger { color: #fca5a5; background: #351f2a; border-color: #6b303c }
+  .alert { border-radius: 8px; padding: 12px 15px; font-size: .85rem; line-height: 1.6; margin-top: 16px; white-space: pre-wrap; overflow-wrap: anywhere }
+  .alert.error { background: #351f2a; border: 1px solid #6b303c; color: #fecaca }
+  .alert.info { background: #1e2542; border: 1px solid #35456b; color: #bfdbfe }
+  .result-head { display: flex; justify-content: space-between; flex-wrap: wrap; align-items: baseline; gap: 12px }
+  .elapsed { color: #a5b4fc; font-variant-numeric: tabular-nums; font-size: .85rem }
+  .status { display: inline-block; font-size: .75rem; border-radius: 999px; padding: 4px 10px; background: #242b46; color: #c7d2fe; margin: 4px 0 12px }
+  .status.ok { color: #86efac; background: #15362d }
+  .status.warn, .status.skip { color: #fde68a; background: #3b321e }
+  .status.failed { color: #fecaca; background: #45232f }
+  progress { width: 100%; height: 8px; accent-color: #818cf8; margin: 16px 0 8px }
+  .connection-summary { color: #94a3b8; font-size: .8rem; margin-bottom: 24px; overflow-wrap: anywhere }
+  @media (max-width: 600px) {
+    .topbar-inner { padding: 16px; gap: 14px }
+    nav { width: 100% }
+    .nav-btn { flex: 1; padding: 9px 7px; font-size: .82rem }
+    main { margin-top: 26px; padding: 0 16px 30px }
+    .card { padding: 18px }
+    .row { grid-template-columns: 1fr }
+    .preview { gap: 20px }
+    .brand small { display: none }
   }
 </style>
 </head>
 <body>
 <header class="topbar">
   <div class="topbar-inner">
-    <div class="topbar-brand">
-      <span class="topbar-logo"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v14c0 1.66 3.58 3 8 3s8-1.34 8-3V5"/><path d="M4 12c0 1.66 3.58 3 8 3s8-1.34 8-3"/></svg></span>
-      <span>DB Import</span>
-      <span class="version-badge" id="version-badge" title="Version info">v…</span>
-    </div>
-    <nav class="nav-bar" aria-label="Main navigation">
-      <button class="nav-btn active" id="nav-import">Import</button>
-      <button class="nav-btn" id="nav-truncate" disabled>Truncate Table</button>
-      <button class="nav-btn" id="nav-editor" disabled>Data Editor</button>
-      <button class="nav-btn" id="nav-query" disabled>SQL Runner</button>
-      <button class="nav-btn" id="nav-schema" disabled>Schema</button>
-      <button class="nav-btn" id="nav-connection" title="Not connected"><span class="nav-dot" id="nav-conn-dot"></span>Connection</button>
-      <button class="nav-btn" id="nav-about"><svg class="nav-icon-info" viewBox="0 0 24 24" aria-hidden="true"><defs><linearGradient id="info-grad" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4fb3ff"/><stop offset="1" stop-color="#1565d8"/></linearGradient></defs><circle cx="12" cy="12" r="12" fill="url(#info-grad)"/><circle cx="12" cy="6.8" r="1.9" fill="#fff"/><rect x="10.3" y="10" width="3.4" height="9" rx="1.7" fill="#fff"/></svg>About</button>
+    <div class="brand"><span class="logo" aria-hidden="true">↧</span> DB Import <small>CSV &amp; SQL</small></div>
+    <nav aria-label="Main navigation">
+      <button class="nav-btn active" id="nav-import" aria-current="page">CSV Import</button>
+      <button class="nav-btn" id="nav-generate">SQL Generate</button>
+      <button class="nav-btn" id="nav-connection">Connection</button>
     </nav>
   </div>
 </header>
-<div class="container">
-  <main class="main-column">
-  <h1>Excel → SQL Server Importer</h1>
-  <p class="subtitle">Upload an Excel file, preview the tables, then import into your database.</p>
-
-  <div class="alert info file-change-warning hidden" id="file-change-warning">
-    <span>The selected local Excel file has changed.</span>
-    <button class="btn" id="btn-refresh-file" style="padding:7px 14px;white-space:nowrap">Refresh file</button>
-  </div>
-
-  <!-- ── Step 0: DB Connection setup ──────────────────── -->
-  <div class="card hidden" id="card-conn">
-    <div class="card-title active">
-      <span class="step step-gear"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></span> Database Connection
+<main>
+  <p class="connection-summary" id="connection-summary">Loading connection…</p>
+  <div class="alert error hidden" id="app-error" role="alert"></div>
+  {% for purpose in ['import', 'generate'] %}
+  <section id="panel-{{ purpose }}" aria-labelledby="title-{{ purpose }}"{% if purpose == 'generate' %} class="hidden"{% endif %}>
+    <h1 id="title-{{ purpose }}">{{ 'CSV Import' if purpose == 'import' else 'SQL Generate' }}</h1>
+    <p class="subtitle">{% if purpose == 'import' %}Import a CSV into SQL Server, then download the generated SQL. The import replaces the rows in the selected table.{% else %}Turn a CSV into a SQL file. Column names and types come from the connected database; generation only reads this metadata.{% endif %}</p>
+    <div class="card">
+      <h2>1. Select CSV</h2>
+      <input type="file" id="{{ purpose }}-file" class="hidden" accept=".csv" disabled>
+      <div class="drop-zone disabled" id="{{ purpose }}-drop" role="button" tabindex="0" aria-disabled="true" aria-label="Choose a CSV for {{ 'import' if purpose == 'import' else 'SQL generation' }}">
+        <span class="drop-icon" aria-hidden="true">CSV</span>
+        <span><strong>Choose a CSV file</strong> or drag it here</span>
+        <span class="hint">No header row · file name = table name, e.g. MDNNOP.csv<br>UTF-8 and Shift-JIS supported</span>
+      </div>
+      <p class="filename hidden" id="{{ purpose }}-filename"></p>
+      <div class="alert error hidden" id="{{ purpose }}-error" role="alert"></div>
     </div>
-    <p class="subtitle" style="margin-bottom:18px">
-      Enter your database details once — they'll be saved and reused next time.
-    </p>
-    <div id="err-conn" class="alert error hidden"></div>
-
-    <div class="row trio">
-      <div>
-        <label for="db-host">Host</label>
-        <input type="text" id="db-host" value="db" placeholder="db">
+    <div class="card hidden" id="{{ purpose }}-preview">
+      <h2>2. {{ 'Confirm import' if purpose == 'import' else 'Generate SQL' }}</h2>
+      <dl class="preview">
+        <div><dt>Table</dt><dd id="{{ purpose }}-table"></dd></div>
+        <div><dt>Rows</dt><dd id="{{ purpose }}-rows"></dd></div>
+        <div><dt>CSV columns</dt><dd id="{{ purpose }}-columns"></dd></div>
+      </dl>
+      <div class="schema-field">
+        <label for="{{ purpose }}-schema">Target schema</label>
+        <select id="{{ purpose }}-schema" disabled><option value="">Loading schemas…</option></select>
       </div>
-      <div>
-        <label for="db-port">Port</label>
-        <input type="text" id="db-port" value="1433" placeholder="1433">
-      </div>
+      <p class="hint">Columns are matched by position. Blank values use NULL or a required column's type default.</p>
+      <div class="btn-row"><button class="btn" id="{{ purpose }}-run" disabled>{{ 'Import CSV & Generate SQL' if purpose == 'import' else 'Generate SQL' }}</button></div>
     </div>
-    <div class="row" style="margin-top:12px">
-      <div>
-        <label for="db-name">Database</label>
-        <input type="text" id="db-name" placeholder="your_database">
-      </div>
-      <div>
-        <label for="db-schema">Schema</label>
-        <input type="text" id="db-schema" value="lvapdbf" placeholder="lvapdbf">
-      </div>
-    </div>
-    <div class="row" style="margin-top:12px">
-      <div>
-        <label for="db-user">Username</label>
-        <input type="text" id="db-user" placeholder="sa">
-      </div>
-      <div>
-        <label for="db-pass">Password</label>
-        <input type="password" id="db-pass" placeholder="••••••••">
+    <div class="card hidden" id="{{ purpose }}-result" aria-live="polite">
+      <div class="result-head"><h2>{{ 'Import result' if purpose == 'import' else 'SQL result' }}</h2><span class="elapsed" id="{{ purpose }}-elapsed"></span></div>
+      <span class="status" id="{{ purpose }}-status"></span>
+      <p id="{{ purpose }}-message"></p>
+      <progress id="{{ purpose }}-progress" max="100" value="0" aria-label="CSV processing progress"></progress>
+      <p class="hint" id="{{ purpose }}-progress-label"></p>
+      <div class="alert error hidden" id="{{ purpose }}-details"></div>
+      <div class="btn-row hidden" id="{{ purpose }}-download-row">
+        <a class="btn" id="{{ purpose }}-download">Download SQL</a>
+        <span class="hint">Available for one hour, until the app restarts.</span>
       </div>
     </div>
-
-    <div class="btn-row" id="conn-view-actions">
-      <button class="btn secondary" id="btn-edit-conn">Edit Connection</button>
-      <button class="btn danger" id="btn-delete-conn">Delete Connection</button>
-    </div>
-    <div class="btn-row hidden" id="conn-edit-actions">
-      <button class="btn" id="btn-save-conn">Test &amp; Save connection</button>
-      <button class="btn secondary hidden" id="btn-cancel-conn">Cancel</button>
-    </div>
-  </div>
-
-  <div class="card hidden" id="card-truncate-manager">
-    <div class="card-title active"><span class="step step-trash"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/></svg></span> Truncate Table</div>
-    <p class="subtitle" style="margin-bottom:18px">Choose exactly which schema and table to empty.</p>
-    <div id="err-truncate-manager" class="alert error hidden"></div>
-    <div id="ok-truncate-manager" class="alert info hidden"></div>
-    <div class="row">
-      <div>
-        <label for="truncate-schema">Schema</label>
-        <select id="truncate-schema"><option value="">— select schema —</option></select>
+  </section>
+  {% endfor %}
+  <section id="panel-connection" class="hidden" aria-labelledby="title-connection">
+    <h1 id="title-connection">Database Connection</h1>
+    <p class="subtitle">Save a SQL Server connection for CSV imports and SQL generation.</p>
+    <form class="card" id="connection-form">
+      <div class="row">
+        <div><label for="db-host">Host</label><input id="db-host" name="host" value="db" required autocomplete="off"></div>
+        <div><label for="db-port">Port</label><input id="db-port" name="port" value="1433" required inputmode="numeric"></div>
       </div>
-      <div>
-        <label>Tables</label>
-        <div class="multi-table-list" id="truncate-table-list"></div>
+      <div class="row">
+        <div><label for="db-name">Database</label><input id="db-name" name="database" required autocomplete="off"></div>
+        <div><label for="db-schema">Default schema</label><input id="db-schema" name="schema" value="lvapdbf" required></div>
       </div>
-    </div>
-    <div class="btn-row">
-      <button class="btn danger" id="btn-truncate-selected" disabled>Truncate selected table</button>
-    </div>
-  </div>
-
-  <div class="card hidden" id="card-schema-manager">
-    <div class="card-title active"><span class="step step-schema"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/></svg></span> Schema</div>
-    <p class="subtitle" style="margin-bottom:18px">Schemas in <strong id="schema-db-name">your database</strong>. New schemas are created empty.</p>
-    <div id="err-schema-manager" class="alert error hidden"></div>
-    <div id="ok-schema-manager" class="alert info hidden"></div>
-    <form class="schema-create" id="schema-create-form" autocomplete="off">
-      <div>
-        <label for="new-schema-name">New schema name</label>
-        <input type="text" id="new-schema-name" placeholder="e.g. lvapdbf_test" maxlength="128" spellcheck="false">
+      <div class="row">
+        <div><label for="db-user">Username</label><input id="db-user" name="username" required autocomplete="username"></div>
+        <div><label for="db-pass">Password</label><input type="password" id="db-pass" name="password" autocomplete="current-password"></div>
       </div>
-      <button type="submit" class="btn" id="btn-create-schema" disabled><span>Create schema</span></button>
-    </form>
-    <div class="schema-list-head">
-      <span>Current schemas <span class="badge blue" id="schema-count">0</span></span>
-      <button type="button" class="btn secondary sm" id="btn-refresh-schemas">Refresh</button>
-    </div>
-    <table class="tbl">
-      <thead><tr><th>Schema</th><th>Owner</th><th>Tables</th></tr></thead>
-      <tbody id="schema-body"></tbody>
-    </table>
-  </div>
-
-  <div class="card hidden" id="card-data-editor">
-    <div class="card-title active"><span class="step step-edit"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.375 2.625a1 1 0 0 1 3 3l-9.013 9.014a2 2 0 0 1-.853.505l-2.873.84a.5.5 0 0 1-.62-.62l.84-2.873a2 2 0 0 1 .506-.852z"/></svg></span> Data Editor</div>
-    <div class="editor-body">
-      <aside class="editor-history">
-        <div class="editor-history-head">Recent tables</div>
-        <div class="editor-history-list" id="editor-history-list"></div>
-      </aside>
-      <div class="editor-main">
-        <div id="err-data-editor" class="alert error hidden"></div>
-        <div id="ok-data-editor" class="alert info hidden"></div>
-        <div class="data-toolbar">
-          <div><label for="editor-schema">Schema</label><select id="editor-schema"><option value="">— select schema —</option></select></div>
-          <div>
-            <label for="editor-table">Table</label>
-            <div class="table-combo">
-              <input type="text" id="editor-table" placeholder="Select a schema first" disabled autocomplete="off">
-              <div class="table-combo-panel hidden" id="editor-table-panel"></div>
-            </div>
-          </div>
-          <button class="btn" id="btn-load-data" disabled>Load data</button>
-        </div>
-        <div class="table-panel hidden" id="editor-table-summary">
-          <div class="table-panel-head">
-            <div class="table-panel-title">
-              <div class="table-panel-name" id="summary-table-name"></div>
-              <div class="table-summary">
-                <span class="stat pk" id="summary-pk-chip"><span class="stat-label">PK</span><span class="stat-value" id="summary-pk-count">0</span></span>
-                <span class="stat"><span class="stat-label">Rows</span><span class="stat-value" id="summary-row-count">0</span><span class="stat-sub" id="summary-row-shown"></span></span>
-                <span class="stat"><span class="stat-label">Columns</span><span class="stat-value" id="summary-col-count">0</span></span>
-              </div>
-            </div>
-            <div class="table-panel-actions">
-              <button class="btn secondary sm" id="btn-refresh-data" disabled title="Reload this table's data">⟳ Refresh</button>
-              <button class="btn sm" id="btn-edit-mode" disabled>✎ Edit mode</button>
-            </div>
-          </div>
-          <div class="table-panel-tools">
-            <div class="tools-left">
-              <div class="column-search">
-                <input type="text" id="editor-column-search" placeholder="Search column name…" autocomplete="off">
-                <button type="button" class="column-search-clear hidden" id="editor-column-search-clear" title="Clear">✕</button>
-              </div>
-              <span class="paste-hint" title="Copy rows in Excel (with or without the header row), click the table, then paste">Paste rows from Excel with <kbd>Ctrl</kbd>+<kbd>V</kbd></span>
-            </div>
-            <div class="btn-group">
-              <button class="btn secondary sm" id="btn-copy-header" disabled title="Copy all rows with column headers">Copy with header</button>
-              <button class="btn secondary sm" id="btn-copy-plain" disabled title="Copy all rows without headers">Copy without header</button>
-            </div>
-          </div>
-          <div class="paste-bar hidden" id="paste-bar">
-            <div id="paste-bar-text"></div>
-            <div class="paste-bar-actions">
-              <button class="btn secondary sm" id="btn-paste-discard">Discard</button>
-              <button class="btn success sm" id="btn-paste-insert">Insert rows</button>
-            </div>
-          </div>
-          <div class="data-grid-wrap" id="data-grid-wrap"><table class="data-grid"><thead id="data-grid-head"></thead><tbody id="data-grid-body"></tbody></table>
-            <div class="data-grid-empty hidden" id="data-grid-empty">No columns match your search.</div>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <div class="card hidden" id="card-query-runner">
-    <div class="query-workspace">
-      <aside class="query-sidebar">
-        <div class="query-sidebar-brand">
-          <span class="step"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 7 4 4-4 4"/><path d="M12 17h7"/></svg></span>
-          SQL Workspace
-        </div>
-        <button class="btn query-new" id="btn-new-query">＋ New SQL</button>
-        <button class="query-sidebar-link" id="btn-query-data-editor"><span>▦</span><span>Data editor</span></button>
-        <div class="query-sidebar-divider"></div>
-        <section class="query-sidebar-section">
-          <div class="query-sidebar-label"><span>Current</span><span class="query-count" id="query-draft-count"></span></div>
-          <div class="query-sidebar-list" id="query-draft-list"></div>
-        </section>
-        <section class="query-sidebar-section">
-          <div class="query-sidebar-label"><span>Saved SQL</span><span class="query-count" id="query-saved-count"></span></div>
-          <div class="query-sidebar-list" id="query-saved-list"></div>
-        </section>
-      </aside>
-
-      <div class="query-main">
-        <div class="query-head">
-          <div class="query-title-wrap">
-            <input type="text" id="query-name" value="Untitled query" aria-label="SQL file name">
-            <div class="query-subtitle">Run SQL against the connected database</div>
-          </div>
-          <div class="query-head-actions">
-            <span class="query-save-status" id="query-save-status">Saved</span>
-            <button class="btn sm query-save-btn" id="btn-save-query"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z"/><path d="M17 21v-8H7v8"/><path d="M7 3v5h8"/></svg><span>Save SQL</span></button>
-          </div>
-        </div>
-        <div id="err-query" class="alert error hidden"></div>
-
-        <select class="hidden" id="query-schema" disabled aria-hidden="true"><option value="">Loading schemas…</option></select>
-        <div class="query-toolbar">
-          <div class="query-shortcut"><kbd>Ctrl</kbd>/<kbd>⌘</kbd> + <kbd>Enter</kbd> to run · selected SQL runs when highlighted</div>
-        </div>
-
-        <div class="query-editor-wrap">
-          <textarea id="sql-query" spellcheck="false" autocomplete="off" placeholder="SELECT TOP 100 *&#10;FROM "></textarea>
-          <div class="sql-suggestions hidden" id="sql-suggestions" role="listbox"></div>
-        </div>
-        <div class="sql-hint">Highlight part of the SQL to run only the selected statements.</div>
-
-        <div class="query-actions">
-          <button class="btn" id="btn-run-query">▶ Run query</button>
-          <button class="btn secondary" id="btn-clear-query">Clear</button>
-          <span class="query-warning">Write queries change the database and require confirmation.</span>
-        </div>
-
-        <div class="query-results hidden" id="query-results">
-          <div class="query-result-head">
-            <div class="query-result-summary" id="query-result-summary"></div>
-            <button class="btn secondary sm hidden" id="btn-copy-query-result">Copy first result</button>
-          </div>
-          <div id="query-result-sets"></div>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- ── Step 1: Upload ──────────────────────────────── -->
-  <div class="card hidden" id="card-upload">
-    <div class="card-title active">
-      <span class="step step-file"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M8 13h2"/><path d="M14 13h2"/><path d="M8 17h2"/><path d="M14 17h2"/></svg></span> Select File &amp; Sheet
-    </div>
-    <div id="err-upload" class="alert error hidden"></div>
-
-    <div class="drop-zone" id="drop-zone">
-      <input type="file" id="file-input" accept=".xlsx,.xls,.csv">
-      <div class="drop-icon">📂</div>
-      <div class="drop-label"><span>Click to browse</span> or drag &amp; drop your Excel or CSV file</div>
-      <div class="drop-hint">CSV: no header row, file name = table name (e.g. MDNNOP.csv → MDNNOP)</div>
-      <div class="file-name hidden" id="file-name"></div>
-    </div>
-
-    <div style="margin-top:18px">
-      <label for="sheet-select">Sheet name</label>
-      <select id="sheet-select" disabled>
-        <option value="">— upload a file first —</option>
-      </select>
-    </div>
-
-    <div class="btn-row">
-      <button class="btn" id="btn-scan" disabled><span>Scan tables</span></button>
-    </div>
-  </div>
-
-  <!-- ── Step 2: Preview ──────────────────────────────── -->
-  <div class="card hidden" id="card-preview">
-    <div class="card-title active">
-      <span class="step step-eye"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/></svg></span> Preview &amp; Confirm
-    </div>
-    <div id="err-import" class="alert error hidden"></div>
-
-    <div class="preview-header">
-      <div class="summary" id="preview-summary"></div>
-      <div style="display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end">
-        <button class="btn secondary" id="btn-change-sheet" style="padding:6px 14px;font-size:.8rem">Change sheet</button>
-        <button class="btn secondary" id="btn-rescan" style="padding:6px 14px;font-size:.8rem">Change file</button>
-      </div>
-    </div>
-
-    <table class="tbl" id="preview-tbl">
-      <thead><tr>
-        <th style="width:36px"><input type="checkbox" id="chk-all" checked></th>
-        <th>#</th><th>Table Name</th><th>Schema</th><th>Status</th><th>Range</th><th>Rows</th><th>Columns</th>
-      </tr></thead>
-      <tbody id="preview-body"></tbody>
-    </table>
-
-    <div class="btn-row">
-      <button class="btn" id="btn-import"><span>Import selected tables</span></button>
-      <span id="select-count" style="align-self:center;color:#64748b;font-size:.82rem"></span>
-    </div>
-  </div>
-
-  <!-- ── About ────────────────────────────────────────── -->
-  <div class="about-grid">
-  <div class="card hidden" id="card-about">
-    <div class="card-title active"><span class="step step-info"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="6.8" r="1.9" fill="#fff"/><rect x="10.3" y="10" width="3.4" height="9" rx="1.7" fill="#fff"/></svg></span> About</div>
-    <p class="subtitle" style="margin-bottom:18px">Excel → SQL Server Importer — how table scanning works.</p>
-    <div class="side-section">
-      <h2>Table တွေကို ဘယ်လိုရှာလဲ</h2>
-      <p>App က user ရွေးထားတဲ့ Excel sheet ထဲက <strong>■ 実施前テストデータ</strong> section ကိုပဲ ဖတ်ပါတယ်။ အဲဒီ section ထဲမှာ <strong>MZAIHP(...)</strong>, <strong>MSHHNP(...)</strong> လို table name တွေကို ရှာပါတယ်။</p>
-      <ul class="side-list">
-        <li><strong>Table row:</strong> table name ရှိတဲ့ row ဖြစ်ပါတယ်။</li>
-        <li><strong>Header row:</strong> table name ရဲ့ အောက် row ကို header row လို့ယူပါတယ်။ <strong>→ 更新前</strong> / <strong>→ 登録前</strong> လို marker row ရှိရင် အဲဒီ row ကိုကျော်ပြီး နောက်တစ် row ကို header row လို့ယူပါတယ်။</li>
-        <li><strong>Column range:</strong> header row မှာ ပထမ column ကနေ blank column မရောက်မချင်း ဖတ်ပါတယ်။ ဥပမာ <strong>B:AI</strong> လို့ပြပါတယ်။</li>
-      </ul>
-    </div>
-  </div>
-
-  <div class="card hidden" id="card-updates">
-    <div class="card-title active"><span class="step step-update"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m5 12 7-7 7 7"/><path d="M12 19V5"/></svg></span> Updates</div>
-    <div class="updates-row">
-      <div class="updates-current">
-        <div class="updates-label">Current version</div>
-        <div class="updates-version" id="about-version">…</div>
-        <div class="updates-date" id="about-version-date"></div>
-      </div>
-      <div class="updates-actions">
-        <button class="btn success sm hidden" id="btn-open-update">↑ Update to <span id="btn-open-update-version"></span></button>
-        <button class="btn secondary sm" id="btn-check-update">Check for updates</button>
-      </div>
-    </div>
-    <div class="version-status" id="about-version-status"></div>
-    <div class="updates-notes hidden" id="about-version-notes-wrap">
-      <div class="updates-label">In this version</div>
-      <ul class="side-list" id="about-version-notes"></ul>
-    </div>
-  </div>
-  </div>
-
-  </main>
-
-  <aside class="side-panel">
-    <div class="card hidden" id="card-results">
-      <div class="card-title done"><span class="step step-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg></span> Import Results</div>
-      <div id="results-body"></div>
-      <div id="batch-status" class="alert hidden"></div>
+      <div class="alert error hidden" id="connection-error" role="alert"></div>
+      <div class="alert info hidden" id="connection-success" role="status"></div>
       <div class="btn-row">
-        <a class="btn success hidden" id="btn-download-sql" download>Download SQL</a>
-        <button class="btn hidden" id="btn-call-batch"></button>
-        <button class="btn secondary" id="btn-change-sheet-results">Change sheet</button>
-        <button class="btn secondary" id="btn-restart">Change file</button>
+        <button class="btn" type="submit" id="connection-save">Test &amp; Save connection</button>
+        <button class="btn secondary hidden" type="button" id="connection-cancel">Cancel</button>
+        <button class="btn danger hidden" type="button" id="connection-delete">Delete connection</button>
       </div>
-    </div>
-  </aside>
-</div>
-
-<div class="modal-backdrop hidden" id="update-modal" role="dialog" aria-modal="true" aria-labelledby="update-modal-title">
-  <div class="modal">
-    <div class="modal-head"><span class="modal-icon">↑</span><h3 id="update-modal-title">Update available</h3></div>
-    <div class="modal-body">
-      <div class="version-jump">You have <span id="update-current"></span> — the latest is <strong id="update-latest"></strong></div>
-      <ul id="update-notes"></ul>
-      <div class="update-progress hidden" id="update-progress"></div>
-      <details class="manual-update" id="manual-update">
-        <summary>Update manually instead</summary>
-        <div class="step-label">In your db-import folder run</div>
-        <div class="cmd-box"><code id="update-cmd">git pull origin main &amp;&amp; docker compose up -d --build</code>
-          <button class="btn secondary sm" id="btn-copy-update-cmd">Copy</button></div>
-        <div class="step-label">or double-click</div>
-        <div><code>update.bat</code> (Windows) &nbsp;·&nbsp; <code>./update.sh</code> (Mac / Linux)</div>
-        <div class="manual-reason hidden" id="self-update-reason"></div>
-      </details>
-    </div>
-    <div class="modal-foot">
-      <button class="btn secondary sm" id="btn-update-later">Remind me later</button>
-      <button class="btn sm hidden" id="btn-update-ok">Got it</button>
-      <button class="btn success sm" id="btn-update-now">↑ Update now</button>
-    </div>
-  </div>
-</div>
-
+    </form>
+  </section>
+</main>
 <script>
-const $  = id => document.getElementById(id)
+const $ = id => document.getElementById(id)
 const show = el => el.classList.remove('hidden')
 const hide = el => el.classList.add('hidden')
-let importPollTimer = null
-let currentBatchJob = null
-let currentFileKind = 'excel'
-let currentFileHandle = null
-let currentFileStamp = null
-let fileWatchTimer = null
-let lastImportCard = 'card-upload'
-let restoreImportResults = false
-let truncateAvailableTables = []
-let truncateSelectedTables = []
-let editorData = null
-let editorEditMode = false
-let editorPending = null   // { mapped: Set<colIndex>, rows: [[value per column]] } — pasted rows not yet inserted
-let editorSortColumn = null
-let editorSortDir = 'asc'
-let editorAvailableTables = []
-let isConfigured = false
+const purposes = ['import', 'generate']
+const workflows = Object.fromEntries(purposes.map(purpose => [purpose, {
+  preview: null, busy: false, jobId: null, clock: null, elapsed: 0, timer: null
+}]))
+let configured = false
 let savedConfig = null
+let configBusy = false
+let schemasReady = false
+const fields = {host: 'db-host', port: 'db-port', database: 'db-name', schema: 'db-schema', username: 'db-user', password: 'db-pass'}
 
-const EDITOR_HISTORY_KEY = 'dbimport_editor_history'
-let editorHistory = []
-try { editorHistory = JSON.parse(localStorage.getItem(EDITOR_HISTORY_KEY) || '[]') } catch (_) { editorHistory = [] }
-
-// ── On load: check saved config ───────────────────────────────────────────────
-// ── Version / update notification ─────────────────────────────────────────────
-const UPDATE_DISMISS_KEY = 'dbimport_update_dismissed'
-let latestVersionInfo = null
-
-function showUpdateModal(info) {
-  $('update-current').textContent = 'v' + info.current
-  $('update-latest').textContent = 'v' + info.latest
-  $('update-notes').innerHTML = (info.latest_notes || []).map(n => `<li>${escapeHtml(n)}</li>`).join('')
-  hide($('update-progress')); hide($('btn-update-ok')); show($('btn-update-later'))
-  const canUpdate = !!info.can_self_update
-  $('btn-update-now').classList.toggle('hidden', !canUpdate)
-  $('btn-update-now').disabled = false; $('btn-update-now').innerHTML = '<span>↑ Update now</span>'
-  $('manual-update').open = !canUpdate
-  $('self-update-reason').classList.toggle('hidden', canUpdate || !info.self_update_reason)
-  $('self-update-reason').textContent = info.self_update_reason ? `Update now is unavailable: ${info.self_update_reason}.` : ''
-  show($('update-modal'))
-}
-
-function setUpdateProgress(kind, html, output) {
-  const box = $('update-progress')
-  box.className = 'update-progress' + (kind ? ' ' + kind : '')
-  box.innerHTML = html + (output ? `<pre>${escapeHtml(output)}</pre>` : '')
-}
-
-// After git pull, Flask's debug reloader restarts the app — wait until it
-// answers with the new version, then reload the page.
-async function waitForNewVersion(target) {
-  for (let i = 0; i < 40; i++) {
-    await new Promise(r => setTimeout(r, 1500))
-    try {
-      const info = await fetch('/version').then(r => r.json())
-      if (!target || info.current === target) return true
-    } catch (_) { /* app is restarting */ }
+function navigate(panel) {
+  for (const name of [...purposes, 'connection']) {
+    $('panel-' + name).classList.toggle('hidden', name !== panel)
+    $('nav-' + name).classList.toggle('active', name === panel)
+    if (name === panel) $('nav-' + name).setAttribute('aria-current', 'page')
+    else $('nav-' + name).removeAttribute('aria-current')
   }
-  return false
 }
+for (const panel of [...purposes, 'connection']) $('nav-' + panel).addEventListener('click', () => navigate(panel))
 
-$('btn-update-now').addEventListener('click', async () => {
-  const btn = $('btn-update-now')
-  setLoading(btn, true, 'Updating…'); hide($('btn-update-later'))
-  setUpdateProgress('', 'Pulling the latest version from GitHub…')
+async function api(url, options) {
+  const response = await fetch(url, options)
+  const data = await response.json()
+  if (!response.ok) {
+    const error = new Error(data.error || 'Request failed (' + response.status + ').')
+    error.status = response.status
+    throw error
+  }
+  return data
+}
+function errorAt(id, error) { $(id).textContent = error.message || String(error); show($(id)) }
+function busy() { return configBusy || purposes.some(purpose => workflows[purpose].busy) }
+function syncControls() {
+  const locked = busy()
+  for (const purpose of purposes) {
+    const disabled = locked || !configured
+    $(purpose + '-file').disabled = disabled
+    $(purpose + '-drop').classList.toggle('disabled', disabled)
+    $(purpose + '-drop').setAttribute('aria-disabled', String(disabled))
+    $(purpose + '-schema').disabled = disabled || !schemasReady
+    $(purpose + '-run').disabled = disabled || !schemasReady || !workflows[purpose].preview
+  }
+  Object.values(fields).forEach(id => { $(id).disabled = locked })
+  $('connection-save').disabled = locked
+  $('connection-delete').disabled = locked
+  $('connection-cancel').disabled = locked
+}
+function updateConnection(config) {
+  savedConfig = config
+  configured = !!config
+  $('connection-summary').textContent = config
+    ? `Connected: ${config.host}:${config.port} / ${config.database} · ${config.username}`
+    : 'Set up a database connection to import CSV or generate SQL.'
+  for (const [key, id] of Object.entries(fields)) {
+    $(id).value = config ? (config[key] || (key === 'schema' ? 'lvapdbf' : ''))
+      : ({host: 'db', port: '1433', schema: 'lvapdbf'}[key] || '')
+  }
+  $('connection-delete').classList.toggle('hidden', !configured)
+  $('connection-cancel').classList.toggle('hidden', !configured)
+  syncControls()
+}
+async function loadSchemas() {
+  schemasReady = false
+  syncControls()
   try {
-    const response = await fetch('/update', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: '{}' })
-    const data = await response.json()
-    if (!response.ok || data.error) {
-      setUpdateProgress('error', escapeHtml(data.error || 'Update failed.'), data.output)
-      $('manual-update').open = true
-      setLoading(btn, false, 'Try again'); show($('btn-update-later'))
-      return
+    const data = await api('/schemas')
+    for (const purpose of purposes) {
+      const select = $(purpose + '-schema')
+      const previous = select.value
+      select.replaceChildren(...data.schemas.map(schema => new Option(schema, schema)))
+      if (!data.schemas.length) throw new Error('The connected database has no tables to use.')
+      select.value = data.schemas.includes(previous) ? previous
+        : data.schemas.includes(data.default) ? data.default : data.schemas[0]
     }
-    hide(btn); show($('btn-update-ok'))
-    if (!data.updated) {
-      setUpdateProgress('ok', 'Already up to date with GitHub — the new version may not be pushed yet. Try again in a few minutes.')
-      return
-    }
-    if (data.needs_rebuild) {
-      setUpdateProgress('ok',
-        `Code updated to <strong>v${escapeHtml(data.version)}</strong>. This release changes the Docker setup — ` +
-        'finish by running <code>docker compose up -d --build</code> in your db-import folder.')
-      return
-    }
-    hide($('btn-update-ok'))
-    setUpdateProgress('ok', `Updated to <strong>v${escapeHtml(data.version)}</strong>. Restarting the app…`)
-    const ready = await waitForNewVersion(data.version)
-    if (ready) { location.reload(); return }
-    setUpdateProgress('ok', `Updated to <strong>v${escapeHtml(data.version)}</strong>. Reload the page to finish.`)
-    show($('btn-update-ok'))
+    schemasReady = true
+    hide($('app-error'))
   } catch (error) {
-    setUpdateProgress('error', escapeHtml(error.message))
-    setLoading(btn, false, 'Try again'); show($('btn-update-later'))
-  }
-})
-
-function applyVersionInfo(info, fromUser) {
-  latestVersionInfo = info
-  $('version-badge').textContent = 'v' + info.current
-  $('about-version').textContent = 'v' + info.current
-  $('about-version-date').textContent = info.date ? `Released ${info.date}` : ''
-  const notes = info.notes || []
-  $('about-version-notes').innerHTML = notes.map(n => `<li>${escapeHtml(n)}</li>`).join('')
-  $('about-version-notes-wrap').classList.toggle('hidden', !notes.length)
-  const status = $('about-version-status')
-  status.classList.remove('ok', 'available')
-  $('version-badge').classList.toggle('has-update', !!info.update_available)
-  $('btn-open-update').classList.toggle('hidden', !info.update_available)
-  $('btn-open-update-version').textContent = info.latest ? 'v' + info.latest : ''
-  const checkedAt = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-  if (info.check === 'disabled') {
-    status.textContent = 'Update check is not configured.'
-  } else if (info.check === 'failed') {
-    status.textContent = `Could not check for updates (offline?) · ${checkedAt}`
-  } else if (info.update_available) {
-    status.classList.add('available')
-    status.innerHTML = `<strong>v${escapeHtml(info.latest)}</strong> is available · checked ${checkedAt}`
-    let dismissed = null
-    try { dismissed = localStorage.getItem(UPDATE_DISMISS_KEY) } catch (_) {}
-    if (fromUser || dismissed !== info.latest) showUpdateModal(info)
-  } else {
-    status.classList.add('ok')
-    status.textContent = `✓ You are up to date · checked ${checkedAt}`
-  }
+    errorAt('app-error', error)
+  } finally { syncControls() }
 }
-
-function checkForUpdates(force) {
-  return fetch('/version' + (force ? '?force=1' : '')).then(r => r.json())
-    .then(info => applyVersionInfo(info, force)).catch(() => {})
-}
-
-$('version-badge').addEventListener('click', () => {
-  if (latestVersionInfo && latestVersionInfo.update_available) showUpdateModal(latestVersionInfo)
-  else $('nav-about').click()
-})
-$('btn-open-update').addEventListener('click', () => { if (latestVersionInfo) showUpdateModal(latestVersionInfo) })
-$('btn-check-update').addEventListener('click', async () => {
-  const btn = $('btn-check-update'); setLoading(btn, true, 'Checking…')
-  await checkForUpdates(true); setLoading(btn, false, 'Check for updates')
-})
-$('btn-update-later').addEventListener('click', () => {
-  try { localStorage.setItem(UPDATE_DISMISS_KEY, latestVersionInfo.latest) } catch (_) {}
-  hide($('update-modal'))
-})
-$('btn-update-ok').addEventListener('click', () => hide($('update-modal')))
-$('update-modal').addEventListener('click', e => { if (e.target === $('update-modal')) hide($('update-modal')) })
-$('btn-copy-update-cmd').addEventListener('click', async () => {
-  const btn = $('btn-copy-update-cmd')
-  try { await navigator.clipboard.writeText($('update-cmd').textContent) } catch (_) {}
-  btn.textContent = 'Copied!'; setTimeout(() => { btn.textContent = 'Copy' }, 1200)
-})
-checkForUpdates(false)
-// Long-running tabs: re-check every hour
-setInterval(() => checkForUpdates(false), 60 * 60 * 1000)
-
-fetch('/config').then(r => r.json()).then(data => {
-  if (data.configured) {
-    isConfigured = true
-    $('nav-truncate').disabled = false
-    $('nav-editor').disabled = false
-    $('nav-schema').disabled = false
-    updateConnStatus(data.config)
-    setConnMode('view')
-    show($('card-upload'))
-  } else {
-    $('nav-conn-dot').classList.add('error')
-    setConnMode('edit')
-    show($('card-conn'))   // first-time setup
-    $('nav-import').classList.remove('active')
-    $('nav-connection').classList.add('active')
-  }
-})
-
-function updateConnStatus(cfg) {
-  savedConfig = cfg
-  $('nav-connection').title = `Connected to ${cfg.host}:${cfg.port} / ${cfg.database} (${cfg.username})`
-  $('nav-conn-dot').classList.add('connected')
-  $('nav-conn-dot').classList.remove('error')
-  // pre-fill the edit form too
-  $('db-host').value = cfg.host
-  $('db-port').value = cfg.port
-  $('db-name').value = cfg.database
-  $('db-schema').value = cfg.schema || 'lvapdbf'
-  $('db-user').value = cfg.username
-  $('db-pass').value = cfg.password || ''
-}
-
-// Toggle the Connection card between read-only "view" mode (after a successful
-// connection) and an editable "edit" mode (first-time setup, or Edit Connection).
-function setConnMode(mode) {
-  const fields = ['db-host', 'db-port', 'db-name', 'db-schema', 'db-user', 'db-pass']
-  if (mode === 'view') {
-    fields.forEach(id => { $(id).disabled = true })
-    show($('conn-view-actions'))
-    hide($('conn-edit-actions'))
-  } else {
-    fields.forEach(id => { $(id).disabled = false })
-    hide($('conn-view-actions'))
-    show($('conn-edit-actions'))
-    if (isConfigured) show($('btn-cancel-conn')); else hide($('btn-cancel-conn'))
-  }
-}
-
-// ── Main navigation ──────────────────────────────────────────────────────────
-$('nav-import').addEventListener('click', () => {
-  document.querySelector('.container').classList.remove('editor-layout', 'about-layout')
-  hide($('card-conn')); hide($('btn-cancel-conn'))
-  hide($('card-truncate-manager'))
-  hide($('card-data-editor'))
-  hide($('card-about')); hide($('card-updates'))
-  show($(lastImportCard))
-  if (restoreImportResults) show($('card-results'))
-  $('nav-import').classList.add('active')
-  $('nav-truncate').classList.remove('active')
-  $('nav-editor').classList.remove('active')
-  $('nav-connection').classList.remove('active')
-  $('nav-about').classList.remove('active')
-})
-
-$('nav-truncate').addEventListener('click', () => {
-  document.querySelector('.container').classList.remove('editor-layout', 'about-layout')
-  const visible = ['card-conn', 'card-upload', 'card-preview'].find(id => !$(id).classList.contains('hidden'))
-  if (visible && visible !== 'card-conn') lastImportCard = visible
-  restoreImportResults = !$('card-results').classList.contains('hidden')
-  ;['card-conn', 'card-upload', 'card-preview'].forEach(id => hide($(id)))
-  hide($('card-results'))
-  show($('card-truncate-manager'))
-  hide($('card-data-editor'))
-  hide($('card-about')); hide($('card-updates'))
-  $('nav-truncate').classList.add('active')
-  $('nav-import').classList.remove('active')
-  $('nav-editor').classList.remove('active')
-  $('nav-connection').classList.remove('active')
-  $('nav-about').classList.remove('active')
-  loadTruncateSchemas()
-})
-
-function activateEditorTab() {
-  document.querySelector('.container').classList.remove('about-layout')
-  document.querySelector('.container').classList.add('editor-layout')
-  const visible = ['card-conn', 'card-upload', 'card-preview'].find(id => !$(id).classList.contains('hidden'))
-  if (visible && visible !== 'card-conn') lastImportCard = visible
-  restoreImportResults = !$('card-results').classList.contains('hidden')
-  ;['card-conn', 'card-upload', 'card-preview', 'card-truncate-manager', 'card-about', 'card-updates'].forEach(id => hide($(id)))
-  hide($('card-results')); show($('card-data-editor'))
-  $('nav-editor').classList.add('active')
-  $('nav-import').classList.remove('active'); $('nav-truncate').classList.remove('active')
-  $('nav-connection').classList.remove('active')
-  $('nav-about').classList.remove('active')
-}
-
-$('nav-editor').addEventListener('click', () => {
-  activateEditorTab()
-  loadEditorSchemas()
-})
-
-// Quick shortcut: jump straight into the Data Editor with a specific table loaded
-// (used by the "Edit" button on freshly-imported tables and by the history list).
-function openTableInEditor(schema, table) {
-  activateEditorTab()
-  loadEditorSchemas({ schema, table })
-}
-
-$('nav-connection').addEventListener('click', () => {
-  document.querySelector('.container').classList.remove('editor-layout', 'about-layout')
-  const visible = ['card-conn', 'card-upload', 'card-preview'].find(id => !$(id).classList.contains('hidden'))
-  if (visible && visible !== 'card-conn') lastImportCard = visible
-  restoreImportResults = !$('card-results').classList.contains('hidden')
-  ;['card-conn', 'card-upload', 'card-preview', 'card-truncate-manager', 'card-data-editor', 'card-about', 'card-updates'].forEach(id => hide($(id)))
-  hide($('card-results'))
-  show($('card-conn'))
-  setConnMode(isConfigured ? 'view' : 'edit')
-  $('nav-connection').classList.add('active')
-  $('nav-import').classList.remove('active')
-  $('nav-truncate').classList.remove('active')
-  $('nav-editor').classList.remove('active')
-  $('nav-about').classList.remove('active')
-})
-
-$('nav-about').addEventListener('click', () => {
-  document.querySelector('.container').classList.remove('editor-layout')
-  document.querySelector('.container').classList.add('about-layout')
-  const visible = ['card-conn', 'card-upload', 'card-preview'].find(id => !$(id).classList.contains('hidden'))
-  if (visible && visible !== 'card-conn') lastImportCard = visible
-  restoreImportResults = !$('card-results').classList.contains('hidden')
-  ;['card-conn', 'card-upload', 'card-preview', 'card-truncate-manager', 'card-data-editor'].forEach(id => hide($(id)))
-  hide($('card-results'))
-  show($('card-updates')); show($('card-about'))
-  $('nav-about').classList.add('active')
-  $('nav-import').classList.remove('active')
-  $('nav-truncate').classList.remove('active')
-  $('nav-editor').classList.remove('active')
-  $('nav-connection').classList.remove('active')
-})
-
-function loadEditorSchemas(preselect) {
-  const select = $('editor-schema')
-  select.disabled = true; select.innerHTML = '<option value="">Loading schemas…</option>'
-  fetch('/schemas').then(r => r.json()).then(data => {
-    if (data.error) throw new Error(data.error)
-    select.innerHTML = '<option value="">— select schema —</option>'
-    data.schemas.forEach(name => select.add(new Option(name, name)))
-    select.disabled = false
-    const target = (preselect && data.schemas.includes(preselect.schema)) ? preselect.schema : data.default
-    if (target && data.schemas.includes(target)) {
-      select.value = target
-      loadEditorTables(target, preselect && preselect.schema === target ? preselect.table : null)
-    }
-  }).catch(error => showErr($('err-data-editor'), error.message))
-}
-
-function loadEditorTables(schema, presetTable) {
-  const input = $('editor-table')
-  editorAvailableTables = []
-  input.value = ''; input.disabled = true
-  $('btn-load-data').disabled = true; $('btn-refresh-data').disabled = true
-  $('btn-copy-header').disabled = true; $('btn-copy-plain').disabled = true
-  input.placeholder = schema ? 'Loading tables…' : 'Select a schema first'
-  closeEditorTablePanel()
-  if (!schema) return
-  fetch(`/tables?schema=${encodeURIComponent(schema)}`).then(r => r.json()).then(data => {
-    if (data.error) throw new Error(data.error)
-    editorAvailableTables = data.tables
-    input.placeholder = data.tables.length ? 'Type to search table…' : 'No tables found'
-    input.disabled = !data.tables.length
-    if (presetTable && data.tables.includes(presetTable)) {
-      input.value = presetTable
-      $('btn-load-data').disabled = false
-      loadEditorData()
-    }
-  }).catch(error => showErr($('err-data-editor'), error.message))
-}
-
-$('editor-schema').addEventListener('change', e => loadEditorTables(e.target.value))
-
-// ── Table combobox (replaces a native <datalist>, which browsers render with
-// their own unstyled popup — this keeps the dropdown consistent with the app's theme) ──
-const editorTableInput = $('editor-table')
-const editorTablePanel = $('editor-table-panel')
-let editorTableHighlight = -1
-
-function closeEditorTablePanel() {
-  editorTablePanel.classList.add('hidden'); editorTablePanel.innerHTML = ''; editorTableHighlight = -1
-}
-
-function pickEditorTable(name) {
-  editorTableInput.value = name
-  closeEditorTablePanel()
-  $('btn-load-data').disabled = false
-  loadEditorData()
-}
-
-function openEditorTablePanel() {
-  if (editorTableInput.disabled) return
-  const q = editorTableInput.value.trim().toLowerCase()
-  const matches = editorAvailableTables.filter(name => !q || name.toLowerCase().includes(q))
-  editorTablePanel.innerHTML = ''
-  if (!matches.length) {
-    const empty = document.createElement('div'); empty.className = 'table-combo-empty'
-    empty.textContent = editorAvailableTables.length ? 'No matching tables' : editorTableInput.placeholder
-    editorTablePanel.appendChild(empty)
-  } else {
-    matches.forEach(name => {
-      const opt = document.createElement('div'); opt.className = 'table-combo-option'
-      opt.textContent = name
-      opt.addEventListener('mousedown', e => { e.preventDefault(); pickEditorTable(name) })
-      editorTablePanel.appendChild(opt)
-    })
-  }
-  editorTableHighlight = -1
-  editorTablePanel.classList.remove('hidden')
-}
-
-editorTableInput.addEventListener('focus', openEditorTablePanel)
-editorTableInput.addEventListener('input', () => {
-  openEditorTablePanel()
-  const value = editorTableInput.value.trim().toLowerCase()
-  $('btn-load-data').disabled = !editorAvailableTables.some(name => name.toLowerCase() === value)
-})
-editorTableInput.addEventListener('keydown', e => {
-  const opts = () => [...editorTablePanel.querySelectorAll('.table-combo-option')]
-  if (e.key === 'ArrowDown') {
-    e.preventDefault()
-    if (editorTablePanel.classList.contains('hidden')) openEditorTablePanel()
-    else { const list = opts(); if (list.length) setEditorTableHighlight((editorTableHighlight + 1) % list.length) }
-  } else if (e.key === 'ArrowUp') {
-    e.preventDefault()
-    const list = opts(); if (list.length) setEditorTableHighlight((editorTableHighlight - 1 + list.length) % list.length)
-  } else if (e.key === 'Enter') {
-    e.preventDefault()
-    const list = opts()
-    if (editorTableHighlight >= 0 && list[editorTableHighlight]) pickEditorTable(list[editorTableHighlight].textContent)
-    else {
-      const match = editorAvailableTables.find(name => name.toLowerCase() === editorTableInput.value.trim().toLowerCase())
-      if (match) pickEditorTable(match)
-    }
-  } else if (e.key === 'Escape') { closeEditorTablePanel(); editorTableInput.blur() }
-})
-editorTableInput.addEventListener('blur', () => setTimeout(closeEditorTablePanel, 120))
-
-function setEditorTableHighlight(index) {
-  const opts = [...editorTablePanel.querySelectorAll('.table-combo-option')]
-  opts.forEach(o => o.classList.remove('highlighted'))
-  editorTableHighlight = index
-  if (opts[editorTableHighlight]) {
-    opts[editorTableHighlight].classList.add('highlighted')
-    opts[editorTableHighlight].scrollIntoView({ block: 'nearest' })
-  }
-}
-
-$('btn-load-data').addEventListener('click', loadEditorData)
-$('btn-refresh-data').addEventListener('click', () => {
-  if (!editorData) return
-  $('editor-schema').value = editorData.schema
-  editorTableInput.value = editorData.table
-  loadEditorData()
-})
-$('btn-edit-mode').addEventListener('click', () => {
-  editorEditMode = !editorEditMode
-  $('btn-edit-mode').textContent = editorEditMode ? '✕ Close edit mode' : '✎ Edit mode'
-  $('btn-edit-mode').classList.toggle('edit-on', editorEditMode)
-  renderEditorGrid()
-})
-
-// ── Copy grid to clipboard (TSV — pastes cleanly into Excel/Sheets) ───────────
-function editorDataToTSV(includeHeader) {
-  const lines = []
-  if (includeHeader) lines.push(editorData.columns.map(c => c.name).join('\t'))
-  editorData.rows.forEach(row => {
-    lines.push(row.map(v => (v == null ? '' : String(v)).replace(/[\t\r\n]+/g, ' ')).join('\t'))
-  })
-  return lines.join('\n')
-}
-
-async function copyEditorData(includeHeader, btn) {
-  if (!editorData || !editorData.rows.length) return
-  const text = editorDataToTSV(includeHeader)
+$('connection-form').addEventListener('submit', async event => {
+  event.preventDefault()
+  if (busy()) return
+  const config = Object.fromEntries(Object.entries(fields).map(([key, id]) => [key, key === 'password' ? $(id).value : $(id).value.trim()]))
+  configBusy = true
+  syncControls()
+  hide($('connection-error')); hide($('connection-success'))
+  $('connection-save').textContent = 'Testing connection…'
   try {
-    await navigator.clipboard.writeText(text)
-  } catch (_) {
-    const ta = document.createElement('textarea')
-    ta.value = text; ta.style.position = 'fixed'; ta.style.opacity = '0'
-    document.body.appendChild(ta); ta.select()
-    try { document.execCommand('copy') } catch (_) {}
-    document.body.removeChild(ta)
+    await api('/config', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(config)})
+    updateConnection(config)
+    await loadSchemas()
+    $('connection-success').textContent = 'Connection saved.'
+    show($('connection-success'))
+    if (schemasReady) navigate('import')
+  } catch (error) { errorAt('connection-error', error) }
+  finally {
+    configBusy = false
+    $('connection-save').textContent = 'Test & Save connection'
+    syncControls()
   }
-  const original = btn.textContent
-  btn.textContent = 'Copied!'
-  setTimeout(() => { btn.textContent = original }, 1200)
+})
+$('connection-cancel').addEventListener('click', () => { updateConnection(savedConfig); navigate('import') })
+$('connection-delete').addEventListener('click', async () => {
+  if (busy() || !confirm('Delete the saved database connection?')) return
+  configBusy = true
+  syncControls()
+  hide($('connection-error')); hide($('connection-success'))
+  try {
+    await api('/config', {method: 'DELETE'})
+    schemasReady = false
+    updateConnection(null)
+    hide($('app-error'))
+  } catch (error) { errorAt('connection-error', error) }
+  finally { configBusy = false; syncControls() }
+})
+
+function resetDownload(purpose) {
+  hide($(purpose + '-download-row'))
+  $(purpose + '-download').removeAttribute('href')
+  $(purpose + '-download').removeAttribute('download')
 }
-
-$('btn-copy-header').addEventListener('click', () => copyEditorData(true, $('btn-copy-header')))
-$('btn-copy-plain').addEventListener('click', () => copyEditorData(false, $('btn-copy-plain')))
-
-function loadEditorData() {
-  const schema = $('editor-schema').value
-  const typedTable = editorTableInput.value.trim()
-  const table = editorAvailableTables.find(name => name.toLowerCase() === typedTable.toLowerCase())
-  if (!schema || !table) return
-  editorTableInput.value = table
-  const btn = $('btn-load-data'); hide($('err-data-editor')); hide($('ok-data-editor'))
-  setLoading(btn, true, 'Loading…')
-  return fetch(`/table-data?schema=${encodeURIComponent(schema)}&table=${encodeURIComponent(table)}`)
-    .then(r => r.json()).then(data => {
-      if (data.error) throw new Error(data.error)
-      if (!editorData || editorData.schema !== data.schema || editorData.table !== data.table) {
-        $('editor-column-search').value = ''
-        editorPending = null
-      }
-      editorData = data; editorEditMode = false
-      editorSortColumn = null; editorSortDir = 'asc'
-      $('btn-edit-mode').textContent = '✎ Edit mode'
-      $('btn-edit-mode').classList.remove('edit-on')
-      $('btn-edit-mode').disabled = false
-      $('btn-refresh-data').disabled = false
-      $('btn-copy-header').disabled = !data.rows.length
-      $('btn-copy-plain').disabled = !data.rows.length
-      const totalRows = Number(data.total_rows ?? data.rows.length)
-      $('summary-table-name').innerHTML = `<span class="schema">${escapeHtml(data.schema)}.</span>${escapeHtml(data.table)}`
-      $('summary-pk-count').textContent = data.primary_keys.length
-      $('summary-pk-chip').title = data.primary_keys.length ? data.primary_keys.join(', ') : 'No primary key'
-      $('summary-row-count').textContent = totalRows.toLocaleString()
-      $('summary-row-shown').textContent = data.rows.length < totalRows ? `(showing ${data.rows.length})` : ''
-      $('summary-col-count').textContent = data.columns.length
-      show($('editor-table-summary'))
-      renderEditorGrid()
-      pushEditorHistory(schema, table)
-    }).catch(error => showErr($('err-data-editor'), error.message))
-    .finally(() => setLoading(btn, false, 'Load data'))
-}
-
-// ── Recent-tables history (left panel) ────────────────────────────────────────
-function saveEditorHistory() {
-  try { localStorage.setItem(EDITOR_HISTORY_KEY, JSON.stringify(editorHistory)) } catch (_) {}
-}
-
-function pushEditorHistory(schema, table) {
-  editorHistory = editorHistory.filter(h => !(h.schema === schema && h.table === table))
-  editorHistory.unshift({ schema, table })
-  if (editorHistory.length > 15) editorHistory.length = 15
-  saveEditorHistory()
-  renderEditorHistory()
-}
-
-function removeEditorHistory(schema, table) {
-  editorHistory = editorHistory.filter(h => !(h.schema === schema && h.table === table))
-  saveEditorHistory()
-  renderEditorHistory()
-}
-
-function renderEditorHistory() {
-  const list = $('editor-history-list')
-  list.innerHTML = ''
-  if (!editorHistory.length) {
-    list.innerHTML = '<p class="editor-history-empty">No tables opened yet — search or import a table to see it here.</p>'
+async function uploadCsv(purpose, file) {
+  if (!file || busy() || !configured) return
+  const state = workflows[purpose]
+  state.preview = null
+  hide($(purpose + '-preview')); hide($(purpose + '-result')); hide($(purpose + '-error'))
+  resetDownload(purpose)
+  syncControls()
+  if (!file.name.toLowerCase().endsWith('.csv')) {
+    errorAt(purpose + '-error', new Error('Select a .csv file with no header row.'))
     return
   }
-  editorHistory.forEach(h => {
-    const item = document.createElement('div'); item.className = 'editor-history-item'
-    if (editorData && editorData.schema === h.schema && editorData.table === h.table) item.classList.add('active')
-
-    const label = document.createElement('button')
-    label.type = 'button'; label.className = 'editor-history-label'
-    label.title = `Open ${h.schema}.${h.table}`
-    const schemaEl = document.createElement('span'); schemaEl.className = 'editor-history-schema'; schemaEl.textContent = h.schema
-    const tableEl = document.createElement('span'); tableEl.className = 'editor-history-table'; tableEl.textContent = h.table
-    label.append(schemaEl, tableEl)
-    label.addEventListener('click', () => {
-      $('editor-schema').value = h.schema
-      loadEditorTables(h.schema, h.table)
-    })
-
-    const remove = document.createElement('button')
-    remove.type = 'button'; remove.className = 'editor-history-remove'; remove.title = `Remove ${h.schema}.${h.table} from history`
-    remove.textContent = '×'
-    remove.addEventListener('click', e => { e.stopPropagation(); removeEditorHistory(h.schema, h.table) })
-
-    item.append(label, remove)
-    list.appendChild(item)
-  })
-}
-
-renderEditorHistory()
-
-function sortEditorData(colIndex) {
-  if (editorSortColumn === colIndex) {
-    editorSortDir = editorSortDir === 'asc' ? 'desc' : 'asc'
-  } else {
-    editorSortColumn = colIndex
-    editorSortDir = 'asc'
-  }
-  const dir = editorSortDir === 'asc' ? 1 : -1
-  editorData.rows.sort((a, b) => {
-    const av = a[colIndex], bv = b[colIndex]
-    if (av == null && bv == null) return 0
-    if (av == null) return 1
-    if (bv == null) return -1
-    if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * dir
-    const as = String(av), bs = String(bv)
-    const an = Number(as), bn = Number(bs)
-    if (as.trim() !== '' && bs.trim() !== '' && !isNaN(an) && !isNaN(bn)) return (an - bn) * dir
-    return as.localeCompare(bs, undefined, { numeric: true, sensitivity: 'base' }) * dir
-  })
-  renderEditorGrid()
-}
-
-function renderEditorGrid() {
-  if (!editorData) return
-  const head = $('data-grid-head'), body = $('data-grid-body')
-  head.innerHTML = ''; body.innerHTML = ''
-  const headerRow = document.createElement('tr')
-  const numTh = document.createElement('th'); numTh.className = 'row-num'; numTh.textContent = '#'
-  headerRow.appendChild(numTh)
-  editorData.columns.forEach((column, colIndex) => {
-    const th = document.createElement('th'); th.className = 'sortable'; th.dataset.col = colIndex
-    const label = document.createElement('span')
-    label.textContent = column.name + (editorData.primary_keys.includes(column.name) ? ' 🔑' : '')
-    const arrow = document.createElement('span'); arrow.className = 'sort-arrow'
-    if (editorSortColumn === colIndex) {
-      th.classList.add('sorted')
-      arrow.textContent = editorSortDir === 'asc' ? '▲' : '▼'
-    } else {
-      arrow.textContent = '⇅'
-    }
-    th.append(label, arrow)
-    th.addEventListener('click', () => sortEditorData(colIndex))
-    headerRow.appendChild(th)
-  })
-  if (editorEditMode) { const th = document.createElement('th'); th.textContent = 'Action'; th.className = 'row-action'; headerRow.appendChild(th) }
-  head.appendChild(headerRow)
-  renderPendingRows(body)
-  editorData.rows.forEach((row, rowIndex) => {
-    const tr = document.createElement('tr')
-    const numTd = document.createElement('td'); numTd.className = 'row-num'; numTd.textContent = rowIndex + 1
-    tr.appendChild(numTd)
-    editorData.columns.forEach((column, colIndex) => {
-      const td = document.createElement('td'), value = row[colIndex]
-      td.dataset.col = colIndex
-      if (editorData.primary_keys.includes(column.name)) td.className = 'pk-cell'
-      if (editorEditMode) {
-        const input = document.createElement('input'); input.type = 'text'
-        input.value = value == null ? '' : value; input.dataset.column = column.name
-        td.appendChild(input)
-      } else {
-        td.textContent = value == null ? 'NULL' : value
-        td.title = td.textContent
-      }
-      tr.appendChild(td)
-    })
-    if (editorEditMode) {
-      const td = document.createElement('td'); td.className = 'row-action'
-      const save = document.createElement('button'); save.className = 'btn'; save.textContent = 'Save'
-      save.style.cssText = 'padding:5px 9px;font-size:.72rem'
-      save.addEventListener('click', () => saveEditorRow(rowIndex, tr, save))
-      td.appendChild(save); tr.appendChild(td)
-    }
-    body.appendChild(tr)
-  })
-  applyColumnFilter()
-  updatePasteBar()
-}
-
-// ── Paste rows from Excel ─────────────────────────────────────────────────────
-// Excel puts TSV on the clipboard; cells containing tabs/newlines/quotes are
-// wrapped in double quotes with inner quotes doubled.
-function parseClipboardTSV(text) {
-  const rows = [[]]; let cell = '', i = 0, quoted = false
-  text = text.replace(/\r\n?/g, '\n').replace(/\n$/, '')
-  while (i < text.length) {
-    const ch = text[i]
-    if (quoted) {
-      if (ch === '"' && text[i + 1] === '"') { cell += '"'; i += 2; continue }
-      if (ch === '"') { quoted = false; i++; continue }
-      cell += ch; i++; continue
-    }
-    if (ch === '"' && cell === '') { quoted = true; i++; continue }
-    if (ch === '\t') { rows[rows.length - 1].push(cell); cell = ''; i++; continue }
-    if (ch === '\n') { rows[rows.length - 1].push(cell); rows.push([]); cell = ''; i++; continue }
-    cell += ch; i++
-  }
-  rows[rows.length - 1].push(cell)
-  return rows.filter(row => row.some(value => value.trim() !== ''))
-}
-
-function visibleColumnIndexes() {
-  const query = $('editor-column-search').value.trim().toLowerCase()
-  return editorData.columns.map((c, i) => i).filter(i => !query || editorData.columns[i].name.toLowerCase().includes(query))
-}
-
-function handleEditorPaste(text) {
-  const parsed = parseClipboardTSV(text)
-  if (!parsed.length) return
-  const names = editorData.columns.map(c => c.name.toLowerCase())
-  let targets, dataRows = parsed
-  const first = parsed[0].map(v => v.trim().toLowerCase())
-  const headerHits = first.filter(v => v && names.includes(v)).length
-  if (headerHits && headerHits >= first.filter(Boolean).length / 2) {
-    // First row is a header — map by column name
-    const unknown = parsed[0].filter((v, i) => first[i] && !names.includes(first[i]))
-    if (unknown.length) throw new Error(`Pasted header has column(s) not in this table: ${unknown.join(', ')}`)
-    targets = first.map(v => v ? names.indexOf(v) : -1)
-    dataRows = parsed.slice(1)
-    if (!dataRows.length) throw new Error('Only a header row was pasted — copy the data rows too.')
-  } else {
-    const width = Math.max(...parsed.map(r => r.length))
-    const visible = visibleColumnIndexes()
-    if (width === editorData.columns.length) targets = editorData.columns.map((c, i) => i)
-    else if (width === visible.length) targets = visible
-    else throw new Error(
-      `Pasted ${width} column(s), but the table has ${editorData.columns.length}` +
-      (visible.length !== editorData.columns.length ? ` (${visible.length} shown by search)` : '') +
-      '. Copy the header row from Excel too, or use column search to show exactly the columns you are pasting.'
-    )
-  }
-  if (!editorPending) editorPending = { mapped: new Set(), rows: [] }
-  targets.forEach(t => { if (t >= 0) editorPending.mapped.add(t) })
-  dataRows.forEach(src => {
-    const row = editorData.columns.map(() => '')
-    targets.forEach((t, i) => { if (t >= 0) row[t] = src[i] ?? '' })
-    editorPending.rows.push(row)
-  })
-  hide($('err-data-editor')); hide($('ok-data-editor'))
-  renderEditorGrid()
-  $('data-grid-wrap').scrollTop = 0
-}
-
-function renderPendingRows(body) {
-  if (!editorPending) return
-  editorPending.rows.forEach((row, rowIndex) => {
-    const tr = document.createElement('tr'); tr.className = 'pending-row'
-    const numTd = document.createElement('td'); numTd.className = 'row-num'
-    const remove = document.createElement('button'); remove.className = 'pending-remove'
-    remove.textContent = '✕'; remove.title = 'Remove this pasted row'
-    remove.addEventListener('click', () => {
-      editorPending.rows.splice(rowIndex, 1)
-      if (!editorPending.rows.length) editorPending = null
-      renderEditorGrid()
-    })
-    numTd.append('+', remove); tr.appendChild(numTd)
-    editorData.columns.forEach((column, colIndex) => {
-      const td = document.createElement('td'); td.dataset.col = colIndex
-      const input = document.createElement('input'); input.type = 'text'; input.value = row[colIndex]
-      if (!editorPending.mapped.has(colIndex)) { input.classList.add('unmapped'); input.placeholder = 'default' }
-      input.addEventListener('input', () => {
-        row[colIndex] = input.value
-        if (input.value !== '') { editorPending.mapped.add(colIndex); input.classList.remove('unmapped') }
-      })
-      td.appendChild(input); tr.appendChild(td)
-    })
-    if (editorEditMode) tr.appendChild(Object.assign(document.createElement('td'), { className: 'row-action' }))
-    body.appendChild(tr)
-  })
-}
-
-function updatePasteBar() {
-  const count = editorPending ? editorPending.rows.length : 0
-  $('paste-bar').classList.toggle('hidden', !count)
-  if (!count) return
-  $('paste-bar-text').innerHTML =
-    `<strong>${count}</strong> pasted row(s) ready — filling <strong>${editorPending.mapped.size}</strong> of ${editorData.columns.length} column(s). ` +
-    'Review or edit them below, then insert.'
-  $('btn-paste-insert').disabled = false
-  $('btn-paste-insert').innerHTML = `<span>Insert ${count} row(s)</span>`
-}
-
-document.addEventListener('paste', e => {
-  if (!editorData || $('card-data-editor').classList.contains('hidden')) return
-  const text = e.clipboardData && e.clipboardData.getData('text/plain')
-  if (!text) return
-  const target = e.target
-  const inField = target && target.matches && target.matches('input, textarea, select')
-  // Let normal pastes through: toolbar/search fields, and single values pasted into a grid cell
-  if (inField && (!target.closest('#data-grid-wrap') || !/[\t\n]/.test(text.replace(/\r?\n$/, '')))) return
-  if (!inField && !$('card-data-editor').contains(target) && target !== document.body) return
-  e.preventDefault()
-  try { handleEditorPaste(text) } catch (error) { showErr($('err-data-editor'), error.message) }
-})
-
-$('btn-paste-discard').addEventListener('click', () => { editorPending = null; renderEditorGrid() })
-
-$('btn-paste-insert').addEventListener('click', async () => {
-  if (!editorPending || !editorPending.rows.length) return
-  const btn = $('btn-paste-insert'), count = editorPending.rows.length
-  const indexes = [...editorPending.mapped].sort((a, b) => a - b)
-  const payload = {
-    schema: editorData.schema, table: editorData.table,
-    columns: indexes.map(i => editorData.columns[i].name),
-    rows: editorPending.rows.map(row => indexes.map(i => row[i])),
-  }
-  setLoading(btn, true, 'Inserting…'); hide($('err-data-editor')); hide($('ok-data-editor'))
+  state.busy = true
+  syncControls()
+  $(purpose + '-filename').textContent = 'Reading ' + file.name + '…'
+  show($(purpose + '-filename'))
+  const body = new FormData()
+  body.append('file', file)
+  body.append('purpose', purpose)
   try {
-    const response = await fetch('/table-data', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
-    })
-    const data = await response.json()
-    if (!response.ok || data.error) throw new Error(data.error || 'Insert failed.')
-    editorPending = null
-    await loadEditorData()
-    $('ok-data-editor').textContent = data.message; show($('ok-data-editor'))
+    const data = await api('/upload', {method: 'POST', body})
+    state.preview = data.preview
+    $(purpose + '-filename').textContent = file.name
+    $(purpose + '-table').textContent = data.preview.name
+    $(purpose + '-rows').textContent = data.preview.records.toLocaleString()
+    $(purpose + '-columns').textContent = data.preview.columns.toLocaleString()
+    show($(purpose + '-preview'))
   } catch (error) {
-    showErr($('err-data-editor'), error.message)
-    setLoading(btn, false, `Insert ${count} row(s)`)
-  }
-})
-
-// ── Column search: hides non-matching columns in place (no re-render, so
-// unsaved edit-mode input values are kept) ────────────────────────────────────
-function applyColumnFilter() {
-  if (!editorData) return
-  const query = $('editor-column-search').value.trim().toLowerCase()
-  const matches = editorData.columns.map(column => !query || column.name.toLowerCase().includes(query))
-  document.querySelectorAll('#data-grid-wrap [data-col]').forEach(cell => {
-    cell.classList.toggle('col-hidden', !matches[cell.dataset.col])
-  })
-  const visible = matches.filter(Boolean).length
-  $('summary-col-count').textContent = query ? `${visible} / ${editorData.columns.length}` : editorData.columns.length
-  $('data-grid-empty').classList.toggle('hidden', visible > 0)
-  $('data-grid-head').parentElement.classList.toggle('hidden', visible === 0)
-  $('editor-column-search-clear').classList.toggle('hidden', !query)
-}
-$('editor-column-search').addEventListener('input', applyColumnFilter)
-$('editor-column-search').addEventListener('keydown', e => {
-  if (e.key === 'Escape') { e.target.value = ''; applyColumnFilter() }
-})
-$('editor-column-search-clear').addEventListener('click', () => {
-  $('editor-column-search').value = ''; applyColumnFilter(); $('editor-column-search').focus()
-})
-
-async function saveEditorRow(rowIndex, tr, button) {
-  const row = editorData.rows[rowIndex], keys = {}, values = {}
-  editorData.columns.forEach((column, index) => {
-    if (editorData.identifier_columns.includes(column.name)) keys[column.name] = row[index]
-  })
-  tr.querySelectorAll('input[data-column]').forEach(input => {
-    const index = editorData.columns.findIndex(column => column.name === input.dataset.column)
-    if (input.value !== String(row[index] ?? '')) values[input.dataset.column] = input.value
-  })
-  if (!Object.keys(values).length) { showErr($('err-data-editor'), 'No values changed in this row.'); return }
-  if (!editorData.primary_keys.length && !window.confirm(
-    'This table has no primary key. Save only if the original row values identify exactly one row?'
-  )) return
-  setLoading(button, true, 'Saving…'); hide($('err-data-editor')); hide($('ok-data-editor'))
-  try {
-    const response = await fetch('/table-data', {
-      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ schema: editorData.schema, table: editorData.table, keys, values })
-    })
-    const data = await response.json()
-    if (!response.ok || data.error) throw new Error(data.error || 'Update failed.')
-    $('ok-data-editor').textContent = data.message; show($('ok-data-editor'))
-    await loadEditorData()
-  } catch (error) {
-    showErr($('err-data-editor'), error.message); setLoading(button, false, 'Save')
-  }
-}
-
-function loadTruncateSchemas() {
-  const schemaSelect = $('truncate-schema')
-  hide($('err-truncate-manager')); hide($('ok-truncate-manager'))
-  schemaSelect.disabled = true
-  schemaSelect.innerHTML = '<option value="">Loading schemas…</option>'
-  fetch('/schemas').then(r => r.json()).then(data => {
-    if (data.error) throw new Error(data.error)
-    schemaSelect.innerHTML = '<option value="">— select schema —</option>'
-    data.schemas.forEach(schema => {
-      const option = document.createElement('option')
-      option.value = schema; option.textContent = schema
-      schemaSelect.appendChild(option)
-    })
-    schemaSelect.disabled = false
-    if (data.default && data.schemas.includes(data.default)) {
-      schemaSelect.value = data.default
-      loadTruncateTables(data.default)
-    }
-  }).catch(error => showErr($('err-truncate-manager'), error.message))
-}
-
-function loadTruncateTables(schema) {
-  $('btn-truncate-selected').disabled = true
-  truncateAvailableTables = []
-  truncateSelectedTables = []
-  renderTruncateTableInputs(!schema ? 'Select a schema first' : 'Loading tables…', true)
-  if (!schema) return
-  fetch(`/tables?schema=${encodeURIComponent(schema)}`).then(r => r.json()).then(data => {
-    if (data.error) throw new Error(data.error)
-    truncateAvailableTables = data.tables
-    renderTruncateTableInputs(data.tables.length ? 'Type to search table…' : 'No tables found', !data.tables.length)
-  }).catch(error => showErr($('err-truncate-manager'), error.message))
-}
-
-function renderTruncateTableInputs(placeholder = 'Type to search table…', disabled = false) {
-  const list = $('truncate-table-list')
-  list.innerHTML = ''
-  truncateSelectedTables.forEach((table, index) => {
-    const row = document.createElement('div'); row.className = 'multi-table-row'
-    const input = document.createElement('input')
-    input.type = 'text'; input.value = table; input.readOnly = true
-    const remove = document.createElement('button')
-    remove.type = 'button'; remove.className = 'remove-table'; remove.title = `Remove ${table}`
-    remove.textContent = '×'
-    remove.addEventListener('click', () => {
-      truncateSelectedTables.splice(index, 1)
-      renderTruncateTableInputs()
-    })
-    row.append(input, remove); list.appendChild(row)
-  })
-
-  const row = document.createElement('div'); row.className = 'multi-table-row'
-  const combo = document.createElement('div'); combo.className = 'table-combo'
-  const input = document.createElement('input')
-  input.type = 'text'; input.autocomplete = 'off'
-  input.placeholder = placeholder; input.disabled = disabled
-  input.setAttribute('aria-label', 'Search and add table')
-
-  const panel = document.createElement('div'); panel.className = 'table-combo-panel hidden'
-  let highlighted = -1
-
-  const matchingTables = () => {
-    const q = input.value.trim().toLowerCase()
-    return truncateAvailableTables
-      .filter(name => !truncateSelectedTables.includes(name))
-      .filter(name => !q || name.toLowerCase().includes(q))
-  }
-
-  const closePanel = () => { panel.classList.add('hidden'); panel.innerHTML = ''; highlighted = -1 }
-
-  const selectTable = name => {
-    if (!truncateSelectedTables.includes(name)) truncateSelectedTables.push(name)
-    renderTruncateTableInputs()
-  }
-
-  const setHighlight = index => {
-    const opts = [...panel.querySelectorAll('.table-combo-option')]
-    opts.forEach(o => o.classList.remove('highlighted'))
-    highlighted = index
-    if (opts[highlighted]) {
-      opts[highlighted].classList.add('highlighted')
-      opts[highlighted].scrollIntoView({ block: 'nearest' })
-    }
-  }
-
-  const openPanel = () => {
-    if (input.disabled) return
-    const matches = matchingTables()
-    panel.innerHTML = ''
-    if (!matches.length) {
-      const empty = document.createElement('div'); empty.className = 'table-combo-empty'
-      empty.textContent = truncateAvailableTables.length ? 'No matching tables' : placeholder
-      panel.appendChild(empty)
-    } else {
-      matches.forEach(name => {
-        const opt = document.createElement('div'); opt.className = 'table-combo-option'
-        opt.textContent = name
-        opt.addEventListener('mousedown', e => { e.preventDefault(); selectTable(name) })
-        panel.appendChild(opt)
-      })
-    }
-    highlighted = -1
-    panel.classList.remove('hidden')
-  }
-
-  input.addEventListener('input', openPanel)
-  input.addEventListener('focus', openPanel)
-  input.addEventListener('keydown', e => {
-    const opts = () => [...panel.querySelectorAll('.table-combo-option')]
-    if (e.key === 'ArrowDown') {
-      e.preventDefault()
-      if (panel.classList.contains('hidden')) openPanel()
-      else setHighlight((highlighted + 1) % Math.max(opts().length, 1))
-    } else if (e.key === 'ArrowUp') {
-      e.preventDefault()
-      const list = opts()
-      if (list.length) setHighlight((highlighted - 1 + list.length) % list.length)
-    } else if (e.key === 'Enter') {
-      e.preventDefault()
-      const list = opts()
-      if (highlighted >= 0 && list[highlighted]) selectTable(list[highlighted].textContent)
-    } else if (e.key === 'Escape') {
-      closePanel(); input.blur()
-    }
-  })
-  input.addEventListener('blur', () => setTimeout(closePanel, 120))
-
-  combo.append(input, panel)
-  row.appendChild(combo); list.appendChild(row)
-  $('btn-truncate-selected').disabled = truncateSelectedTables.length === 0
-}
-
-$('truncate-schema').addEventListener('change', e => {
-  hide($('err-truncate-manager')); hide($('ok-truncate-manager'))
-  loadTruncateTables(e.target.value)
-})
-$('btn-truncate-selected').addEventListener('click', async () => {
-  const schema = $('truncate-schema').value
-  const tables = [...truncateSelectedTables]
-  if (!schema || !tables.length) return
-  const tableList = tables.map(table => `${schema}.${table}`).join('\n')
-  if (!window.confirm(`Delete ALL rows from these ${tables.length} table(s)?\n\n${tableList}\n\nThis cannot be undone.`)) return
-  const btn = $('btn-truncate-selected')
-  hide($('err-truncate-manager')); hide($('ok-truncate-manager'))
-  setLoading(btn, true, `Truncating 0/${tables.length}…`)
-  const succeeded = [], failed = []
-  for (let i = 0; i < tables.length; i++) {
-    const table = tables[i]
-    setLoading(btn, true, `Truncating ${i + 1}/${tables.length}…`)
-    try {
-      const response = await fetch('/truncate', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ schema, table })
-      })
-      const data = await response.json()
-      if (!response.ok || data.error) throw new Error(data.error || 'Truncate failed.')
-      succeeded.push(table)
-    } catch (error) {
-      failed.push(`${table}: ${error.message}`)
-    }
-  }
-  if (succeeded.length) {
-    $('ok-truncate-manager').textContent = `${succeeded.length} table(s) truncated: ${succeeded.join(', ')}`
-    show($('ok-truncate-manager'))
-  }
-  if (failed.length) showErr($('err-truncate-manager'), failed.join('\n'))
-  truncateSelectedTables = tables.filter(table => !succeeded.includes(table))
-  setLoading(btn, false, 'Truncate selected table')
-  renderTruncateTableInputs()
-})
-
-// ── Connection: view / edit / save / delete ───────────────────────────────────
-$('btn-edit-conn').addEventListener('click', () => {
-  hide($('err-conn'))
-  setConnMode('edit')
-})
-
-$('btn-cancel-conn').addEventListener('click', () => {
-  hide($('err-conn'))
-  if (isConfigured && savedConfig) {
-    updateConnStatus(savedConfig)
-    setConnMode('view')
-  } else {
-    $('nav-import').click()
-  }
-})
-
-$('btn-delete-conn').addEventListener('click', () => {
-  if (!confirm('Delete the saved database connection? You will need to reconnect before importing again.')) return
-  hide($('err-conn'))
-  setLoading($('btn-delete-conn'), true, 'Deleting…')
-  fetch('/config', { method: 'DELETE' })
-    .then(r => r.json())
-    .then(data => {
-      setLoading($('btn-delete-conn'), false, 'Delete Connection')
-      if (data.error) { showErr($('err-conn'), data.error); return }
-      isConfigured = false
-      savedConfig = null
-      $('nav-truncate').disabled = true
-      $('nav-editor').disabled = true
-      $('nav-schema').disabled = true
-      $('nav-connection').title = 'Not connected'
-      $('nav-conn-dot').classList.remove('connected')
-      $('nav-conn-dot').classList.add('error')
-      $('db-host').value = 'db'
-      $('db-port').value = '1433'
-      $('db-name').value = ''
-      $('db-schema').value = 'lvapdbf'
-      $('db-user').value = ''
-      $('db-pass').value = ''
-      setConnMode('edit')
-    })
-    .catch(e => {
-      setLoading($('btn-delete-conn'), false, 'Delete Connection')
-      showErr($('err-conn'), 'Delete failed: ' + e)
-    })
-})
-
-$('btn-save-conn').addEventListener('click', () => {
-  const payload = {
-    host:     $('db-host').value.trim(),
-    port:     $('db-port').value.trim(),
-    database: $('db-name').value.trim(),
-    schema:   $('db-schema').value.trim() || 'lvapdbf',
-    username: $('db-user').value.trim(),
-    password: $('db-pass').value,
-  }
-  if (!payload.host || !payload.port || !payload.database || !payload.username) {
-    showErr($('err-conn'), 'Host, port, database, and username are required.')
-    return
-  }
-  hide($('err-conn'))
-  setLoading($('btn-save-conn'), true, 'Testing…')
-
-  fetch('/config', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(payload)
-  })
-  .then(r => r.json())
-  .then(data => {
-    setLoading($('btn-save-conn'), false, 'Test & Save connection')
-    if (data.error) { showErr($('err-conn'), data.error); return }
-    updateConnStatus(payload)
-    isConfigured = true
-    $('nav-truncate').disabled = false
-    $('nav-editor').disabled = false
-    $('nav-schema').disabled = false
-    setConnMode('view')
-    $('nav-import').click()
-  })
-  .catch(e => {
-    setLoading($('btn-save-conn'), false, 'Test & Save connection')
-    showErr($('err-conn'), 'Save failed: ' + e)
-  })
-})
-
-// ── Drag & Drop ──────────────────────────────────────────────────────────────
-const dz = $('drop-zone')
-dz.tabIndex = 0
-dz.setAttribute('role', 'button')
-dz.addEventListener('click', chooseLocalFile)
-dz.addEventListener('keydown', e => {
-  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); chooseLocalFile() }
-})
-dz.addEventListener('dragover', e => { e.preventDefault(); dz.classList.add('drag-over') })
-dz.addEventListener('dragleave', () => dz.classList.remove('drag-over'))
-dz.addEventListener('drop', async e => {
-  e.preventDefault(); dz.classList.remove('drag-over')
-  const f = e.dataTransfer.files[0]
-  if (!f) return
-  currentFileHandle = null
-  const item = e.dataTransfer.items && e.dataTransfer.items[0]
-  if (item && item.getAsFileSystemHandle) {
-    try { currentFileHandle = await item.getAsFileSystemHandle() } catch (_) {}
-  }
-  handleFile(f)
-})
-$('file-input').addEventListener('change', e => {
-  if (e.target.files[0]) {
-    currentFileHandle = null
-    handleFile(e.target.files[0])
-  }
-})
-
-async function chooseLocalFile() {
-  if (!window.showOpenFilePicker) { $('file-input').click(); return }
-  try {
-    const handles = await window.showOpenFilePicker({
-      multiple: false,
-      types: [{ description: 'Excel or CSV files', accept: {
-        'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
-        'application/vnd.ms-excel': ['.xls'],
-        'text/csv': ['.csv']
-      }}]
-    })
-    currentFileHandle = handles[0]
-    handleFile(await currentFileHandle.getFile())
-  } catch (e) {
-    if (e.name !== 'AbortError') showErr($('err-upload'), 'Could not open file: ' + e)
-  }
-}
-
-function handleFile(file) {
-  startFileWatcher()
-  const fn = $('file-name')
-  fn.textContent = file.name; show(fn)
-  hide($('err-upload'))
-  $('sheet-select').innerHTML = '<option value="">Uploading…</option>'
-  $('sheet-select').disabled = true
-  $('btn-scan').disabled = true
-
-  const fd = new FormData(); fd.append('file', file)
-  return fetch('/upload', { method: 'POST', body: fd })
-    .then(r => r.json())
-    .then(data => {
-      if (data.error) { showErr($('err-upload'), data.error); return }
-      currentFileStamp = `${file.lastModified}:${file.size}`
-      hide($('file-change-warning'))
-      currentBatchJob = data.batch_job || null
-      setFileKind(data.kind === 'csv' ? 'csv' : 'excel')
-      const sel = $('sheet-select')
-      sel.innerHTML = '<option value="">— select a sheet —</option>'
-      data.sheets.forEach(s => {
-        const label = currentFileKind === 'csv' ? `${s} (CSV, no header)` : s
-        const o = document.createElement('option'); o.value = s; o.textContent = label
-        sel.appendChild(o)
-      })
-      sel.disabled = false
-      if (data.sheets.length === 1) { sel.value = data.sheets[0]; $('btn-scan').disabled = false }
-      // A CSV holds exactly one table, so go straight to the preview.
-      if (currentFileKind === 'csv') return scanSheet($('btn-scan')).then(() => data)
-      return data
-    })
-    .catch(e => showErr($('err-upload'), 'Upload failed: ' + e))
-}
-
-function setFileKind(kind) {
-  currentFileKind = kind
-  // A CSV has no sheets to switch between.
-  ;['btn-change-sheet', 'btn-change-sheet-results'].forEach(id => {
-    $(id).classList.toggle('hidden', kind === 'csv')
-  })
-}
-
-function startFileWatcher() {
-  if (fileWatchTimer) clearInterval(fileWatchTimer)
-  if (!currentFileHandle) return
-  fileWatchTimer = setInterval(async () => {
-    try {
-      const file = await currentFileHandle.getFile()
-      const stamp = `${file.lastModified}:${file.size}`
-      if (currentFileStamp && stamp !== currentFileStamp) show($('file-change-warning'))
-    } catch (_) {
-      clearInterval(fileWatchTimer)
-      fileWatchTimer = null
-    }
-  }, 2000)
-}
-
-$('btn-refresh-file').addEventListener('click', async () => {
-  if (!currentFileHandle) { chooseLocalFile(); return }
-  const btn = $('btn-refresh-file')
-  const previousSheet = $('sheet-select').value
-  setLoading(btn, true, 'Refreshing…')
-  try {
-    const data = await handleFile(await currentFileHandle.getFile())
-    if (!data || data.error || data.kind === 'csv') return
-    if (previousSheet && data.sheets.includes(previousSheet)) {
-      $('sheet-select').value = previousSheet
-      await scanSheet($('btn-scan'))
-    } else {
-      hide($('card-preview')); hide($('card-results')); show($('card-upload'))
-    }
-  } catch (e) {
-    showErr($('err-upload'), 'Refresh failed: ' + e)
+    $(purpose + '-filename').textContent = file.name
+    errorAt(purpose + '-error', error)
   } finally {
-    setLoading(btn, false, 'Refresh file')
-  }
-})
-
-$('sheet-select').addEventListener('change', function() {
-  $('btn-scan').disabled = !this.value
-})
-
-// ── Scan ─────────────────────────────────────────────────────────────────────
-$('btn-scan').addEventListener('click', () => scanSheet($('btn-scan')))
-
-function scanSheet(btn) {
-  const sheet = $('sheet-select').value
-  if (!sheet) return
-  const idleLabel = 'Scan tables'
-  setLoading(btn, true, 'Scanning…')
-  hide($('err-upload')); hide($('err-import'))
-
-  return fetch('/scan', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ sheet })
-  })
-  .then(r => r.json())
-  .then(data => {
-    setLoading(btn, false, idleLabel)
-    if (data.error) { showErr($('err-upload'), data.error); return }
-    buildPreview(data.tables, sheet)
-    loadSchemas()
-    hide($('card-upload')); show($('card-preview'))
-  })
-  .catch(e => {
-    setLoading(btn, false, idleLabel)
-    showErr($('err-upload'), 'Scan failed: ' + e)
-  })
-}
-
-function buildPreview(tables, sheet) {
-  $('preview-summary').innerHTML = currentFileKind === 'csv'
-    ? `CSV <strong>${escapeHtml($('file-name').textContent)}</strong> → table
-       <strong>${escapeHtml(sheet)}</strong> · no header row, columns are matched by position`
-    : `Found <strong>${tables.length}</strong> table${tables.length !== 1 ? 's' : ''} in sheet
-     <strong>${escapeHtml(sheet)}</strong>`
-  const tbody = $('preview-body'); tbody.innerHTML = ''
-  tables.forEach((t, i) => {
-    tbody.innerHTML += `<tr>
-      <td><input type="checkbox" class="chk-row" data-name="${escapeAttr(t.name)}" checked></td>
-      <td>${i + 1}</td>
-      <td><strong>${escapeHtml(t.name)}</strong></td>
-      <td><select class="schema-row" data-name="${escapeAttr(t.name)}" aria-label="Schema for ${escapeAttr(t.name)}">
-        <option value="${DEFAULT_IMPORT_SCHEMA}">${DEFAULT_IMPORT_SCHEMA}</option>
-      </select></td>
-      <td class="status-cell" data-status-name="${escapeAttr(t.name)}">${statusPill('ready')}</td>
-      <td><span class="range-code">${escapeHtml(t.col_range || '-')}</span></td>
-      <td><span class="badge blue">${t.records ?? 0}</span></td>
-      <td><span class="badge blue">${t.columns}</span></td>
-    </tr>`
-  })
-  $('chk-all').checked = true
-  bindRowChecks()
-  updateSelectCount()
-}
-
-const DEFAULT_IMPORT_SCHEMA = 'lvapdbf'
-
-function schemaSelects() { return Array.from(document.querySelectorAll('.schema-row')) }
-
-function loadSchemas() {
-  fetch('/schemas').then(r => r.json()).then(data => {
-    if (data.error || !data.schemas || !data.schemas.length) return  // keep default option
-    const def = data.default || DEFAULT_IMPORT_SCHEMA
-    schemaSelects().forEach(sel => {
-      sel.innerHTML = ''
-      data.schemas.forEach(s => sel.add(new Option(s, s, false, s === def)))
-    })
-  }).catch(() => {})
-}
-
-function schemaFor(tableName) {
-  const sel = schemaSelects().find(s => s.dataset.name === tableName)
-  return sel ? sel.value : DEFAULT_IMPORT_SCHEMA
-}
-
-function rowChecks() { return Array.from(document.querySelectorAll('.chk-row')) }
-
-function bindRowChecks() {
-  rowChecks().forEach(chk => chk.addEventListener('change', () => {
-    chk.closest('tr').classList.toggle('unchecked', !chk.checked)
-    const all = rowChecks()
-    $('chk-all').checked = all.every(c => c.checked)
-    $('chk-all').indeterminate = !$('chk-all').checked && all.some(c => c.checked)
-    updateSelectCount()
-  }))
-}
-
-$('chk-all').addEventListener('change', function() {
-  rowChecks().forEach(chk => {
-    chk.checked = this.checked
-    chk.closest('tr').classList.toggle('unchecked', !this.checked)
-  })
-  this.indeterminate = false
-  updateSelectCount()
-})
-
-function selectedNames() {
-  return rowChecks().filter(c => c.checked).map(c => c.dataset.name)
-}
-
-function updateSelectCount() {
-  const n = selectedNames().length, total = rowChecks().length
-  $('select-count').textContent = `${n} of ${total} selected`
-  $('btn-import').disabled = n === 0
-}
-
-// ── Import (uses saved config — no creds sent) ────────────────────────────────
-$('btn-import').addEventListener('click', () => {
-  const tables = selectedNames()
-  if (!tables.length) { showErr($('err-import'), 'Select at least one table.'); return }
-  hide($('err-import'))
-  hide($('card-results'))
-  setupSqlDownload({})
-  clearImportPolling()
-  setSelectedImportStatuses(tables)
-  setImportControlsDisabled(true)
-  setLoading($('btn-import'), true, 'Starting…')
-  fetch('/import', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ tables, schemas: Object.fromEntries(tables.map(name => [name, schemaFor(name)])) })
-  })
-  .then(r => r.json())
-  .then(data => {
-    if (data.error) {
-      setLoading($('btn-import'), false, 'Import selected tables')
-      setImportControlsDisabled(false)
-      showErr($('err-import'), data.error)
-      return
-    }
-    applyImportProgress(data)
-    setLoading($('btn-import'), true, 'Importing…')
-    pollImportJob(data.job_id)
-    importPollTimer = setInterval(() => pollImportJob(data.job_id), 1000)
-  })
-  .catch(e => {
-    clearImportPolling()
-    setLoading($('btn-import'), false, 'Import selected tables')
-    setImportControlsDisabled(false)
-    showErr($('err-import'), 'Import failed: ' + e)
-  })
-})
-
-function clearImportPolling() {
-  if (importPollTimer) clearInterval(importPollTimer)
-  importPollTimer = null
-}
-
-function setImportControlsDisabled(disabled) {
-  rowChecks().forEach(chk => { chk.disabled = disabled })
-  $('chk-all').disabled = disabled
-  schemaSelects().forEach(sel => { sel.disabled = disabled })
-  $('btn-change-sheet').disabled = disabled
-  $('btn-rescan').disabled = disabled
-}
-
-function setSelectedImportStatuses(tableNames) {
-  const selected = new Set(tableNames)
-  rowChecks().forEach(chk => {
-    setTableStatus(chk.dataset.name, selected.has(chk.dataset.name) ? 'queued' : 'ready')
-  })
-  $('select-count').textContent = `0 of ${tableNames.length} imported`
-}
-
-function pollImportJob(jobId) {
-  fetch(`/import/status/${encodeURIComponent(jobId)}`)
-    .then(r => r.json())
-    .then(data => {
-      if (data.error && !data.state) {
-        clearImportPolling()
-        setLoading($('btn-import'), false, 'Import selected tables')
-        setImportControlsDisabled(false)
-        showErr($('err-import'), data.error)
-        return
-      }
-      applyImportProgress(data)
-      if (data.state === 'done' || data.state === 'failed') {
-        clearImportPolling()
-        setLoading($('btn-import'), false, 'Import selected tables')
-        setImportControlsDisabled(false)
-        if (data.error) showErr($('err-import'), data.error)
-        buildResults(data.results || [])
-        setupSqlDownload(data)
-        setupBatchButton(data.state === 'done')
-        show($('card-results'))
-      }
-    })
-    .catch(e => {
-      clearImportPolling()
-      setLoading($('btn-import'), false, 'Import selected tables')
-      setImportControlsDisabled(false)
-      showErr($('err-import'), 'Import status failed: ' + e)
-    })
-}
-
-function applyImportProgress(data) {
-  ;(data.results || []).forEach(r => setTableStatus(r.name, r.status, r.progress))
-  const total = data.total ?? selectedNames().length
-  const completed = data.completed ?? 0
-  $('select-count').textContent = `${completed} of ${total} imported`
-}
-
-function setTableStatus(tableName, status, progress) {
-  document.querySelectorAll('.status-cell').forEach(cell => {
-    if (cell.dataset.statusName !== tableName) return
-    if (status === 'running' && progress && progress.total > 0) {
-      const pct = Math.min(100, Math.round((progress.done / progress.total) * 100))
-      cell.innerHTML = progressRing(pct)
-    } else {
-      cell.innerHTML = statusPill(status)
-    }
-  })
-}
-
-function progressRing(pct) {
-  const radius = 15, circumference = 2 * Math.PI * radius
-  const dash = (pct / 100) * circumference
-  return `
-    <span class="progress-ring" title="${pct}% imported">
-      <svg width="34" height="34" viewBox="0 0 34 34">
-        <circle cx="17" cy="17" r="${radius}" fill="none" stroke="#252840" stroke-width="4"/>
-        <circle cx="17" cy="17" r="${radius}" fill="none" stroke="#4f46e5" stroke-width="4"
-          stroke-linecap="round" stroke-dasharray="${dash} ${circumference - dash}"
-          transform="rotate(-90 17 17)"/>
-      </svg>
-      <span class="progress-ring-label">${pct}%</span>
-    </span>`
-}
-
-function statusPill(status) {
-  const info = statusInfo(status)
-  return `<span class="status-pill ${info.cls}">${info.icon ? `${info.icon} ` : ''}${info.label}</span>`
-}
-
-function setupSqlDownload(data) {
-  const btn = $('btn-download-sql')
-  hide(btn)
-  btn.removeAttribute('href')
-  btn.removeAttribute('download')
-  if (data.state !== 'done' || !data.sql_download_url) return
-  btn.href = data.sql_download_url
-  btn.download = data.sql_filename || 'import.sql'
-  show(btn)
-}
-
-function setupBatchButton(importSucceeded) {
-  const btn = $('btn-call-batch')
-  hide($('batch-status'))
-  if (!importSucceeded || !currentBatchJob) { hide(btn); return }
-  btn.textContent = currentBatchJob.label
-  show(btn)
-}
-
-$('btn-call-batch').addEventListener('click', () => {
-  const btn = $('btn-call-batch')
-  const statusEl = $('batch-status')
-  setLoading(btn, true, currentBatchJob.label)
-  fetch('/call-batch', { method: 'POST' })
-    .then(r => r.json())
-    .then(data => {
-      setLoading(btn, false, currentBatchJob.label)
-      statusEl.className = data.error ? 'alert error' : 'alert info'
-      statusEl.textContent = data.error || `${currentBatchJob.label} triggered successfully.`
-      show(statusEl)
-    })
-    .catch(e => {
-      setLoading(btn, false, currentBatchJob.label)
-      statusEl.className = 'alert error'
-      statusEl.textContent = 'Could not call batch job: ' + e
-      show(statusEl)
-    })
-})
-
-function buildResults(results) {
-  const body = $('results-body'); body.innerHTML = ''
-  let ok = 0, skip = 0, warn = 0, failed = 0
-  results.forEach(r => {
-    const status = resultStatus(r.status)
-    const errHtml = r.errors && r.errors.length
-      ? `<div class="result-errors">${r.errors.map(escapeHtml).join('<br>')}</div>` : ''
-    const actions = (r.status === 'ok' || r.status === 'warn')
-      ? `<div class="result-actions">
-          <button class="btn secondary btn-edit-table" data-table="${escapeAttr(r.name)}" data-schema="${escapeAttr(r.schema || schemaFor(r.name))}" title="Open in Data Editor">View</button>
-          <button class="btn danger btn-truncate" data-table="${escapeAttr(r.name)}" data-schema="${escapeAttr(r.schema || schemaFor(r.name))}">Truncate</button>
-        </div>`
-      : ''
-    body.innerHTML += `
-      <div class="result-row">
-        <span class="status-icon ${status.cls}" title="${status.label}" aria-label="${status.label}">${status.icon}</span>
-        <span class="result-name">${escapeHtml(r.name)}</span>
-        <div class="result-msg">
-          <span class="status-text ${status.cls}">${status.label}</span>
-          <span class="result-detail">${escapeHtml(r.message)}</span>
-          ${errHtml}
-          <div class="truncate-result hidden"></div>
-        </div>
-        ${actions}
-      </div>`
-    if (r.status === 'ok') ok++
-    else if (r.status === 'warn') warn++
-    else if (r.status === 'failed') failed++
-    else skip++
-  })
-  const summary = document.createElement('div')
-  summary.className = 'results-summary'
-  const parts = [`${ok} imported`, `${warn} with warnings`]
-  if (failed) parts.push(`${failed} failed`)
-  parts.push(`${skip} skipped`)
-  summary.textContent = `${parts.join(', ')} — ${results.length} total tables`
-  body.appendChild(summary)
-  bindTruncateButtons()
-  bindEditButtons()
-}
-
-
-// ── SQL query runner ──────────────────────────────────────────────────────────
-const SQL_KEYWORDS = (
-  'SELECT FROM WHERE JOIN INNER LEFT RIGHT FULL CROSS ON AS AND OR NOT NULL IS IN EXISTS BETWEEN LIKE ' +
-  'DISTINCT TOP ORDER BY ASC DESC GROUP HAVING UNION ALL INSERT INTO VALUES UPDATE SET DELETE MERGE ' +
-  'CREATE ALTER DROP TRUNCATE TABLE VIEW WITH CASE WHEN THEN ELSE END DECLARE EXEC EXECUTE BEGIN COMMIT ' +
-  'ROLLBACK COUNT SUM AVG MIN MAX GETDATE COALESCE CAST CONVERT OFFSET FETCH NEXT ROWS ONLY'
-).split(' ')
-let queryAvailableTables = []
-let querySuggestions = []
-let querySuggestionHighlight = -1
-let queryFirstResult = null
-
-const queryEditor = $('sql-query')
-const querySuggestionPanel = $('sql-suggestions')
-const QUERY_WORKSPACE_KEY = 'dbimport_sql_workspace_v1'
-let querySaveStatusTimer = null
-
-function queryId() {
-  return Date.now().toString(36) + Math.random().toString(36).slice(2, 8)
-}
-
-function newQueryDraft(title, sql, schema, savedId) {
-  return {
-    id: queryId(),
-    title: title || 'Untitled query',
-    sql: sql || '',
-    schema: schema || '',
-    savedId: savedId || null,
-    updatedAt: new Date().toISOString()
+    state.busy = false
+    $(purpose + '-file').value = ''
+    syncControls()
   }
 }
-
-function loadQueryWorkspace() {
-  let workspace = null
-  try { workspace = JSON.parse(localStorage.getItem(QUERY_WORKSPACE_KEY) || 'null') } catch (_) {}
-  if (!workspace || !Array.isArray(workspace.drafts)) {
-    const draft = newQueryDraft()
-    return { drafts: [draft], saved: [], history: [], activeId: draft.id }
-  }
-  workspace.saved = Array.isArray(workspace.saved) ? workspace.saved : []
-  workspace.history = Array.isArray(workspace.history) ? workspace.history.slice(0, 20) : []
-  if (!workspace.drafts.length) workspace.drafts.push(newQueryDraft())
-  if (!workspace.drafts.some(function(item) { return item.id === workspace.activeId })) {
-    workspace.activeId = workspace.drafts[0].id
-  }
-  return workspace
-}
-
-let queryWorkspace = loadQueryWorkspace()
-
-function activeQueryDraft() {
-  return queryWorkspace.drafts.find(function(item) { return item.id === queryWorkspace.activeId }) || queryWorkspace.drafts[0]
-}
-
-function persistQueryWorkspace() {
-  try { localStorage.setItem(QUERY_WORKSPACE_KEY, JSON.stringify(queryWorkspace)) } catch (_) {}
-}
-
-function queryItemName(item) {
-  return (item.title || '').trim() || 'Untitled query'
-}
-
-function queryItemMeta(item, type) {
-  if (type === 'history') {
-    const ran = new Date(item.ranAt || Date.now())
-    return ran.toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' })
-  }
-  const firstLine = String(item.sql || '').split(/\r?\n/).find(function(line) { return line.trim() })
-  return firstLine ? firstLine.trim().slice(0, 42) : (type === 'saved' ? 'Saved SQL file' : 'Empty query')
-}
-
-function renderQueryFileList(listId, items, type) {
-  const list = $(listId)
-  list.innerHTML = ''
-  if (!items.length) {
-    const empty = document.createElement('div')
-    empty.className = 'query-sidebar-empty'
-    empty.textContent = type === 'saved' ? 'Save a query to keep it here.' : 'No queries run yet.'
-    list.appendChild(empty)
-    return
-  }
-  items.forEach(function(item) {
-    const row = document.createElement('div')
-    row.className = 'query-file-item' + (type === 'draft' && item.id === queryWorkspace.activeId ? ' active' : '')
-    const open = document.createElement('button')
-    open.type = 'button'
-    open.className = 'query-file-open'
-    const icon = document.createElement('span')
-    icon.className = 'query-file-icon'
-    icon.textContent = type === 'history' ? '↺' : (type === 'saved' ? '▤' : '›_')
-    const copy = document.createElement('span')
-    copy.className = 'query-file-copy'
-    const name = document.createElement('span')
-    name.className = 'query-file-name'
-    name.textContent = queryItemName(item)
-    const meta = document.createElement('span')
-    meta.className = 'query-file-meta'
-    meta.textContent = queryItemMeta(item, type)
-    copy.append(name, meta)
-    open.append(icon, copy)
-    open.addEventListener('click', function() {
-      if (type === 'draft') {
-        queryWorkspace.activeId = item.id
-      } else if (type === 'saved') {
-        let draft = queryWorkspace.drafts.find(function(entry) { return entry.savedId === item.id })
-        if (!draft) {
-          draft = newQueryDraft(item.title, item.sql, item.schema, item.id)
-          queryWorkspace.drafts.unshift(draft)
-        }
-        queryWorkspace.activeId = draft.id
-      } else {
-        const draft = newQueryDraft(item.title, item.sql, item.schema)
-        queryWorkspace.drafts.unshift(draft)
-        queryWorkspace.activeId = draft.id
-      }
-      persistQueryWorkspace()
-      loadActiveQueryDraft()
-    })
-    row.appendChild(open)
-    const remove = document.createElement('button')
-    remove.type = 'button'
-    remove.className = 'query-file-remove'
-    remove.title = 'Remove'
-    remove.textContent = '×'
-    remove.addEventListener('click', function(event) {
-      event.stopPropagation()
-      if (type === 'draft') {
-        queryWorkspace.drafts = queryWorkspace.drafts.filter(function(entry) { return entry.id !== item.id })
-        if (!queryWorkspace.drafts.length) queryWorkspace.drafts.push(newQueryDraft())
-        if (queryWorkspace.activeId === item.id) queryWorkspace.activeId = queryWorkspace.drafts[0].id
-      } else if (type === 'saved') {
-        queryWorkspace.saved = queryWorkspace.saved.filter(function(entry) { return entry.id !== item.id })
-        queryWorkspace.drafts.forEach(function(entry) { if (entry.savedId === item.id) entry.savedId = null })
-      } else {
-        queryWorkspace.history = queryWorkspace.history.filter(function(entry) { return entry.id !== item.id })
-      }
-      persistQueryWorkspace()
-      loadActiveQueryDraft()
-    })
-    row.appendChild(remove)
-    list.appendChild(row)
+for (const purpose of purposes) {
+  const drop = $(purpose + '-drop')
+  function choose() { if (!busy() && configured) $(purpose + '-file').click() }
+  drop.addEventListener('click', choose)
+  drop.addEventListener('keydown', event => {
+    if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); choose() }
   })
+  drop.addEventListener('dragover', event => { event.preventDefault(); if (!busy() && configured) drop.classList.add('drag-over') })
+  drop.addEventListener('dragleave', () => drop.classList.remove('drag-over'))
+  drop.addEventListener('drop', event => {
+    event.preventDefault(); drop.classList.remove('drag-over')
+    uploadCsv(purpose, event.dataTransfer.files[0])
+  })
+  $(purpose + '-file').addEventListener('change', event => uploadCsv(purpose, event.target.files[0]))
+  $(purpose + '-run').addEventListener('click', () => startJob(purpose))
 }
-
-function renderQuerySidebar() {
-  renderQueryFileList('query-draft-list', queryWorkspace.drafts, 'draft')
-  renderQueryFileList('query-saved-list', queryWorkspace.saved, 'saved')
-  $('query-draft-count').textContent = queryWorkspace.drafts.length
-  $('query-saved-count').textContent = queryWorkspace.saved.length || ''
+function formatDuration(seconds) {
+  if (seconds < 60) return seconds.toFixed(1) + ' s'
+  const whole = Math.floor(seconds)
+  if (whole < 3600) return `${Math.floor(whole / 60)} min ${whole % 60} s`
+  return `${Math.floor(whole / 3600)} h ${Math.floor((whole % 3600) / 60)} min ${whole % 60} s`
 }
-
-function resetQueryResults() {
-  queryFirstResult = null
-  hide($('err-query'))
-  hide($('query-results'))
-  $('query-result-sets').innerHTML = ''
+function renderElapsed(purpose, prefix = 'Elapsed') {
+  const state = workflows[purpose]
+  const seconds = state.clock === null ? state.elapsed : Math.max(0, (performance.now() - state.clock) / 1000)
+  $(purpose + '-elapsed').textContent = prefix + ': ' + formatDuration(seconds)
 }
+setInterval(() => { for (const purpose of purposes) if (workflows[purpose].clock !== null) renderElapsed(purpose) }, 100)
 
-function loadActiveQueryDraft() {
-  const draft = activeQueryDraft()
-  $('query-name').value = queryItemName(draft)
-  queryEditor.value = draft.sql || ''
-  resetQueryResults()
-  renderQuerySidebar()
-  if (draft.schema && Array.from($('query-schema').options).some(function(option) { return option.value === draft.schema })) {
-    $('query-schema').value = draft.schema
-    loadQueryTables(draft.schema)
-  }
-  queryEditor.focus()
-}
-
-function updateActiveQueryDraft() {
-  const draft = activeQueryDraft()
-  draft.title = $('query-name').value
-  draft.sql = queryEditor.value
-  draft.schema = $('query-schema').value
-  draft.updatedAt = new Date().toISOString()
-  persistQueryWorkspace()
-}
-
-function flashQuerySaved() {
-  const status = $('query-save-status')
-  status.classList.add('visible')
-  if (querySaveStatusTimer) clearTimeout(querySaveStatusTimer)
-  querySaveStatusTimer = setTimeout(function() { status.classList.remove('visible') }, 1600)
-}
-
-async function queryApiJson(response, action) {
-  const body = await response.text()
+async function startJob(purpose) {
+  const state = workflows[purpose]
+  if (busy() || !state.preview || !schemasReady) return
+  state.busy = true
+  state.jobId = null
+  state.clock = performance.now()
+  state.elapsed = 0
+  resetDownload(purpose)
+  hide($(purpose + '-error')); hide($(purpose + '-details'))
+  $(purpose + '-status').className = 'status'
+  $(purpose + '-status').textContent = 'Starting'
+  $(purpose + '-message').textContent = purpose === 'import' ? 'Preparing CSV import…' : 'Preparing SQL generation…'
+  $(purpose + '-progress').value = 0
+  show($(purpose + '-progress'))
+  $(purpose + '-progress-label').textContent = ''
+  show($(purpose + '-result'))
+  renderElapsed(purpose)
+  syncControls()
   try {
-    return JSON.parse(body)
-  } catch (_) {
-    if (/^\s*</.test(body)) {
-      throw new Error('The server returned a web page instead of JSON for ' + action + '. Restart the app with docker compose up -d --build, then refresh this page.')
-    }
-    throw new Error('The server returned an invalid response for ' + action + '.')
-  }
-}
-
-function closeQuerySuggestions() {
-  hide(querySuggestionPanel)
-  querySuggestionPanel.innerHTML = ''
-  querySuggestions = []
-  querySuggestionHighlight = -1
-}
-
-function queryTokenRange() {
-  const end = queryEditor.selectionStart
-  const before = queryEditor.value.slice(0, end)
-  const match = before.match(/(?:\[[^\]\r\n]*\]\.)?\[?[A-Za-z0-9_$#]*$/)
-  const token = match ? match[0] : ''
-  return { start: end - token.length, end: end, token: token }
-}
-
-function querySuggestionPool(range) {
-  const schema = $('query-schema').value
-  const keywordItems = SQL_KEYWORDS.map(function(keyword) {
-    return { label: keyword, insert: keyword, type: 'Keyword', search: keyword.toLowerCase() }
-  })
-  const tableItems = queryAvailableTables.map(function(table) {
-    const safeSchema = schema.replace(/]/g, ']]')
-    const safeTable = table.replace(/]/g, ']]')
-    return {
-      label: schema + '.' + table,
-      insert: '[' + safeSchema + '].[' + safeTable + ']',
-      type: 'Table',
-      search: (schema + '.' + table + ' ' + table).toLowerCase()
-    }
-  })
-  const beforeToken = queryEditor.value.slice(0, range.start)
-  const expectsTable = /\b(FROM|JOIN|UPDATE|INTO|TABLE)\s*$/i.test(beforeToken)
-  return expectsTable ? tableItems.concat(keywordItems) : keywordItems.concat(tableItems)
-}
-
-function renderQuerySuggestions() {
-  closeQuerySuggestions()
-  return
-  if (document.activeElement !== queryEditor) return
-  const range = queryTokenRange()
-  const normalized = range.token.replace(/[\[\]]/g, '').toLowerCase()
-  const prefix = normalized.split('.').pop()
-  const pool = querySuggestionPool(range)
-  querySuggestions = pool.filter(function(item) {
-    if (!prefix) return true
-    return item.search.split(/\s+/).some(function(part) {
-      return part.startsWith(prefix)
+    const data = await api(purpose === 'import' ? '/import' : '/generate-sql', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({schema: $(purpose + '-schema').value})
     })
-  }).slice(0, 12)
-
-  querySuggestionPanel.innerHTML = ''
-  querySuggestionHighlight = -1
-  if (!querySuggestions.length) {
-    closeQuerySuggestions()
-    return
-  }
-  querySuggestions.forEach(function(item, index) {
-    const option = document.createElement('button')
-    option.type = 'button'
-    option.className = 'sql-suggestion ' + item.type.toLowerCase()
-    option.setAttribute('role', 'option')
-    const label = document.createElement('span')
-    label.textContent = item.label
-    const type = document.createElement('span')
-    type.className = 'sql-suggestion-type'
-    type.textContent = item.type
-    option.append(label, type)
-    option.addEventListener('mousedown', function(event) {
-      event.preventDefault()
-      insertQuerySuggestion(index)
-    })
-    querySuggestionPanel.appendChild(option)
-  })
-  show(querySuggestionPanel)
-}
-
-function setQuerySuggestionHighlight(index) {
-  const options = Array.from(querySuggestionPanel.querySelectorAll('.sql-suggestion'))
-  options.forEach(function(option) { option.classList.remove('highlighted') })
-  if (!options.length) {
-    querySuggestionHighlight = -1
-    return
-  }
-  querySuggestionHighlight = (index + options.length) % options.length
-  options[querySuggestionHighlight].classList.add('highlighted')
-  options[querySuggestionHighlight].scrollIntoView({ block: 'nearest' })
-}
-
-function insertQuerySuggestion(index) {
-  const item = querySuggestions[index]
-  if (!item) return
-  const range = queryTokenRange()
-  const suffix = ' '
-  queryEditor.setRangeText(item.insert + suffix, range.start, range.end, 'end')
-  closeQuerySuggestions()
-  queryEditor.focus()
-}
-
-function loadQueryTables(schema) {
-  queryAvailableTables = []
-  if (!schema) {
-    renderQuerySuggestions()
-    return
-  }
-  fetch('/tables?schema=' + encodeURIComponent(schema)).then(function(response) {
-    return queryApiJson(response, 'table suggestions')
-  }).then(function(data) {
-    if (data.error) throw new Error(data.error)
-    queryAvailableTables = data.tables
-    renderQuerySuggestions()
-  }).catch(function(error) {
-    showErr($('err-query'), error.message)
-  })
-}
-
-function loadQuerySchemas() {
-  const select = $('query-schema')
-  const previous = select.value
-  const draftSchema = activeQueryDraft().schema
-  hide($('err-query'))
-  select.disabled = true
-  select.innerHTML = '<option value="">Loading schemas…</option>'
-  fetch('/schemas').then(function(response) {
-    return queryApiJson(response, 'schemas')
-  }).then(function(data) {
-    if (data.error) throw new Error(data.error)
-    select.innerHTML = '<option value="">— select schema —</option>'
-    data.schemas.forEach(function(schema) { select.add(new Option(schema, schema)) })
-    select.disabled = false
-    const target = data.schemas.includes(draftSchema) ? draftSchema : (data.schemas.includes(previous) ? previous : data.default)
-    if (target && data.schemas.includes(target)) {
-      select.value = target
-      loadQueryTables(target)
-    }
-  }).catch(function(error) {
-    showErr($('err-query'), error.message)
-  })
-}
-
-$('query-schema').addEventListener('change', function(event) {
-  updateActiveQueryDraft()
-  loadQueryTables(event.target.value)
-})
-
-queryEditor.addEventListener('focus', renderQuerySuggestions)
-queryEditor.addEventListener('input', renderQuerySuggestions)
-queryEditor.addEventListener('input', updateActiveQueryDraft)
-queryEditor.addEventListener('click', renderQuerySuggestions)
-queryEditor.addEventListener('keydown', function(event) {
-  if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
-    event.preventDefault()
-    runSqlQuery()
-    return
-  }
-  const open = !querySuggestionPanel.classList.contains('hidden')
-  if (event.key === 'ArrowDown' && open) {
-    event.preventDefault()
-    setQuerySuggestionHighlight(querySuggestionHighlight + 1)
-  } else if (event.key === 'ArrowUp' && open) {
-    event.preventDefault()
-    setQuerySuggestionHighlight(querySuggestionHighlight - 1)
-  } else if (event.key === 'Enter' && open && querySuggestionHighlight >= 0) {
-    event.preventDefault()
-    insertQuerySuggestion(querySuggestionHighlight)
-  } else if (event.key === 'Tab' && open && querySuggestions.length && queryTokenRange().token) {
-    event.preventDefault()
-    insertQuerySuggestion(querySuggestionHighlight >= 0 ? querySuggestionHighlight : 0)
-  } else if (event.key === 'Escape' && open) {
-    event.preventDefault()
-    closeQuerySuggestions()
-  }
-})
-
-document.addEventListener('mousedown', function(event) {
-  if (event.target !== queryEditor && !querySuggestionPanel.contains(event.target)) closeQuerySuggestions()
-})
-
-function querySqlToRun() {
-  const selected = queryEditor.value.slice(queryEditor.selectionStart, queryEditor.selectionEnd).trim()
-  return selected || queryEditor.value.trim()
-}
-
-function renderQueryResults(data) {
-  const sets = data.result_sets || []
-  const container = $('query-result-sets')
-  container.innerHTML = ''
-  queryFirstResult = sets.find(function(set) { return set.columns && set.columns.length }) || null
-  $('btn-copy-query-result').classList.toggle('hidden', !queryFirstResult)
-
-  const summaryParts = [data.message || 'Query completed.']
-  if (typeof data.elapsed_ms === 'number') summaryParts.push(data.elapsed_ms.toLocaleString() + ' ms')
-  if (sets.length) summaryParts.push(sets.length + ' result set' + (sets.length === 1 ? '' : 's'))
-  $('query-result-summary').textContent = summaryParts.join(' · ')
-
-  if (!sets.length) {
-    const empty = document.createElement('div')
-    empty.className = 'query-empty-result'
-    empty.textContent = 'Query completed without a row set or affected-row count.'
-    container.appendChild(empty)
-  }
-
-  sets.forEach(function(set, setIndex) {
-    const section = document.createElement('section')
-    section.className = 'query-result-set'
-    const title = document.createElement('div')
-    title.className = 'query-result-title'
-    const strong = document.createElement('strong')
-    strong.textContent = 'Result ' + (setIndex + 1)
-    title.appendChild(strong)
-
-    if (set.columns && set.columns.length) {
-      const count = document.createElement('span')
-      count.textContent = (set.row_count || 0).toLocaleString() + ' row(s)'
-      title.appendChild(count)
-      if (set.truncated) {
-        const truncated = document.createElement('span')
-        truncated.className = 'truncated'
-        truncated.textContent = 'Showing first ' + data.max_rows.toLocaleString()
-        title.appendChild(truncated)
-      }
-      section.appendChild(title)
-
-      const wrap = document.createElement('div')
-      wrap.className = 'query-grid-wrap'
-      const table = document.createElement('table')
-      table.className = 'data-grid'
-      const thead = document.createElement('thead')
-      const headerRow = document.createElement('tr')
-      set.columns.forEach(function(column) {
-        const th = document.createElement('th')
-        th.textContent = column
-        headerRow.appendChild(th)
-      })
-      thead.appendChild(headerRow)
-      const tbody = document.createElement('tbody')
-      if (!set.rows.length) {
-        const row = document.createElement('tr')
-        const cell = document.createElement('td')
-        cell.colSpan = Math.max(set.columns.length, 1)
-        cell.className = 'query-empty-result'
-        cell.textContent = 'No rows returned.'
-        row.appendChild(cell)
-        tbody.appendChild(row)
-      } else {
-        set.rows.forEach(function(values) {
-          const row = document.createElement('tr')
-          values.forEach(function(value) {
-            const cell = document.createElement('td')
-            if (value === null) {
-              const nullLabel = document.createElement('span')
-              nullLabel.className = 'query-null'
-              nullLabel.textContent = 'NULL'
-              cell.appendChild(nullLabel)
-            } else {
-              cell.textContent = String(value)
-              cell.title = String(value)
-            }
-            row.appendChild(cell)
-          })
-          tbody.appendChild(row)
-        })
-      }
-      table.append(thead, tbody)
-      wrap.appendChild(table)
-      section.appendChild(wrap)
-    } else {
-      const affected = Number(set.affected_rows || 0)
-      const count = document.createElement('span')
-      count.textContent = affected.toLocaleString() + ' row(s) affected'
-      title.appendChild(count)
-      section.appendChild(title)
-      const message = document.createElement('div')
-      message.className = 'query-command-result'
-      message.textContent = '✓ ' + affected.toLocaleString() + ' row(s) affected.'
-      section.appendChild(message)
-    }
-    container.appendChild(section)
-  })
-  show($('query-results'))
-}
-
-async function runSqlQuery() {
-  const sql = querySqlToRun()
-  if (!sql) {
-    showErr($('err-query'), 'Enter a SQL query to run.')
-    queryEditor.focus()
-    return
-  }
-  const writesData = /\b(INSERT|UPDATE|DELETE|MERGE|INTO|TRUNCATE|DROP|ALTER|CREATE|GRANT|REVOKE|EXEC(?:UTE)?|DBCC|BACKUP|RESTORE)\b/i.test(sql)
-  if (writesData && !window.confirm('This SQL may change the database. Run it now?')) return
-
-  const button = $('btn-run-query')
-  closeQuerySuggestions()
-  hide($('err-query'))
-  hide($('query-results'))
-  setLoading(button, true, 'Running…')
-  try {
-    const response = await fetch('/query', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sql: sql })
-    })
-    const data = await queryApiJson(response, 'query runner')
-    if (!response.ok || data.error) throw new Error(data.error || 'Query failed.')
-    renderQueryResults(data)
-    queryWorkspace.history.unshift({
-      id: queryId(),
-      title: queryItemName(activeQueryDraft()),
-      sql: sql,
-      schema: $('query-schema').value,
-      ranAt: new Date().toISOString()
-    })
-    queryWorkspace.history = queryWorkspace.history.slice(0, 20)
-    persistQueryWorkspace()
-    renderQuerySidebar()
+    state.jobId = data.job_id
+    applyJob(purpose, data)
+    if (state.busy) pollJob(purpose, data.status_url)
   } catch (error) {
-    showErr($('err-query'), error.message)
-  } finally {
-    setLoading(button, false, '▶ Run query')
+    state.elapsed = Math.max(0, (performance.now() - state.clock) / 1000)
+    state.clock = null
+    state.busy = false
+    $(purpose + '-status').className = 'status failed'
+    $(purpose + '-status').textContent = 'Failed'
+    $(purpose + '-message').textContent = error.message
+    hide($(purpose + '-progress'))
+    renderElapsed(purpose, 'Stopped after')
+    syncControls()
   }
 }
-
-$('btn-run-query').addEventListener('click', runSqlQuery)
-$('btn-clear-query').addEventListener('click', function() {
-  queryEditor.value = ''
-  updateActiveQueryDraft()
-  resetQueryResults()
-  queryEditor.focus()
-  renderQuerySuggestions()
-})
-
-$('query-name').addEventListener('input', function() {
-  updateActiveQueryDraft()
-  renderQuerySidebar()
-})
-
-$('btn-new-query').addEventListener('click', function() {
-  const draft = newQueryDraft('Untitled query ' + (queryWorkspace.drafts.length + 1), '', $('query-schema').value)
-  queryWorkspace.drafts.unshift(draft)
-  queryWorkspace.activeId = draft.id
-  persistQueryWorkspace()
-  loadActiveQueryDraft()
-})
-
-$('btn-save-query').addEventListener('click', function() {
-  updateActiveQueryDraft()
-  const draft = activeQueryDraft()
-  draft.title = queryItemName(draft)
-  $('query-name').value = draft.title
-  let saved = queryWorkspace.saved.find(function(item) { return item.id === draft.savedId })
-  if (!saved) {
-    saved = { id: queryId() }
-    draft.savedId = saved.id
-    queryWorkspace.saved.unshift(saved)
+function applyJob(purpose, data) {
+  const state = workflows[purpose]
+  state.elapsed = data.elapsed_seconds
+  const terminal = ['done', 'failed'].includes(data.state)
+  state.clock = terminal ? null : performance.now() - data.elapsed_seconds * 1000
+  const result = data.results[0]
+  const status = result ? result.status : data.state
+  const labels = {queued: 'Queued', running: 'In progress', ok: 'Completed', warn: 'Completed with errors', skip: 'Skipped', failed: 'Failed'}
+  $(purpose + '-status').className = 'status ' + status
+  $(purpose + '-status').textContent = labels[status] || status
+  $(purpose + '-message').textContent = data.error || (result && result.message) || 'Processing CSV…'
+  const progress = (result && result.progress) || {done: 0, total: 0}
+  $(purpose + '-progress').classList.toggle('hidden', terminal)
+  if (progress.total) {
+    $(purpose + '-progress').value = progress.done / progress.total * 100
+    $(purpose + '-progress-label').textContent = `${progress.done.toLocaleString()} / ${progress.total.toLocaleString()} rows processed`
+  } else {
+    $(purpose + '-progress').removeAttribute('value')
+    $(purpose + '-progress-label').textContent = ''
   }
-  saved.title = draft.title
-  saved.sql = draft.sql
-  saved.schema = draft.schema
-  saved.updatedAt = new Date().toISOString()
-  persistQueryWorkspace()
-  renderQuerySidebar()
-  flashQuerySaved()
-})
-
-$('btn-query-data-editor').addEventListener('click', function() {
-  $('nav-editor').click()
-})
-
-$('btn-copy-query-result').addEventListener('click', async function() {
-  if (!queryFirstResult) return
-  const lines = [queryFirstResult.columns.join('\t')]
-  queryFirstResult.rows.forEach(function(row) {
-    lines.push(row.map(function(value) {
-      return value == null ? '' : String(value).replace(/[\t\r\n]+/g, ' ')
-    }).join('\t'))
-  })
-  const text = lines.join('\n')
+  if (result && result.errors && result.errors.length) {
+    $(purpose + '-details').textContent = result.errors.join('\n')
+    show($(purpose + '-details'))
+  } else hide($(purpose + '-details'))
+  if (terminal) {
+    state.busy = false
+    clearTimeout(state.timer)
+    if (data.state === 'done' && data.sql_download_url) {
+      $(purpose + '-download').href = data.sql_download_url
+      $(purpose + '-download').download = data.sql_filename
+      show($(purpose + '-download-row'))
+    }
+    renderElapsed(purpose, status === 'ok' || status === 'warn' ? 'Completed in' : 'Stopped after')
+    syncControls()
+  }
+}
+async function pollJob(purpose, statusUrl) {
+  const state = workflows[purpose]
   try {
-    await navigator.clipboard.writeText(text)
-  } catch (_) {
-    const textarea = document.createElement('textarea')
-    textarea.value = text
-    textarea.style.cssText = 'position:fixed;opacity:0'
-    document.body.appendChild(textarea)
-    textarea.select()
-    try { document.execCommand('copy') } catch (_) {}
-    textarea.remove()
+    const data = await api(statusUrl)
+    hide($(purpose + '-error'))
+    applyJob(purpose, data)
+  } catch (error) {
+    if (error.status === 404) {
+      state.elapsed = Math.max(0, (performance.now() - state.clock) / 1000)
+      state.clock = null
+      state.busy = false
+      $(purpose + '-status').className = 'status failed'
+      $(purpose + '-status').textContent = 'Unavailable'
+      $(purpose + '-message').textContent = 'Job no longer available. Check the database before importing again.'
+      hide($(purpose + '-progress'))
+      renderElapsed(purpose, 'Last checked after')
+      syncControls()
+    }
+    errorAt(purpose + '-error', new Error(error.message + (state.busy ? ' Retrying status check…' : '')))
   }
-  const button = $('btn-copy-query-result')
-  button.textContent = 'Copied!'
-  setTimeout(function() { button.textContent = 'Copy first result' }, 1200)
-})
-
-function activateQueryTab() {
-  document.querySelector('.container').classList.remove('about-layout')
-  document.querySelector('.container').classList.add('editor-layout')
-  const visible = ['card-conn', 'card-upload', 'card-preview'].find(function(id) {
-    return !$(id).classList.contains('hidden')
-  })
-  if (visible && visible !== 'card-conn') lastImportCard = visible
-  restoreImportResults = !$('card-results').classList.contains('hidden')
-  ;['card-conn', 'card-upload', 'card-preview', 'card-truncate-manager', 'card-data-editor', 'card-about', 'card-updates'].forEach(function(id) {
-    hide($(id))
-  })
-  hide($('card-results'))
-  show($('card-query-runner'))
-  $('nav-query').classList.add('active')
-  ;['nav-import', 'nav-truncate', 'nav-editor', 'nav-schema', 'nav-connection', 'nav-about'].forEach(function(id) {
-    $(id).classList.remove('active')
-  })
-  renderQuerySidebar()
-  loadActiveQueryDraft()
-  loadQuerySchemas()
-  setTimeout(function() { queryEditor.focus() }, 0)
+  if (state.busy) state.timer = setTimeout(() => pollJob(purpose, statusUrl), 1000)
 }
 
-$('nav-query').addEventListener('click', activateQueryTab)
-
-;['nav-import', 'nav-truncate', 'nav-editor', 'nav-schema', 'nav-connection', 'nav-about'].forEach(function(id) {
-  $(id).addEventListener('click', function() {
-    hide($('card-query-runner'))
-    $('nav-query').classList.remove('active')
-    closeQuerySuggestions()
-  })
-})
-
-function syncQueryNavAvailability() {
-  $('nav-query').disabled = $('nav-editor').disabled
-}
-new MutationObserver(syncQueryNavAvailability).observe($('nav-editor'), {
-  attributes: true,
-  attributeFilter: ['disabled']
-})
-syncQueryNavAvailability()
-
-// ── Schema manager ───────────────────────────────────────────────────────────
-const SCHEMA_NAME_RE = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/
-
-$('nav-schema').addEventListener('click', () => {
-  document.querySelector('.container').classList.remove('editor-layout', 'about-layout')
-  const visible = ['card-conn', 'card-upload', 'card-preview'].find(id => !$(id).classList.contains('hidden'))
-  if (visible && visible !== 'card-conn') lastImportCard = visible
-  restoreImportResults = !$('card-results').classList.contains('hidden')
-  ;['card-conn', 'card-upload', 'card-preview', 'card-truncate-manager', 'card-data-editor', 'card-about', 'card-updates', 'card-results'].forEach(id => hide($(id)))
-  show($('card-schema-manager'))
-  $('nav-schema').classList.add('active')
-  ;['nav-import', 'nav-truncate', 'nav-editor', 'nav-connection', 'nav-about'].forEach(id => $(id).classList.remove('active'))
-  hide($('err-schema-manager')); hide($('ok-schema-manager'))
-  loadSchemaList()
-})
-
-;['nav-import', 'nav-truncate', 'nav-editor', 'nav-query', 'nav-connection', 'nav-about'].forEach(id => {
-  $(id).addEventListener('click', () => {
-    hide($('card-schema-manager'))
-    $('nav-schema').classList.remove('active')
-  })
-})
-
-function loadSchemaList(highlight) {
-  const body = $('schema-body')
-  body.innerHTML = '<tr><td colspan="3" class="schema-empty">Loading schemas…</td></tr>'
-  return fetch('/schemas/list').then(r => r.json()).then(data => {
-    if (data.error) throw new Error(data.error)
-    $('schema-db-name').textContent = data.database
-    $('schema-count').textContent = data.schemas.length
-    body.innerHTML = data.schemas.length ? '' : '<tr><td colspan="3" class="schema-empty">No schemas found</td></tr>'
-    data.schemas.forEach(s => {
-      const tr = document.createElement('tr')
-      if (s.name === highlight) tr.className = 'schema-new'
-      const defaultBadge = s.name === data.default ? ' <span class="badge green">default</span>' : ''
-      tr.innerHTML = `<td><strong>${escapeHtml(s.name)}</strong>${defaultBadge}</td>
-        <td>${escapeHtml(s.owner || '-')}</td>
-        <td><span class="badge blue">${s.tables}</span></td>`
-      body.appendChild(tr)
-    })
-  }).catch(error => {
-    body.innerHTML = '<tr><td colspan="3" class="schema-empty">Could not load schemas</td></tr>'
-    showErr($('err-schema-manager'), error.message)
-  })
-}
-
-$('btn-refresh-schemas').addEventListener('click', () => {
-  hide($('err-schema-manager')); hide($('ok-schema-manager'))
-  loadSchemaList()
-})
-
-$('new-schema-name').addEventListener('input', e => {
-  $('btn-create-schema').disabled = !e.target.value.trim()
-})
-
-$('schema-create-form').addEventListener('submit', e => {
-  e.preventDefault()
-  const btn = $('btn-create-schema')
-  const name = $('new-schema-name').value.trim()
-  if (!name || btn.disabled) return
-  hide($('err-schema-manager')); hide($('ok-schema-manager'))
-  if (!SCHEMA_NAME_RE.test(name)) {
-    showErr($('err-schema-manager'), 'Schema name must start with a letter or underscore and use only letters, digits, and underscores.')
-    return
+async function initialize() {
+  try {
+    const data = await api('/config')
+    updateConnection(data.configured ? data.config : null)
+    if (configured) await loadSchemas()
+    else navigate('connection')
+  } catch (error) {
+    updateConnection(null)
+    navigate('connection')
+    errorAt('connection-error', error)
   }
-  setLoading(btn, true, 'Creating…')
-  fetch('/schemas', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ name })
-  })
-  .then(async response => ({ response, data: await response.json() }))
-  .then(({ response, data }) => {
-    if (!response.ok || data.error) throw new Error(data.error || 'Create failed.')
-    setLoading(btn, false, 'Create schema')
-    btn.disabled = true
-    $('new-schema-name').value = ''
-    $('ok-schema-manager').textContent = data.message
-    show($('ok-schema-manager'))
-    loadSchemaList(data.name)
-  })
-  .catch(error => {
-    setLoading(btn, false, 'Create schema')
-    showErr($('err-schema-manager'), error.message)
-  })
-})
-function bindEditButtons() {
-  document.querySelectorAll('.btn-edit-table').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const table = btn.dataset.table
-      const schema = btn.dataset.schema
-      openTableInEditor(schema, table)
-    })
-  })
 }
-
-function bindTruncateButtons() {
-  document.querySelectorAll('.btn-truncate').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const table = btn.dataset.table
-      const schema = btn.dataset.schema
-      if (!window.confirm(`Delete ALL rows from ${schema}.${table}? This cannot be undone.`)) return
-
-      const result = btn.closest('.result-row').querySelector('.truncate-result')
-      hide(result)
-      setLoading(btn, true, 'Truncating…')
-      fetch('/truncate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ table, schema })
-      })
-      .then(async response => ({ response, data: await response.json() }))
-      .then(({ response, data }) => {
-        if (!response.ok || data.error) throw new Error(data.error || 'Truncate failed.')
-        result.className = 'truncate-result ok'
-        result.textContent = data.message
-        btn.innerHTML = '<span>Done</span>'
-        btn.disabled = true
-      })
-      .catch(error => {
-        setLoading(btn, false, 'Truncate')
-        result.className = 'truncate-result error'
-        result.textContent = error.message
-      })
-    })
-  })
-}
-
-function resultStatus(status) {
-  return statusInfo(status)
-}
-
-function statusInfo(status) {
-  if (status === 'ready') return { cls: 'gray', icon: '', label: 'Ready' }
-  if (status === 'queued') return { cls: 'gray', icon: '', label: 'Waiting' }
-  if (status === 'running') return { cls: 'blue', icon: '', label: 'Importing' }
-  if (status === 'ok') return { cls: 'green', icon: '✓', label: 'Imported' }
-  if (status === 'warn') return { cls: 'yellow', icon: '!', label: 'Imported with warnings' }
-  if (status === 'failed') return { cls: 'red', icon: '×', label: 'Failed' }
-  return { cls: 'red', icon: '×', label: 'Skipped' }
-}
-
-// ── Reset ─────────────────────────────────────────────────────────────────────
-$('btn-change-sheet').addEventListener('click', changeSheet)
-$('btn-change-sheet-results').addEventListener('click', changeSheet)
-$('btn-rescan').addEventListener('click', resetToFileUpload)
-$('btn-restart').addEventListener('click', resetToFileUpload)
-
-function changeSheet() {
-  clearImportPolling()
-  setImportControlsDisabled(false)
-  hide($('err-upload')); hide($('err-import'))
-  hide($('card-preview')); hide($('card-results'))
-  show($('card-upload'))
-  $('btn-scan').disabled = !$('sheet-select').value
-}
-
-function resetToFileUpload() {
-  clearImportPolling()
-  setImportControlsDisabled(false)
-  if (fileWatchTimer) clearInterval(fileWatchTimer)
-  fileWatchTimer = null
-  currentFileHandle = null
-  currentFileStamp = null
-  currentBatchJob = null
-  setFileKind('excel')
-  hide($('file-change-warning'))
-  hide($('batch-status'))
-  hide($('btn-call-batch'))
-  $('file-input').value = ''
-  $('file-name').textContent = ''; hide($('file-name'))
-  $('sheet-select').innerHTML = '<option value="">— upload a file first —</option>'
-  $('sheet-select').disabled = true
-  $('btn-scan').disabled = true
-  hide($('err-upload')); hide($('err-import'))
-  hide($('card-preview')); hide($('card-results'))
-  show($('card-upload'))
-}
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-function setLoading(btn, loading, label) {
-  btn.disabled = loading
-  btn.innerHTML = loading ? `<span class="spinner"></span><span>${label}</span>` : `<span>${label}</span>`
-}
-function showErr(el, msg) { el.textContent = msg; show(el) }
-function escapeHtml(value) {
-  return String(value ?? '').replace(/[&<>"']/g, ch => ({
-    '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
-  }[ch]))
-}
-function escapeAttr(value) { return escapeHtml(value) }
+initialize()
 </script>
 </body>
 </html>

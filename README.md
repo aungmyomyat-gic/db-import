@@ -1,167 +1,115 @@
-# DB Import
+# DB Import — CSV & SQL
 
-A small web app for loading Excel test data into SQL Server and working with
-the tables afterwards. It runs in Docker and opens at http://localhost:5000.
+This branch contains two tools: **CSV Import** and **SQL Generate**, with shared
+SQL Server connection settings. It runs locally or in Docker at
+http://localhost:5000.
 
-## Features
+## CSV Import
 
-- **Import** — upload an Excel file, pick a sheet, and the app finds every table
-  under the **■ 実施前テストデータ** section (names like `MZAIHP(倉庫在庫マスタ)`).
-  Preview them, choose which to import, and insert them into the target schema.
-  If the file name contains `day job 12` / `month job 3`, the matching batch job
-  can be triggered after the import.
-- **CSV import** — choose a `.csv` file with **no header row** and the file name
-  is used as the table name (`MDNNOP.csv` or `MDNNOP (1).csv` → `MDNNOP`). Columns
-  are matched to the table by position, and blank values become NULL, or the
-  type's default for NOT NULL columns. UTF-8 and Shift-JIS files both work.
-  After a successful CSV import, **Download SQL** appears in Import Results.
-  The UTF-8 `.sql` file starts with `DELETE FROM schema.table;`, followed by
-  `INSERT INTO schema.table` and a `VALUES` block with one tuple per row.
-  Numeric columns use unquoted numbers; text uses `N'...'` literals, preserving
-  leading zeros, Japanese text, and escaped quotes. NULLs and required-column
-  defaults match the import. Full-width mappings omit the column list; partial
-  mappings include it so database defaults still apply to omitted columns.
-  Large exports split inserts into groups of at most 1,000 rows. Run the script
-  against an existing matching table to replace its rows. Database defaults and
-  triggers run again. Imports with row errors do not offer a SQL download.
-  Downloads expire one hour after completion, or when the app restarts.
-- **Truncate Table** — empty one or more tables in a schema.
-- **Data Editor** — browse every record in any table:
-  - row numbers, and a summary of primary keys, total rows and columns
-  - sort by clicking a column header; search columns by name
-  - edit rows in place (Edit mode)
-  - copy rows to Excel, with or without the header
-  - paste rows copied from Excel (Ctrl+V), review them, then insert
-- **SQL Runner** — run all or selected SQL with schema-aware table-name and SQL
-  keyword suggestions, multiple result grids, write-query confirmation, and
-  one-click copying for the first result.
-- **Update notification** — when a new version is released, the app shows an
-  "Update available" popup with the changes.
+1. Save your SQL Server details under **Connection**.
+2. Open **CSV Import** and choose a CSV with **no header row**. The file name
+   determines the table: `MDNNOP.csv` or `MDNNOP (1).csv` → `MDNNOP`.
+3. Check the table, row count, and column count, then choose the target schema.
+4. Click **Import CSV & Generate SQL**. The import replaces the existing rows
+   in that table. Progress and elapsed time appear while it runs; the completed
+   duration stays in the result.
+5. After a successful import, click **Download SQL** to save the matching script.
+   Imports with row errors do not offer a SQL download.
 
-## Install
+## SQL Generate
 
-You need **Git** and **Docker Desktop**. The repo is private, so you need read
-access on GitHub.
+1. Open **SQL Generate** and choose a headerless CSV named after its table.
+2. Choose the schema and click **Generate SQL**.
+3. Click **Download SQL**. Generation reads column metadata from the connected
+   database without importing, deleting, or changing database rows.
 
-```bash
-git clone https://github.com/aungmyomyat-gic/db-import.git
-cd db-import
-docker compose up -d --build
-```
+Each tab keeps its own CSV selection. Both tools need an existing matching
+SQL Server table to determine column order, types, nullability, and defaults.
 
-`docker-compose.yml` joins the `icl-lv-core-system_sazaby-network` Docker
-network, so start the ICL core system first. The project folder is mounted
-into the container, so a `git pull` updates the app straight away.
+## CSV and SQL format
 
-Open http://localhost:5000, go to **Connection**, and enter your SQL Server
-details. They are saved in `./data` and kept across updates.
+- UTF-8 (with or without BOM) and Shift-JIS CSVs are supported. Empty files and
+  files containing only blank rows are rejected.
+- Columns map by position. Short rows are padded with blanks. Extra CSV columns
+  are skipped and reported in the result.
+- Blank values become NULL, or the type's default for NOT NULL columns. Missing
+  required columns without database defaults are filled automatically; omitted
+  nullable columns and columns with database defaults are left to SQL Server.
+- The UTF-8 SQL file starts with `DELETE FROM schema.table;`, followed by
+  `INSERT INTO` and a `VALUES` block. Inserts are split into at most 1,000 rows.
+- Numeric values are unquoted; text uses `N'...'`, preserving leading zeros,
+  Japanese text, and escaped quotes. Partial mappings include a column list so
+  omitted columns still receive database defaults.
+- Running a generated script replaces the selected table's rows. Database
+  defaults and triggers run again. Generation uses metadata to format the
+  values; SQL Server validates constraints when the script is executed.
+- Downloads belong to the browser session and expire one hour after completion
+  or when the app restarts. Timing covers server processing, including the
+  connection, CSV conversion, import where applicable, and SQL generation.
 
-> If SQL Server runs on your own computer (not in Docker), use
-> `host.docker.internal` as the host.
+## Run locally
 
-## Run locally with a shell script
+Install Python 3.10 or newer and Microsoft ODBC Driver 18 for SQL Server.
+On Windows, use Git Bash. Linux/macOS also need the ODBC driver manager and
+Python `venv` support.
 
-On a Windows customer PC, install **Git for Windows (Git Bash)**, **Python
-3.10 or newer**, and **Microsoft ODBC Driver 18 for SQL Server** once.
-The driver is available from [Microsoft](https://learn.microsoft.com/sql/connect/odbc/download-odbc-driver-for-sql-server).
-For Linux/macOS, install the platform's SQL Server driver and ODBC driver
-manager as well as Python with `venv` support.
-
-Extract or copy this project folder to the PC. Open Git Bash in the folder
-(or a terminal on Linux/macOS), then run:
+From this project folder, run:
 
 ```bash
 bash start.sh
 ```
 
-The script creates a local `.venv`, installs the Python packages on the first
-run (internet access required), checks the ODBC driver, and opens the existing
-UI at http://127.0.0.1:5000. Later runs reuse the installed packages. Keep the
-terminal open while using the app; press **Ctrl+C** to stop it.
-
-Enter the database connection under **Connection**, select a headerless CSV
-named after its table, import it, then click **Download SQL** in the results.
-Connection settings use `data/db_config.json`, including the password, just
-as in the Docker version. Use the actual database server hostname/IP, or
-`localhost` for SQL Server on that PC. To change the local app port:
+The launcher creates `.venv`, installs dependencies on the first run, checks the
+ODBC driver, and opens http://127.0.0.1:5000. Keep the terminal open; press
+**Ctrl+C** to stop. To choose another port:
 
 ```bash
 DB_IMPORT_PORT=5055 bash start.sh
 ```
 
-`setup.sh` continues to start the Docker version.
+Connection settings, including the password, are saved in `data/db_config.json`.
+Use the actual SQL Server hostname/IP, or `localhost` for a local SQL Server.
 
-## Update
+## Run in Docker
 
-When the app shows **Update available**, double-click `update.bat` (Windows) or
-run `./update.sh` (Mac / Linux) in the `db-import` folder. Both run:
+With Docker installed, run from this branch:
 
 ```bash
-git pull --ff-only origin main
 docker compose up -d --build
 ```
 
-Then reload the page. The `--build` step is quick when nothing changed; it only
-really rebuilds when `Dockerfile` or `requirements.txt` changed.
+Open http://localhost:5000. The supplied compose file uses the
+`icl-lv-core-system_sazaby-network` network; start the corresponding database
+stack first, or adapt the network for your SQL Server. For a database running
+on the Docker host, use `host.docker.internal` where available.
 
-## Stop / start
+The source and `data` folder are mounted into the container. Rebuild when
+`requirements.txt` or `Dockerfile` changes. Stop with `docker compose down`.
 
-```bash
-docker compose down     # stop
-docker compose up -d    # start again
-```
+## Updating this branch
 
-## Troubleshooting
+Run `./update.sh` (Linux/macOS/Git Bash) or `update.bat` (Windows) after this
+branch is available on the remote. They pull the **current branch** and rebuild
+the container, keeping saved connection settings. This branch has no in-app
+updater or release-merging script.
 
-| Problem | Fix |
-| --- | --- |
-| `No SQL Server ODBC driver found inside container` | Rebuild: `docker compose up -d --build` |
-| Can't connect to a database on your own PC | Use `host.docker.internal` as the host and check SQL Server listens on port 1433 |
-| Port 5000 is already in use | Change `"5000:5000"` to e.g. `"5050:5000"` in `docker-compose.yml`, then open http://localhost:5050 |
-| `git pull` fails in the update script | You have local changes in the folder. Run `git status`, then `git stash` or discard them, and run the update again |
+See [SHARE.md](SHARE.md) for sharing this CSV and SQL version.
 
-More detail on sharing, the database host and releasing is in [SHARE.md](SHARE.md).
+## Development
 
----
-
-## Development (maintainer)
-
-Run the CSV import/SQL download tests with the project's dependencies installed:
+Install `requirements.txt` into a Python environment, then run:
 
 ```bash
 python -m unittest discover -s tests -v
 ```
 
-These tests use a simulated database and do not change any SQL Server data.
+The tests use a simulated database and do not change SQL Server data. They cover
+CSV/SQL value parity, generation without database writes, timing, upload
+isolation, failure handling, download access and expiry, and removed routes.
 
-```bash
-docker compose up --build
-```
-
-`docker-compose.yml` mounts the source into the container with Flask debug on,
-so code and template changes apply without a rebuild. Rebuild only when
-`Dockerfile` or `requirements.txt` changes.
-
-| File | What it is |
+| File | Purpose |
 | --- | --- |
-| `app.py` | Flask backend: Excel scanning, import jobs, truncate, data editor API, version check |
-| `templates/index.html` | The whole UI (HTML, CSS and JS in one file) |
-| `main.py` | Older command-line version of the importer |
-| `version.json` | Current version, release notes and the update-check URL |
-| `release.sh` | Release script (see below) |
-| `update.sh` / `update.bat` | Update scripts for users |
-
-### Releasing
-
-Work on `dev`. When it's steady, commit everything and run:
-
-```bash
-./release.sh minor --dry-run   # preview
-./release.sh minor             # 1.1.0 → 1.2.0  new features
-./release.sh patch             # 1.1.0 → 1.1.1  bug fixes
-```
-
-The script builds release notes from commit messages since the last `v*` tag,
-bumps `version.json`, merges `dev` → `main`, tags and pushes. Finally, paste the
-printed `version.json` into the Gist that `update_url` points to — running apps
-check it (at most every 5 minutes) and show the update popup.
+| `app.py` | Flask backend, CSV conversion, background jobs, SQL exports |
+| `templates/index.html` | CSV Import, SQL Generate, and Connection UI |
+| `start.sh` | Local setup and launcher |
+| `update.sh` / `update.bat` | Update the current branch and restart Docker |

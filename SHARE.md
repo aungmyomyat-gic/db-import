@@ -1,84 +1,49 @@
-# Sharing This App
+# Sharing the CSV & SQL version
 
-The Docker image includes the Python packages and the Microsoft SQL Server ODBC
-driver. Your friend only needs Docker, unless they choose to run the app outside
-Docker.
+Share the `feat/csv-import-sql-generator` branch to give someone the version with
+CSV Import and standalone SQL Generate. The branch must be pushed before it can
+be cloned from GitHub.
 
-## Share Source Code (recommended — gets update notifications)
+## Share source
 
-Your friend clones the repo over HTTPS once (they need read access to the
-private repo):
+With read access to the repository:
 
 ```bash
-git clone https://github.com/aungmyomyat-gic/db-import.git
+git clone --branch feat/csv-import-sql-generator --single-branch https://github.com/aungmyomyat-gic/db-import.git
 cd db-import
-docker compose up -d --build
 ```
 
-Open:
+Run `bash start.sh` with Python and the SQL Server ODBC driver installed, or
+run `docker compose up -d --build` with Docker. Open http://localhost:5000.
+The Docker image includes Python packages and the Microsoft ODBC driver.
 
-```text
-http://localhost:5000
-```
+The supplied Docker setup uses the `icl-lv-core-system_sazaby-network` network.
+Use that database stack or adapt the compose network for the target database.
+Use `host.docker.internal` where available for SQL Server on the Docker host,
+or a hostname/IP reachable from the container for a remote database.
 
-## Database Host
+## Share a Docker image
 
-If SQL Server is running on your friend's computer, use this host in the app:
-
-```text
-host.docker.internal
-```
-
-If SQL Server is another Docker container, both containers must be on the same
-Docker network, or the database must publish port `1433`.
-
-## Driver Error
-
-This app uses ODBC through `pyodbc`, not JDBC. If your friend sees:
-
-```text
-No SQL Server ODBC driver found inside container.
-```
-
-they are probably running an old/bad image or running Python outside Docker.
-Rebuild with `docker compose up -d --build`.
-
-## When A Rebuild Is Needed
-
-No rebuild is needed for normal app changes in development mode.
-
-A rebuild is needed when `Dockerfile` or `requirements.txt` changes.
-
-## Updating
-
-When a new version is released, the app shows an **Update available** popup.
-In the `db-import` folder, double-click `update.bat` (Windows) or run
-`./update.sh` (Mac / Linux). Both do:
+A source checkout is not needed on the receiving PC when sharing a built image:
 
 ```bash
-git pull --ff-only origin main
-docker compose up -d --build
+docker build -t db-import-csv-sql .
+docker save -o db-import-csv-sql.tar db-import-csv-sql
 ```
 
-The saved DB connection in `./data` is kept.
-
-## Releasing A New Version (maintainer)
-
-Work on the `dev` branch. When it's steady, commit everything and run:
+Copy the archive to the receiving PC, then run:
 
 ```bash
-./release.sh patch            # 1.1.0 → 1.1.1  bug fixes
-./release.sh minor            # 1.1.0 → 1.2.0  new features
-./release.sh major            # 1.1.0 → 2.0.0  big changes
-./release.sh minor --dry-run  # preview only
+docker load -i db-import-csv-sql.tar
+docker run -d --name db-import-csv-sql -p 5000:5000 -v db-import-csv-data:/app/data db-import-csv-sql
 ```
 
-It builds release notes from your commit messages since the last `v*` tag
-(you can edit them before confirming), bumps `version.json`, merges
-`dev` → `main`, tags `vX.Y.Z` and pushes. At the end it prints the new
-`version.json` — paste it into the Gist that `update_url` points to.
+Configure a database host reachable from that container. Attach the container
+to the database's Docker network if necessary.
 
-Each running app compares its own `version.json` (the one in its project folder) with
-the file at `update_url` (or the `UPDATE_CHECK_URL` env var), at most every
-5 minutes; **About → Check for updates** checks immediately. If `update_url` is
-empty, the check is off.
+## Updating source installations
+
+Use `./update.sh` or `update.bat` to pull the current branch and rebuild Docker.
+Saved connection settings stay in `data/db_config.json`. Each recipient should
+configure their own connection. Do not include your `data` folder when sharing
+project files.
