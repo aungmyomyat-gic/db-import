@@ -11,7 +11,7 @@
   button, input, select { font: inherit }
   button, a, input, select { outline-offset: 4px }
   .topbar { border-bottom: 1px solid #2d3148; background: #141722 }
-  .topbar-inner { max-width: 1050px; margin: auto; padding: 18px 24px; display: flex; align-items: center; justify-content: space-between; gap: 20px; flex-wrap: wrap }
+  .topbar-inner { max-width: 1200px; margin: auto; padding: 18px 24px; display: flex; align-items: center; justify-content: space-between; gap: 20px; flex-wrap: wrap }
   .brand { display: flex; align-items: center; gap: 10px; font-weight: 650; white-space: nowrap }
   .logo { display: grid; place-items: center; width: 32px; height: 32px; background: #4f46e5; border-radius: 9px; color: white }
   .brand small { font-weight: 400; color: #94a3b8; margin-left: 5px }
@@ -19,12 +19,17 @@
   .nav-btn { border: 0; color: #94a3b8; padding: 9px 14px; border-radius: 8px; background: transparent; cursor: pointer }
   .nav-btn:hover { background: #24283b; color: #fff }
   .nav-btn.active { background: #4f46e5; color: white }
-  main { max-width: 900px; margin: 36px auto; padding: 0 24px 40px }
+  main { max-width: 1200px; margin: 36px auto; padding: 0 24px 40px }
   h1 { font-size: 1.65rem; font-weight: 650; margin-bottom: 10px }
   h2 { font-size: 1rem; font-weight: 600; margin-bottom: 16px }
   p { line-height: 1.65 }
   .subtitle { color: #94a3b8; font-size: .9rem; margin-bottom: 24px }
   .card { background: #1a1d2e; border: 1px solid #2d3148; border-radius: 12px; padding: 24px; margin-top: 18px }
+  .workflow { display: grid; grid-template-columns: minmax(0, .9fr) minmax(0, 1.1fr); gap: 24px; align-items: start }
+  .workflow .card { margin-top: 0; min-width: 0 }
+  .workflow-output { display: grid; gap: 18px; min-width: 0 }
+  .preview-hint { margin: 0 0 16px }
+  #panel-connection { max-width: 852px; margin-inline: auto }
   .hidden { display: none !important }
   .drop-zone { display: grid; place-items: center; text-align: center; border: 2px dashed #414762; border-radius: 10px; padding: 30px 18px; cursor: pointer; color: #cbd5e1; background: #151827 }
   .drop-zone:hover, .drop-zone.drag-over { border-color: #818cf8; background: #20213c }
@@ -33,6 +38,13 @@
   .drop-zone strong { color: #a5b4fc }
   .hint { color: #94a3b8; font-size: .8rem; line-height: 1.6; margin-top: 8px }
   .filename { color: #c7d2fe; font-size: .9rem; margin-top: 14px; overflow-wrap: anywhere }
+  .read-progress { margin-top: 18px }
+  .read-progress[data-state="ok"] { --progress-color: #86efac }
+  .read-progress[data-state="failed"] { --progress-color: #fecaca }
+  .read-progress-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; font-size: .82rem; color: #c7d2fe }
+  .read-progress-head > span:last-child { font-variant-numeric: tabular-nums }
+  .read-progress-head .status { margin: 0 }
+  .read-progress progress { display: block; margin: 10px 0 0 }
   .preview { display: flex; flex-wrap: wrap; gap: 28px; background: #151827; border-radius: 9px; padding: 18px; margin-bottom: 20px }
   .preview dt { color: #94a3b8; font-size: .75rem; margin-bottom: 6px }
   .preview dd { font-size: 1rem; font-weight: 600; overflow-wrap: anywhere }
@@ -53,12 +65,21 @@
   .alert.info { background: #1e2542; border: 1px solid #35456b; color: #bfdbfe }
   .result-head { display: flex; justify-content: space-between; flex-wrap: wrap; align-items: baseline; gap: 12px }
   .elapsed { color: #a5b4fc; font-variant-numeric: tabular-nums; font-size: .85rem }
-  .status { display: inline-block; font-size: .75rem; border-radius: 999px; padding: 4px 10px; background: #242b46; color: #c7d2fe; margin: 4px 0 12px }
-  .status.ok { color: #86efac; background: #15362d }
-  .status.warn, .status.skip, .status.cancelled { color: #fde68a; background: #3b321e }
-  .status.failed { color: #fecaca; background: #45232f }
-  progress { width: 100%; height: 8px; accent-color: #818cf8; margin: 16px 0 8px }
+  .status { display: inline-flex; align-items: center; gap: 6px; font-size: .75rem; line-height: 1.4; border: 1px solid #6b5830; border-radius: 999px; padding: 4px 10px; background: #3b321e; color: #fde68a; margin: 4px 0 12px }
+  .status.ok { color: #86efac; background: #15362d; border-color: #286044 }
+  .status.failed { color: #fecaca; background: #45232f; border-color: #6b303c }
+  .status-icon { width: 16px; height: 16px; flex-shrink: 0 }
+  .status-icon.spinning { animation: status-spin 1s linear infinite }
+  @keyframes status-spin { to { transform: rotate(360deg) } }
+  @media (prefers-reduced-motion: reduce) { .status-icon.spinning { animation: none } }
+  progress { width: 100%; height: 8px; accent-color: var(--progress-color, #fde68a); margin: 16px 0 8px; appearance: none; border: 0; border-radius: 999px; overflow: hidden; background: #10131f }
+  progress::-webkit-progress-bar { background: #10131f; border-radius: 999px }
+  progress::-webkit-progress-value { background: var(--progress-color, #fde68a); border-radius: 999px }
+  progress::-moz-progress-bar { background: var(--progress-color, #fde68a); border-radius: 999px }
   .connection-summary { color: #94a3b8; font-size: .8rem; margin-bottom: 24px; overflow-wrap: anywhere }
+  @media (max-width: 860px) {
+    .workflow { grid-template-columns: minmax(0, 1fr); gap: 18px }
+  }
   @media (max-width: 600px) {
     .topbar-inner { padding: 16px; gap: 14px }
     nav { width: 100% }
@@ -89,47 +110,58 @@
   <section id="panel-{{ purpose }}" aria-labelledby="title-{{ purpose }}"{% if purpose == 'generate' %} class="hidden"{% endif %}>
     <h1 id="title-{{ purpose }}">{{ 'CSV Import' if purpose == 'import' else 'SQL Generate' }}</h1>
     <p class="subtitle">{% if purpose == 'import' %}Import a CSV into SQL Server, then download the generated SQL. The import replaces the rows in the selected table.{% else %}Turn a CSV into a SQL file. Column names and types come from the connected database; generation only reads this metadata.{% endif %}</p>
-    <div class="card">
-      <h2>1. Select CSV</h2>
-      <input type="file" id="{{ purpose }}-file" class="hidden" accept=".csv" disabled>
-      <div class="drop-zone disabled" id="{{ purpose }}-drop" role="button" tabindex="0" aria-disabled="true" aria-label="Choose a CSV for {{ 'import' if purpose == 'import' else 'SQL generation' }}">
-        <span class="drop-icon" aria-hidden="true">CSV</span>
-        <span><strong>Choose a CSV file</strong> or drag it here</span>
-        <span class="hint">No header row · file name = table name, e.g. MDNNOP.csv<br>UTF-8 and Shift-JIS supported</span>
+    <div class="workflow">
+      <div class="card">
+        <h2>1. Select CSV</h2>
+        <input type="file" id="{{ purpose }}-file" class="hidden" accept=".csv" disabled>
+        <div class="drop-zone disabled" id="{{ purpose }}-drop" role="button" tabindex="0" aria-disabled="true" aria-label="Choose a CSV for {{ 'import' if purpose == 'import' else 'SQL generation' }}">
+          <span class="drop-icon" aria-hidden="true">CSV</span>
+          <span><strong>Choose a CSV file</strong> or drag it here</span>
+          <span class="hint">No header row · file name = table name, e.g. MDNNOP.csv<br>UTF-8 and Shift-JIS supported</span>
+        </div>
+        <p class="filename hidden" id="{{ purpose }}-filename"></p>
+        <p class="hint hidden" id="{{ purpose }}-file-size"></p>
+        <div class="read-progress hidden" id="{{ purpose }}-read-progress-row">
+          <div class="read-progress-head"><span class="status running" id="{{ purpose }}-read-stage">Uploading CSV</span><span id="{{ purpose }}-read-percent">0%</span></div>
+          <progress id="{{ purpose }}-read-progress" max="100" value="0" aria-label="CSV upload and reading progress" aria-describedby="{{ purpose }}-read-stage {{ purpose }}-read-percent"></progress>
+          <p class="hint" id="{{ purpose }}-read-detail" role="status"></p>
+        </div>
+        <div class="alert error hidden" id="{{ purpose }}-error" role="alert"></div>
       </div>
-      <p class="filename hidden" id="{{ purpose }}-filename"></p>
-      <div class="alert error hidden" id="{{ purpose }}-error" role="alert"></div>
-    </div>
-    <div class="card hidden" id="{{ purpose }}-preview">
-      <h2>2. {{ 'Confirm import' if purpose == 'import' else 'Generate SQL' }}</h2>
-      <dl class="preview">
-        <div><dt>Table</dt><dd id="{{ purpose }}-table"></dd></div>
-        <div><dt>Rows</dt><dd id="{{ purpose }}-rows"></dd></div>
-        <div><dt>CSV columns</dt><dd id="{{ purpose }}-columns"></dd></div>
-      </dl>
-      <div class="schema-field">
-        <label for="{{ purpose }}-schema">Target schema</label>
-        <select id="{{ purpose }}-schema" disabled><option value="">Loading schemas…</option></select>
-      </div>
-      <p class="hint">Columns are matched by position. Blank values use NULL or a required column's type default.</p>
-      <div class="btn-row"><button class="btn" id="{{ purpose }}-run" disabled>{{ 'Import CSV & Generate SQL' if purpose == 'import' else 'Generate SQL' }}</button></div>
-    </div>
-    <div class="card hidden" id="{{ purpose }}-result" aria-live="polite">
-      <div class="result-head"><h2>{{ 'Import result' if purpose == 'import' else 'SQL result' }}</h2><span class="elapsed" id="{{ purpose }}-elapsed"></span></div>
-      <span class="status" id="{{ purpose }}-status"></span>
-      <p id="{{ purpose }}-message"></p>
-      <progress id="{{ purpose }}-progress" max="100" value="0" aria-label="CSV processing progress"></progress>
-      <p class="hint" id="{{ purpose }}-progress-label"></p>
-      <div class="alert error hidden" id="{{ purpose }}-details"></div>
-      {% if purpose == 'import' %}
-      <div class="btn-row hidden" id="import-cancel-row">
-        <button class="btn danger" id="import-cancel" disabled>Cancel import</button>
-        <span class="hint">Cancellation rolls back the import after the current operation finishes.</span>
-      </div>
-      {% endif %}
-      <div class="btn-row hidden" id="{{ purpose }}-download-row">
-        <a class="btn" id="{{ purpose }}-download">Download SQL</a>
-        <span class="hint">Available for one hour, until the app restarts.</span>
+      <div class="workflow-output">
+        <div class="card" id="{{ purpose }}-preview">
+          <h2>2. {{ 'Confirm import' if purpose == 'import' else 'Generate SQL' }}</h2>
+          <p class="hint preview-hint" id="{{ purpose }}-preview-hint">Select a CSV to review its details and {{ 'confirm the import' if purpose == 'import' else 'generate SQL' }}.</p>
+          <dl class="preview">
+            <div><dt>Table</dt><dd id="{{ purpose }}-table">—</dd></div>
+            <div><dt>Rows</dt><dd id="{{ purpose }}-rows">—</dd></div>
+            <div><dt>CSV columns</dt><dd id="{{ purpose }}-columns">—</dd></div>
+          </dl>
+          <div class="schema-field">
+            <label for="{{ purpose }}-schema">Target schema</label>
+            <select id="{{ purpose }}-schema" disabled><option value="">Loading schemas…</option></select>
+          </div>
+          <p class="hint">Columns are matched by position. Blank values use NULL or a required column's type default.</p>
+          <div class="btn-row"><button class="btn" id="{{ purpose }}-run" disabled>{{ 'Import CSV & Generate SQL' if purpose == 'import' else 'Generate SQL' }}</button></div>
+        </div>
+        <div class="card hidden" id="{{ purpose }}-result" aria-live="polite">
+          <div class="result-head"><h2>3. {{ 'Import result' if purpose == 'import' else 'SQL result' }}</h2><span class="elapsed" id="{{ purpose }}-elapsed"></span></div>
+          <span class="status" id="{{ purpose }}-status"></span>
+          <p id="{{ purpose }}-message"></p>
+          <progress id="{{ purpose }}-progress" max="100" value="0" aria-label="CSV processing progress"></progress>
+          <p class="hint" id="{{ purpose }}-progress-label"></p>
+          <div class="alert error hidden" id="{{ purpose }}-details"></div>
+          {% if purpose == 'import' %}
+          <div class="btn-row hidden" id="import-cancel-row">
+            <button class="btn danger" id="import-cancel" disabled>Cancel import</button>
+            <span class="hint">Cancellation rolls back the import after the current operation finishes.</span>
+          </div>
+          {% endif %}
+          <div class="btn-row hidden" id="{{ purpose }}-download-row">
+            <a class="btn" id="{{ purpose }}-download">Download SQL</a>
+            <span class="hint">Available for one hour, until the app restarts.</span>
+          </div>
+        </div>
       </div>
     </div>
   </section>
@@ -195,6 +227,25 @@ async function api(url, options) {
   return data
 }
 function errorAt(id, error) { $(id).textContent = error.message || String(error); show($(id)) }
+function renderStatus(element, status, label) {
+  const icons = {
+    ok: '<circle cx="10" cy="10" r="7.5"/><path d="m6.5 10 2.5 2.5L14 7.5"/>',
+    running: '<circle cx="10" cy="10" r="7.5" opacity=".25"/><path d="M10 2.5a7.5 7.5 0 0 1 7.5 7.5"/>',
+    queued: '<circle cx="10" cy="10" r="7.5"/><path d="M10 5.5V10l3 2"/>',
+    warn: '<path d="m10 2 8.5 15H1.5Z"/><path d="M10 7v4m0 3v.5"/>',
+    skip: '<circle cx="10" cy="10" r="7.5"/><path d="M6.5 10h7"/>',
+    cancelled: '<circle cx="10" cy="10" r="7.5"/><path d="m4.7 4.7 10.6 10.6"/>',
+    failed: '<circle cx="10" cy="10" r="7.5"/><path d="m7.5 7.5 5 5m0-5-5 5"/>'
+  }
+  const spinning = ['running', 'committing', 'cancelling'].includes(status)
+  const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg')
+  for (const [key, value] of Object.entries({viewBox: '0 0 20 20', fill: 'none', stroke: 'currentColor', 'stroke-width': '1.7', 'stroke-linecap': 'round', 'stroke-linejoin': 'round', 'aria-hidden': 'true'})) icon.setAttribute(key, value)
+  icon.classList.add('status-icon')
+  if (spinning) icon.classList.add('spinning')
+  icon.innerHTML = icons[spinning ? 'running' : status] || icons.queued
+  element.className = 'status ' + status
+  element.replaceChildren(icon, document.createTextNode(label))
+}
 function busy() { return configBusy || purposes.some(purpose => workflows[purpose].busy) }
 function syncControls() {
   const locked = busy()
@@ -286,34 +337,92 @@ function resetDownload(purpose) {
   $(purpose + '-download').removeAttribute('href')
   $(purpose + '-download').removeAttribute('download')
 }
+function formatFileSize(bytes) {
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  let size = bytes
+  let unit = 0
+  while (size >= 1024 && unit < units.length - 1) { size /= 1024; unit++ }
+  return size.toLocaleString(undefined, {maximumFractionDigits: unit ? 2 : 0}) + ' ' + units[unit]
+}
+function rowsReadLabel(records) {
+  return records.toLocaleString() + (records === 1 ? ' row read' : ' rows read')
+}
+function renderReadProgress(purpose, stage, percent, detail = '', status = 'running') {
+  $(purpose + '-read-progress-row').dataset.state = status
+  renderStatus($(purpose + '-read-stage'), status, stage)
+  $(purpose + '-read-percent').textContent = percent + '%'
+  $(purpose + '-read-progress').value = percent
+  $(purpose + '-read-detail').textContent = detail
+  show($(purpose + '-read-progress-row'))
+}
+function sendCsv(purpose, body) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest()
+    xhr.open('POST', '/upload')
+    xhr.responseType = 'json'
+    xhr.upload.addEventListener('progress', event => {
+      if (event.lengthComputable) {
+        renderReadProgress(purpose, 'Uploading CSV', Math.min(99, Math.floor(event.loaded / event.total * 100)))
+      }
+    })
+    xhr.upload.addEventListener('load', () => renderReadProgress(purpose, 'Reading CSV', 0, 'Preparing CSV preview…'))
+    xhr.addEventListener('load', () => {
+      if (xhr.status >= 200 && xhr.status < 300 && xhr.response) resolve(xhr.response)
+      else reject(new Error((xhr.response && xhr.response.error) || 'CSV upload failed (' + xhr.status + ').'))
+    })
+    xhr.addEventListener('error', () => reject(new Error('CSV upload failed. Check your connection and try again.')))
+    xhr.addEventListener('abort', () => reject(new Error('CSV upload was interrupted. Please try again.')))
+    xhr.send(body)
+  })
+}
+async function readCsvPreview(purpose, data) {
+  while (data.state !== 'done') {
+    if (data.state === 'failed') throw new Error(data.error || 'Cannot read CSV.')
+    const progress = data.results[0].progress
+    const percent = progress.total ? Math.min(99, Math.floor(progress.done / progress.total * 100)) : 0
+    renderReadProgress(purpose, 'Reading CSV', percent, rowsReadLabel(progress.records || 0))
+    await new Promise(resolve => setTimeout(resolve, 250))
+    data = await api(data.status_url)
+  }
+  renderReadProgress(purpose, 'CSV ready', 100, rowsReadLabel(data.preview.records), 'ok')
+  return data
+}
 async function uploadCsv(purpose, file) {
   if (!file || busy() || !configured) return
   const state = workflows[purpose]
   state.preview = null
-  hide($(purpose + '-preview')); hide($(purpose + '-result')); hide($(purpose + '-error'))
+  for (const field of ['table', 'rows', 'columns']) $(purpose + '-' + field).textContent = '—'
+  show($(purpose + '-preview-hint'))
+  hide($(purpose + '-result')); hide($(purpose + '-error'))
+  hide($(purpose + '-read-progress-row'))
   resetDownload(purpose)
+  $(purpose + '-filename').textContent = file.name
+  show($(purpose + '-filename'))
+  $(purpose + '-file-size').textContent = 'File size: ' + formatFileSize(file.size)
+  $(purpose + '-file-size').title = file.size.toLocaleString() + ' bytes'
+  show($(purpose + '-file-size'))
   syncControls()
   if (!file.name.toLowerCase().endsWith('.csv')) {
+    $(purpose + '-file').value = ''
     errorAt(purpose + '-error', new Error('Select a .csv file with no header row.'))
     return
   }
   state.busy = true
   syncControls()
-  $(purpose + '-filename').textContent = 'Reading ' + file.name + '…'
-  show($(purpose + '-filename'))
+  renderReadProgress(purpose, 'Uploading CSV', 0)
   const body = new FormData()
   body.append('file', file)
   body.append('purpose', purpose)
+  body.append('background', '1')
   try {
-    const data = await api('/upload', {method: 'POST', body})
+    const data = await readCsvPreview(purpose, await sendCsv(purpose, body))
     state.preview = data.preview
-    $(purpose + '-filename').textContent = file.name
     $(purpose + '-table').textContent = data.preview.name
     $(purpose + '-rows').textContent = data.preview.records.toLocaleString()
     $(purpose + '-columns').textContent = data.preview.columns.toLocaleString()
-    show($(purpose + '-preview'))
+    hide($(purpose + '-preview-hint'))
   } catch (error) {
-    $(purpose + '-filename').textContent = file.name
+    renderReadProgress(purpose, 'CSV reading stopped', $(purpose + '-read-progress').value, 'Select the file again to retry.', 'failed')
     errorAt(purpose + '-error', error)
   } finally {
     state.busy = false
@@ -365,8 +474,7 @@ async function startJob(purpose) {
   state.elapsed = 0
   resetDownload(purpose)
   hide($(purpose + '-error')); hide($(purpose + '-details'))
-  $(purpose + '-status').className = 'status'
-  $(purpose + '-status').textContent = 'Starting'
+  renderStatus($(purpose + '-status'), 'running', 'Starting')
   $(purpose + '-message').textContent = purpose === 'import' ? 'Preparing CSV import…' : 'Preparing SQL generation…'
   $(purpose + '-progress').value = 0
   show($(purpose + '-progress'))
@@ -387,8 +495,7 @@ async function startJob(purpose) {
     state.clock = null
     state.busy = false
     if (purpose === 'import') hide($('import-cancel-row'))
-    $(purpose + '-status').className = 'status failed'
-    $(purpose + '-status').textContent = 'Failed'
+    renderStatus($(purpose + '-status'), 'failed', 'Failed')
     $(purpose + '-message').textContent = error.message
     hide($(purpose + '-progress'))
     renderElapsed(purpose, 'Stopped after')
@@ -406,9 +513,8 @@ function applyJob(purpose, data) {
   const result = data.results[0]
   const cancelling = !terminal && (data.state === 'cancelling' || state.cancelPending)
   const status = cancelling ? 'cancelling' : data.state === 'committing' ? 'committing' : result ? result.status : data.state
-  const labels = {queued: 'Queued', running: 'In progress', committing: 'Saving changes', cancelling: 'Cancelling…', cancelled: 'Cancelled', ok: 'Completed', warn: 'Completed with errors', skip: 'Skipped', failed: 'Failed'}
-  $(purpose + '-status').className = 'status ' + status
-  $(purpose + '-status').textContent = labels[status] || status
+  const labels = {queued: 'Queued', running: purpose === 'import' ? 'Importing' : 'Generating SQL', committing: 'Saving changes', cancelling: 'Cancelling…', cancelled: 'Cancelled', ok: purpose === 'import' ? 'Imported' : 'SQL generated', warn: 'Completed with errors', skip: 'Skipped', failed: 'Failed'}
+  renderStatus($(purpose + '-status'), status, labels[status] || status)
   $(purpose + '-message').textContent = cancelling
     ? 'Waiting for the current operation to finish, then rolling back the import…'
     : data.error || (result && result.message) || 'Processing CSV…'
@@ -478,8 +584,7 @@ async function pollJob(purpose, statusUrl) {
       state.clock = null
       state.busy = false
       if (purpose === 'import') hide($('import-cancel-row'))
-      $(purpose + '-status').className = 'status failed'
-      $(purpose + '-status').textContent = 'Unavailable'
+      renderStatus($(purpose + '-status'), 'failed', 'Unavailable')
       $(purpose + '-message').textContent = 'Job no longer available. Check the database before importing again.'
       hide($(purpose + '-progress'))
       renderElapsed(purpose, 'Last checked after')

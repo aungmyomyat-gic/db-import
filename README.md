@@ -30,6 +30,9 @@ http://localhost:5000.
 
 Each tab keeps its own CSV selection. Both tools need an existing matching
 SQL Server table to determine column order, types, nullability, and defaults.
+Selecting a CSV shows its file size, upload percentage, then reading percentage
+and rows read. The reading percentage follows the characters parsed from the
+file; it reaches 100% when validation finishes and the CSV is ready to use.
 
 ## CSV and SQL format
 

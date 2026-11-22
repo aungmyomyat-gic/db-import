@@ -68,7 +68,7 @@ def csv_table_name(filename):
     return m.group(0) if m else None
 
 
-def read_csv_rows(path, cancel_cb=None):
+def read_csv_rows(path, cancel_cb=None, progress_cb=None):
     """Read every non-blank row; short rows are padded so all rows have the same width."""
     raw = Path(path).read_bytes()
     if cancel_cb:
@@ -82,15 +82,23 @@ def read_csv_rows(path, cancel_cb=None):
     else:
         raise ValueError("CSV is not UTF-8 or Shift-JIS text")
     rows = []
-    for index, row in enumerate(csv.reader(io.StringIO(text, newline=""))):
+    stream = io.StringIO(text, newline="")
+    if progress_cb:
+        progress_cb(0, len(text), 0)
+    for index, row in enumerate(csv.reader(stream)):
         if cancel_cb and index % 1000 == 0:
             cancel_cb()
         if any(cell.strip() for cell in row):
             rows.append(row)
+        if progress_cb and index % 1000 == 0:
+            progress_cb(stream.tell(), len(text), len(rows))
     if not rows:
         raise ValueError("CSV contains no data rows.")
     width = max(len(row) for row in rows)
-    return [row + [""] * (width - len(row)) for row in rows], width
+    rows = [row + [""] * (width - len(row)) for row in rows]
+    if progress_cb:
+        progress_cb(len(text), len(text), len(rows))
+    return rows, width
 
 
 def _csv_preview(table_name, rows, width):
@@ -193,7 +201,7 @@ def _test_connection(host, port, database, username, password):
 
 @app.route("/upload", methods=["POST"])
 def upload():
-    """Upload one headerless CSV for either workflow and return its preview."""
+    """Upload a CSV; optionally read its preview in a job with live progress."""
     purpose = request.form.get("purpose", "import")
     if purpose not in WORKFLOWS:
         return jsonify({"error": "Unknown CSV workflow."}), 400
@@ -208,6 +216,8 @@ def upload():
     tmp = Path(UPLOAD_DIR.name) / f"{uuid.uuid4().hex}.csv"
     try:
         file.save(tmp)
+        if request.form.get("background") == "1":
+            return _start_csv_preview(tmp, table_name, file.filename, purpose)
         rows, width = read_csv_rows(tmp)
     except Exception as e:
         tmp.unlink(missing_ok=True)
@@ -221,6 +231,58 @@ def upload():
     session["uploads"] = uploads
     return jsonify({"kind": "csv", "table": table_name,
                     "preview": _csv_preview(table_name, rows, width)})
+
+
+def _start_csv_preview(tmp, table_name, filename, purpose):
+    _cleanup_import_jobs()
+    job_id = uuid.uuid4().hex
+    ready_path = Path(UPLOAD_DIR.name) / f"ready-{job_id}.csv"
+    job = _new_import_job(job_id, [table_name], "preview")
+    job["owner"] = session.setdefault("import_owner", uuid.uuid4().hex)
+    job["file_size"] = tmp.stat().st_size
+    with IMPORT_JOBS_LOCK:
+        IMPORT_JOBS[job_id] = job
+        snapshot = _job_snapshot(job)
+    worker = threading.Thread(target=_run_csv_preview,
+                              args=(job_id, tmp, ready_path, table_name), daemon=True)
+    try:
+        worker.start()
+    except Exception:
+        tmp.unlink(missing_ok=True)
+        _fail_import_job(job_id, "Could not start CSV reading. Please try again.")
+        return jsonify({"error": "Could not start CSV reading. Please try again."}), 500
+    uploads = dict(session.get("uploads", {}))
+    previous = uploads.get(purpose)
+    if previous:
+        Path(previous["path"]).unlink(missing_ok=True)
+    # This path becomes available only after the whole CSV is validated.
+    uploads[purpose] = {"path": str(ready_path), "table": table_name, "filename": filename}
+    session["uploads"] = uploads
+    return jsonify(snapshot), 202
+
+
+def _run_csv_preview(job_id, tmp, ready_path, table_name):
+    def report(done, total, records):
+        with IMPORT_JOBS_LOCK:
+            job = IMPORT_JOBS.get(job_id)
+            if job:
+                job["results"][0]["progress"] = {"done": done, "total": total, "records": records}
+                job["updated_at"] = time.time()
+
+    try:
+        _set_job_state(job_id, "running")
+        _mark_job_table(job_id, table_name, "running", "Reading CSV")
+        rows, width = read_csv_rows(tmp, progress_cb=report)
+        with IMPORT_JOBS_LOCK:
+            IMPORT_JOBS[job_id]["preview"] = _csv_preview(table_name, rows, width)
+        tmp.replace(ready_path)
+        _mark_job_table(job_id, table_name, "ok", "CSV ready")
+        _finish_import_job(job_id)
+    except Exception as e:
+        ready_path.unlink(missing_ok=True)
+        _fail_import_job(job_id, f"Cannot open CSV: {e}")
+    finally:
+        tmp.unlink(missing_ok=True)
 
 
 @app.route("/scan", methods=["POST"])
@@ -403,6 +465,10 @@ def _job_snapshot(job):
         "results": [dict(result) for result in job["results"]],
         "error": job.get("error"),
     }
+    if job["operation"] == "preview":
+        snapshot["file_size"] = job["file_size"]
+        if job["state"] == "done":
+            snapshot["preview"] = job["preview"]
     if job["state"] == "done" and job.get("sql_path"):
         snapshot["sql_download_url"] = f"/sql/{job['id']}"
         snapshot["sql_filename"] = job["sql_filename"]

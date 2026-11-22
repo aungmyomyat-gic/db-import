@@ -271,6 +271,98 @@ class CsvSqlExportTests(unittest.TestCase):
         with client.session_transaction() as browser_session:
             self.assertNotIn("uploads", browser_session)
 
+    def test_csv_read_progress_preserves_encodings_multiline_fields_and_padding(self):
+        rows = [["0001", "日本語\nsecond line", "3"], ["0002", "短い行"]] * 1100
+        for encoding in ("utf-8-sig", "cp932"):
+            with self.subTest(encoding=encoding):
+                self.write_csv(rows, encoding)
+                updates = []
+                actual, width = importer.read_csv_rows(
+                    self.csv_path, progress_cb=lambda *update: updates.append(update))
+                self.assertEqual(width, 3)
+                self.assertEqual(actual, [row + [""] * (3 - len(row)) for row in rows])
+                self.assertEqual(updates[0][0], 0)
+                self.assertEqual(updates[-1][0], updates[-1][1])
+                self.assertEqual(updates[-1][2], len(rows))
+                self.assertEqual([u[0] for u in updates], sorted(u[0] for u in updates))
+                self.assertTrue(any(0 < done < total for done, total, _ in updates))
+
+    def test_background_csv_preview_reports_progress_and_blocks_use_until_ready(self):
+        client = importer.app.test_client()
+        stranger = importer.app.test_client()
+        started = threading.Event()
+        release = threading.Event()
+        finished = threading.Event()
+        original_read = importer.read_csv_rows
+
+        def slow_read(path, cancel_cb=None, progress_cb=None):
+            progress_cb(4, 10, 1)
+            started.set()
+            if not release.wait(3):
+                raise RuntimeError("Test did not release preview worker")
+            return original_read(path, cancel_cb=cancel_cb, progress_cb=progress_cb)
+
+        original_worker = importer._run_csv_preview
+
+        def worker(*args):
+            try:
+                original_worker(*args)
+            finally:
+                finished.set()
+
+        raw = b"FIRST,1\nSECOND,2\n"
+        with patch.object(importer, "read_csv_rows", side_effect=slow_read), \
+             patch.object(importer, "_run_csv_preview", side_effect=worker), \
+             patch.object(importer, "load_config", return_value=CONFIG):
+            try:
+                response = client.post("/upload", data={
+                    "file": (io.BytesIO(raw), "MDNNOP.csv"), "purpose": "generate", "background": "1"})
+                self.assertEqual(response.status_code, 202)
+                self.assertTrue(started.wait(3))
+                status_url = response.json["status_url"]
+                status = client.get(status_url).json
+                self.assertEqual(status["state"], "running")
+                self.assertEqual(status["file_size"], len(raw))
+                self.assertEqual(status["results"][0]["progress"], {"done": 4, "total": 10, "records": 1})
+                self.assertNotIn("preview", status)
+                self.assertNotIn("owner", status)
+                self.assertNotIn("sql_download_url", status)
+                self.assertEqual(stranger.get(status_url).status_code, 404)
+                self.assertEqual(client.post("/scan", json={"purpose": "generate"}).status_code, 400)
+                self.assertEqual(client.post("/generate-sql", json={}).status_code, 400)
+                self.assertEqual(client.post("/import/cancel/" + status["job_id"]).status_code, 409)
+            finally:
+                release.set()
+                self.assertTrue(finished.wait(3))
+        status = client.get(status_url).json
+        self.assertEqual(status["state"], "done")
+        self.assertEqual(status["preview"]["records"], 2)
+        self.assertEqual(status["preview"]["columns"], 2)
+        with client.session_transaction() as browser_session:
+            path = Path(browser_session["uploads"]["generate"]["path"])
+        self.addCleanup(path.unlink, missing_ok=True)
+        self.assertEqual(path.read_bytes(), raw)
+
+    def test_background_csv_preview_failure_discards_input_and_allows_retry(self):
+        client = importer.app.test_client()
+        for content in (b"\n,\n", b"\x81"):
+            with self.subTest(content=content):
+                response = client.post("/upload", data={
+                    "file": (io.BytesIO(content), "MDNNOP.csv"), "background": "1"})
+                snapshot = self.await_job(client, response)
+                self.assertEqual(snapshot["state"], "failed")
+                self.assertIn("Cannot open CSV", snapshot["error"])
+                self.assertNotIn("preview", snapshot)
+                with client.session_transaction() as browser_session:
+                    path = Path(browser_session["uploads"]["import"]["path"])
+                self.assertFalse(path.exists())
+        response = client.post("/upload", data={
+            "file": (io.BytesIO(b"VALID,1\n"), "MDNNOP.csv"), "background": "1"})
+        self.assertEqual(self.await_job(client, response)["state"], "done")
+        with client.session_transaction() as browser_session:
+            path = Path(browser_session["uploads"]["import"]["path"])
+        self.addCleanup(path.unlink, missing_ok=True)
+
     def test_sql_literals_keep_quotes_unicode_numeric_precision_and_binary(self):
         self.assertEqual(importer._sql_literal("O'Brien 日本語"), "N'O''Brien 日本語'")
         self.assertEqual(importer._sql_literal(Decimal("12345678901234567890.1234")), "12345678901234567890.1234")
