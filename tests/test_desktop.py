@@ -46,7 +46,9 @@ class DesktopTests(unittest.TestCase):
     def setUp(self):
         temporary = tempfile.TemporaryDirectory()
         self.addCleanup(temporary.cleanup)
-        self.directory = Path(temporary.name)
+        # Windows temp paths may use an 8.3 alias such as RUNNER~1. Match the
+        # launcher's resolved settings path before constructing expectations.
+        self.directory = Path(temporary.name).resolve()
         self.user_config = self.directory / "profile with spaces" / "DBImport" / "db_config.json"
         self.addCleanup(patch.stopall)
         patch.dict(os.environ, {"DB_CONFIG_PATH": str(self.user_config)}, clear=False).start()
