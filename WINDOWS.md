@@ -28,7 +28,8 @@ Connection settings, including the password, are stored in:
 ```
 
 Replacing or moving the executable keeps those settings. Each recipient enters
-their own connection; the executable contains no saved database credentials.
+their own connection; all connection fields start blank, and the executable
+contains no saved database credentials.
 CSV uploads and SQL downloads are temporary and expire when the app closes.
 
 The app listens only on `127.0.0.1`. It selects an available local port each time,

@@ -171,12 +171,12 @@
     <p class="subtitle">Save a SQL Server connection for CSV imports and SQL generation.</p>
     <form class="card" id="connection-form">
       <div class="row">
-        <div><label for="db-host">Host</label><input id="db-host" name="host" value="db" required autocomplete="off"></div>
-        <div><label for="db-port">Port</label><input id="db-port" name="port" value="1433" required inputmode="numeric"></div>
+        <div><label for="db-host">Host</label><input id="db-host" name="host" required autocomplete="off"></div>
+        <div><label for="db-port">Port</label><input id="db-port" name="port" required inputmode="numeric"></div>
       </div>
       <div class="row">
         <div><label for="db-name">Database</label><input id="db-name" name="database" required autocomplete="off"></div>
-        <div><label for="db-schema">Default schema</label><input id="db-schema" name="schema" value="lvapdbf" required></div>
+        <div><label for="db-schema">Default schema</label><input id="db-schema" name="schema" required></div>
       </div>
       <div class="row">
         <div><label for="db-user">Username</label><input id="db-user" name="username" required autocomplete="username"></div>
@@ -269,8 +269,7 @@ function updateConnection(config) {
     ? `Connected: ${config.host}:${config.port} / ${config.database} · ${config.username}`
     : 'Set up a database connection to import CSV or generate SQL.'
   for (const [key, id] of Object.entries(fields)) {
-    $(id).value = config ? (config[key] || (key === 'schema' ? 'lvapdbf' : ''))
-      : ({host: 'db', port: '1433', schema: 'lvapdbf'}[key] || '')
+    $(id).value = config ? (config[key] ?? '') : ''
   }
   $('connection-delete').classList.toggle('hidden', !configured)
   $('connection-cancel').classList.toggle('hidden', !configured)

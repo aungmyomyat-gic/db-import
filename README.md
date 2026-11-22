@@ -9,7 +9,8 @@ and its build tools.
 Double-click **db-import.exe** to open the interface in your browser. The receiving
 PC needs a compatible 64-bit SQL Server ODBC Driver 18 or 17. Python is bundled;
 Git and Docker are unnecessary for the executable. Saved connection settings use
-`%LOCALAPPDATA%\DBImport\db_config.json`.
+`%LOCALAPPDATA%\DBImport\db_config.json`. On first launch, all connection fields
+are blank; enter your own details and click **Test & Save connection**.
 
 Build on Windows by running **build_windows.bat**. It runs the tests, packages a
 single executable, and smoke-tests it. The output is **dist\db-import.exe**.

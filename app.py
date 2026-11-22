@@ -33,7 +33,8 @@ _INVISIBLE_RE = re.compile(r"[​‌‍﻿ ]")
 def load_config() -> dict:
     if CONFIG_PATH.exists():
         try:
-            return json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+            cfg = json.loads(CONFIG_PATH.read_text(encoding="utf-8"))
+            return cfg if isinstance(cfg, dict) and any(cfg.values()) else {}
         except Exception:
             return {}
     return {}
@@ -147,10 +148,10 @@ def set_config():
     database = data.get("database", "").strip()
     username = data.get("username", "").strip()
     password = data.get("password", "")
-    schema   = data.get("schema", "").strip() or "lvapdbf"
+    schema   = data.get("schema", "").strip()
 
-    if not all([host, port, database, username]):
-        return jsonify({"error": "Host, port, database, and username are required."}), 400
+    if not all([host, port, database, username, schema]):
+        return jsonify({"error": "Host, port, database, username, and schema are required."}), 400
 
     # Test the connection before saving so we never persist bad credentials.
     err = _test_connection(host, port, database, username, password)
@@ -332,7 +333,7 @@ def get_schemas():
         conn.close()
     except pyodbc.Error as e:
         return jsonify({"error": f"Could not list schemas: {e}"}), 400
-    return jsonify({"schemas": schemas, "default": cfg.get("schema") or "lvapdbf"})
+    return jsonify({"schemas": schemas, "default": cfg.get("schema") or ""})
 
 
 @app.route("/import", methods=["POST"])
@@ -357,7 +358,9 @@ def _start_csv_job(operation):
     selected = payload.get("tables", [uploaded["table"]])
     if selected != [uploaded["table"]]:
         return jsonify({"error": "Select the table from the uploaded CSV."}), 400
-    schema = str(payload.get("schema", "")).strip() or cfg.get("schema") or "lvapdbf"
+    schema = str(payload.get("schema", "")).strip() or cfg.get("schema")
+    if not schema:
+        return jsonify({"error": "Select a target schema."}), 400
     _, err = _build_conn_str(
         cfg["host"], cfg["port"], cfg["database"], cfg["username"], cfg["password"]
     )
@@ -762,7 +765,7 @@ SQL_NUMERIC_TYPES = {
 
 
 def _export_identifier(value):
-    # Keep ordinary names readable, e.g. lvapdbf.MSHBRP. Delimit special names
+    # Keep ordinary names readable, e.g. dbo.MSHBRP. Delimit special names
     # and SQL keywords so the generated script still works for those tables.
     if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", value) and value.upper() not in SQL_RESERVED_WORDS:
         return value
@@ -947,7 +950,7 @@ def _prepare_csv(cursor, table_name, rows, schema, cancel_cb=None):
     return {"rows": converted, "columns": db_cols, "plan": plan, "message_suffix": suffix}
 
 
-def _import_one(conn, table_name, rows, preferred_schema="lvapdbf", progress_cb=None,
+def _import_one(conn, table_name, rows, preferred_schema, progress_cb=None,
                 sql_export_path=None, cancel_cb=None, before_commit_cb=None):
     """Replace one table's rows and write the SQL that reproduces the CSV values."""
     cursor = conn.cursor()
