@@ -42,7 +42,7 @@ and prints the URL if the browser does not open automatically. Advanced options:
 
 `--self-test` checks the ODBC runtime and bundled interface without connecting to
 a database. To change the settings location, set `DB_CONFIG_PATH` before starting.
-A development installation started with `start.sh` continues using `data/db_config.json`.
+Starting from source with `python desktop.py` uses the same user settings location.
 
 ## Build on a Windows PC
 

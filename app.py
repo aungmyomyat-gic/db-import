@@ -18,7 +18,7 @@ import pyodbc
 
 app = Flask(__name__, template_folder=str(Path(__file__).resolve().parent / "templates"))
 app.secret_key = os.urandom(24)
-CONFIG_PATH = Path(os.environ.get("DB_CONFIG_PATH", "/app/data/db_config.json"))
+CONFIG_PATH = Path(os.environ.get("DB_CONFIG_PATH", Path(__file__).resolve().parent / "data" / "db_config.json"))
 IMPORT_BATCH_SIZE = int(os.environ.get("IMPORT_BATCH_SIZE", "5000"))
 IMPORT_JOB_TTL_SECONDS = 3600
 IMPORT_JOBS = {}

@@ -1,9 +1,7 @@
 data/
-db-connect/
 __pycache__/
 *.pyc
 .venv/
 .venv-build/
-.windows-build/
 build/
 dist/

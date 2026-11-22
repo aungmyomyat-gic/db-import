@@ -1,8 +1,8 @@
 # DB Import — CSV & SQL
 
 This branch contains two tools: **CSV Import** and **SQL Generate**, with shared
-SQL Server connection settings. Run the Windows executable, launch from source,
-or use Docker.
+SQL Server connection settings. This branch contains the Windows application
+and its build tools.
 
 ## Windows executable
 
@@ -67,53 +67,20 @@ file; it reaches 100% when validation finishes and the CSV is ready to use.
   or when the app restarts. Timing covers server processing, including the
   connection, CSV conversion, import where applicable, and SQL generation.
 
-## Run locally
+## Run from source
 
-Install Python 3.10 or newer and Microsoft ODBC Driver 18 or 17 for SQL Server.
-On Windows, use Git Bash. Linux/macOS also need the ODBC driver manager and
-Python `venv` support.
+With Python 3.10 or newer and Microsoft ODBC Driver 18 or 17 installed:
 
-From this project folder, run:
-
-```bash
-bash start.sh
+```powershell
+python -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+.\.venv\Scripts\python.exe desktop.py
 ```
 
-The launcher creates `.venv`, installs dependencies on the first run, checks the
-ODBC driver, and opens http://127.0.0.1:5000. Keep the terminal open; press
-**Ctrl+C** to stop. To choose another port:
-
-```bash
-DB_IMPORT_PORT=5055 bash start.sh
-```
-
-Connection settings, including the password, are saved in `data/db_config.json`.
-Use the actual SQL Server hostname/IP, or `localhost` for a local SQL Server.
-
-## Run in Docker
-
-With Docker installed, run from this branch:
-
-```bash
-docker compose up -d --build
-```
-
-Open http://localhost:5000. The supplied compose file uses the
-`icl-lv-core-system_sazaby-network` network; start the corresponding database
-stack first, or adapt the network for your SQL Server. For a database running
-on the Docker host, use `host.docker.internal` where available.
-
-The source and `data` folder are mounted into the container. Rebuild when
-`requirements.txt` or `Dockerfile` changes. Stop with `docker compose down`.
-
-## Updating this branch
-
-Run `./update.sh` (Linux/macOS/Git Bash) or `update.bat` (Windows) after this
-branch is available on the remote. They pull the **current branch** and rebuild
-the container, keeping saved connection settings. This branch has no in-app
-updater or release-merging script.
-
-See [SHARE.md](SHARE.md) for sharing this CSV and SQL version.
+The launcher opens the interface on an available local port and saves connection
+settings under `%LOCALAPPDATA%\DBImport`. Keep the console open while using the
+app. Close it or press **Ctrl+C** to stop. See [WINDOWS.md](WINDOWS.md) for
+executable builds and sharing instructions.
 
 ## Development
 
@@ -131,8 +98,6 @@ isolation, failure handling, download access and expiry, and removed routes.
 | --- | --- |
 | `app.py` | Flask backend, CSV conversion, background jobs, SQL exports |
 | `templates/index.html` | CSV Import, SQL Generate, and Connection UI |
-| `start.sh` | Local setup and launcher |
 | `desktop.py` | Executable launcher and user-profile settings |
 | `DBImport.spec` / `build_windows.ps1` | Single-file Windows build and verification |
 | `.github/workflows/windows-exe.yml` | Windows CI build and downloadable artifact |
-| `update.sh` / `update.bat` | Update the current branch and restart Docker |
