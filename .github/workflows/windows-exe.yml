@@ -55,16 +55,16 @@ jobs:
             $result = Start-Process msiexec.exe -Wait -PassThru -ArgumentList @('/i', "`"$installer`"", '/quiet', '/norestart', 'IACCEPTMSODBCSQLLICENSETERMS=YES')
             if ($result.ExitCode -notin @(0, 3010)) { throw "ODBC installation failed: $($result.ExitCode)" }
           }
-      - name: Test, build, and smoke-test DBImport.exe
+      - name: Test, build, and smoke-test db-import.exe
         shell: pwsh
         run: ./build_windows.ps1
       - name: Upload Windows application
         uses: actions/upload-artifact@v7
         with:
-          name: DBImport-Windows-x64
+          name: db-import-Windows-x64
           path: |
-            dist/DBImport.exe
-            dist/DBImport.exe.sha256
+            dist/db-import.exe
+            dist/db-import.exe.sha256
             dist/WINDOWS.md
           if-no-files-found: error
           retention-days: 14

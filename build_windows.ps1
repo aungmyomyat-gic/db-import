@@ -11,7 +11,7 @@ function Invoke-Checked {
 }
 
 if ($env:OS -ne 'Windows_NT') {
-    throw 'Build DBImport.exe on Windows with 64-bit Python 3.10 or newer (3.12 recommended).'
+    throw 'Build db-import.exe on Windows with 64-bit Python 3.10 or newer (3.12 recommended).'
 }
 
 $buildPython = Join-Path $PSScriptRoot '.venv-build\Scripts\python.exe'
@@ -32,9 +32,9 @@ Invoke-Checked -FilePath $buildPython -ArgumentList @('-c', $runtimeCheck)
 Invoke-Checked -FilePath $buildPython -ArgumentList @('-m', 'pip', 'install', '--disable-pip-version-check', '-r', 'requirements-build.txt')
 Invoke-Checked -FilePath $buildPython -ArgumentList @('-m', 'unittest', 'discover', '-s', 'tests', '-v')
 Invoke-Checked -FilePath $buildPython -ArgumentList @('-m', 'PyInstaller', '--clean', '--noconfirm', 'DBImport.spec')
-Invoke-Checked -FilePath $buildPython -ArgumentList @('tools\smoke_executable.py', 'dist\DBImport.exe')
+Invoke-Checked -FilePath $buildPython -ArgumentList @('tools\smoke_executable.py', 'dist\db-import.exe')
 
-$checksum = Get-FileHash 'dist\DBImport.exe' -Algorithm SHA256
-"$($checksum.Hash.ToLower())  DBImport.exe" | Set-Content -Encoding ascii 'dist\DBImport.exe.sha256'
+$checksum = Get-FileHash 'dist\db-import.exe' -Algorithm SHA256
+"$($checksum.Hash.ToLower())  db-import.exe" | Set-Content -Encoding ascii 'dist\db-import.exe.sha256'
 Copy-Item 'WINDOWS.md' 'dist\WINDOWS.md'
-Write-Host "`nReady to share: $PSScriptRoot\dist\DBImport.exe"
+Write-Host "`nReady to share: $PSScriptRoot\dist\db-import.exe"

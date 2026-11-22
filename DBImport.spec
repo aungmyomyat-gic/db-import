@@ -22,7 +22,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name="DBImport",
+    name="db-import",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

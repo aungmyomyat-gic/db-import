@@ -1,4 +1,4 @@
-"""Local desktop entry point, also bundled as DBImport.exe on Windows."""
+"""Local desktop entry point, also bundled as db-import.exe on Windows."""
 
 import argparse
 import ctypes

@@ -6,13 +6,13 @@ and its build tools.
 
 ## Windows executable
 
-Double-click **DBImport.exe** to open the interface in your browser. The receiving
+Double-click **db-import.exe** to open the interface in your browser. The receiving
 PC needs a compatible 64-bit SQL Server ODBC Driver 18 or 17. Python is bundled;
 Git and Docker are unnecessary for the executable. Saved connection settings use
 `%LOCALAPPDATA%\DBImport\db_config.json`.
 
 Build on Windows by running **build_windows.bat**. It runs the tests, packages a
-single executable, and smoke-tests it. The output is **dist\DBImport.exe**.
+single executable, and smoke-tests it. The output is **dist\db-import.exe**.
 The `feat/windows-exe` branch also includes a Windows GitHub Actions build.
 See [WINDOWS.md](WINDOWS.md) for build, download, and sharing instructions.
 

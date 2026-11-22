@@ -2,8 +2,8 @@
 
 ## Run the application
 
-1. Extract the downloaded `DBImport-Windows-x64` ZIP to a folder.
-2. Double-click **DBImport.exe**. It opens the app in your default browser.
+1. Extract the downloaded `db-import-Windows-x64` ZIP to a folder.
+2. Double-click **db-import.exe**. It opens the app in your default browser.
 3. Keep the console window open while using the app. Close it or press **Ctrl+C**
    when finished. Closing the browser tab leaves the application running.
 4. Set up **Connection**, then use **CSV Import** or **SQL Generate**. CSV Import
@@ -13,7 +13,7 @@ The executable includes Python and its packages. The receiving PC does not need
 Python, Git, Docker, or this source repository. Use 64-bit Windows 10/11.
 An existing compatible **64-bit Microsoft ODBC Driver 18 or 17 for SQL Server**
 is reused; Driver 18 is preferred. The driver must be installed on the PC running
-DBImport.exe, even when the database server is on another computer.
+db-import.exe, even when the database server is on another computer.
 
 If no supported driver is found, the launcher shows the installation instructions.
 Install [Microsoft ODBC Driver 18 for SQL Server (x64)](https://learn.microsoft.com/sql/connect/odbc/download-odbc-driver-for-sql-server)
@@ -35,9 +35,9 @@ The app listens only on `127.0.0.1`. It selects an available local port each tim
 and prints the URL if the browser does not open automatically. Advanced options:
 
 ```powershell
-.\DBImport.exe --port 5000
-.\DBImport.exe --no-browser
-.\DBImport.exe --self-test
+.\db-import.exe --port 5000
+.\db-import.exe --no-browser
+.\db-import.exe --self-test
 ```
 
 `--self-test` checks the ODBC runtime and bundled interface without connecting to
@@ -62,8 +62,8 @@ from a separate folder with Unicode characters in its path. No database is used
 by these checks. The output is:
 
 ```text
-dist\DBImport.exe
-dist\DBImport.exe.sha256
+dist\db-import.exe
+dist\db-import.exe.sha256
 dist\WINDOWS.md
 ```
 
@@ -83,7 +83,7 @@ Windows PC or GitHub Actions runner. The build stops when verification fails.
 
 Push the `feat/windows-exe` branch to the repository. Its **Build Windows
 executable** workflow runs on Windows, tests the app, builds the executable,
-and uploads the **DBImport-Windows-x64** artifact. Open the completed run in
+and uploads the **db-import-Windows-x64** artifact. Open the completed run in
 **Actions** and download that artifact. Artifacts are kept for 14 days.
 
 After the workflow exists on the default branch, it can also be started manually
