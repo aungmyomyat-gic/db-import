@@ -1,6 +1,6 @@
 # DB Import for Windows
 
-## Run the application
+## Run the application 
 
 1. Extract the downloaded `db-import-Windows-x64` ZIP to a folder.
 2. Double-click **db-import.exe**. It opens the app in your default browser.
