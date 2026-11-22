@@ -1,8 +1,20 @@
 # DB Import — CSV & SQL
 
 This branch contains two tools: **CSV Import** and **SQL Generate**, with shared
-SQL Server connection settings. It runs locally or in Docker at
-http://localhost:5000.
+SQL Server connection settings. Run the Windows executable, launch from source,
+or use Docker.
+
+## Windows executable
+
+Double-click **DBImport.exe** to open the interface in your browser. The receiving
+PC needs a compatible 64-bit SQL Server ODBC Driver 18 or 17. Python is bundled;
+Git and Docker are unnecessary for the executable. Saved connection settings use
+`%LOCALAPPDATA%\DBImport\db_config.json`.
+
+Build on Windows by running **build_windows.bat**. It runs the tests, packages a
+single executable, and smoke-tests it. The output is **dist\DBImport.exe**.
+The `feat/windows-exe` branch also includes a Windows GitHub Actions build.
+See [WINDOWS.md](WINDOWS.md) for build, download, and sharing instructions.
 
 ## CSV Import
 
@@ -57,7 +69,7 @@ file; it reaches 100% when validation finishes and the CSV is ready to use.
 
 ## Run locally
 
-Install Python 3.10 or newer and Microsoft ODBC Driver 18 for SQL Server.
+Install Python 3.10 or newer and Microsoft ODBC Driver 18 or 17 for SQL Server.
 On Windows, use Git Bash. Linux/macOS also need the ODBC driver manager and
 Python `venv` support.
 
@@ -120,4 +132,7 @@ isolation, failure handling, download access and expiry, and removed routes.
 | `app.py` | Flask backend, CSV conversion, background jobs, SQL exports |
 | `templates/index.html` | CSV Import, SQL Generate, and Connection UI |
 | `start.sh` | Local setup and launcher |
+| `desktop.py` | Executable launcher and user-profile settings |
+| `DBImport.spec` / `build_windows.ps1` | Single-file Windows build and verification |
+| `.github/workflows/windows-exe.yml` | Windows CI build and downloadable artifact |
 | `update.sh` / `update.bat` | Update the current branch and restart Docker |

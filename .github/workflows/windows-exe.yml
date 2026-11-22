@@ -1,0 +1,70 @@
+name: Build Windows executable
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [feat/windows-exe]
+    paths:
+      - '*.py'
+      - '*.spec'
+      - 'requirements*.txt'
+      - 'build_windows.*'
+      - 'templates/**'
+      - 'tests/**'
+      - 'tools/**'
+      - 'WINDOWS.md'
+      - '.github/workflows/windows-exe.yml'
+  pull_request:
+    paths:
+      - '*.py'
+      - '*.spec'
+      - 'requirements*.txt'
+      - 'build_windows.*'
+      - 'templates/**'
+      - 'tests/**'
+      - 'tools/**'
+      - 'WINDOWS.md'
+      - '.github/workflows/windows-exe.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          architecture: x64
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-build.txt
+      - name: Ensure a supported SQL Server ODBC driver is installed
+        shell: pwsh
+        run: |
+          $driver = Get-OdbcDriver -Platform '64-bit' | Where-Object { $_.Name -in @('ODBC Driver 18 for SQL Server', 'ODBC Driver 17 for SQL Server') }
+          if (-not $driver) {
+            $installer = Join-Path $env:RUNNER_TEMP 'msodbcsql18.msi'
+            Invoke-WebRequest 'https://go.microsoft.com/fwlink/?linkid=2378279&clcid=0x409' -OutFile $installer
+            $result = Start-Process msiexec.exe -Wait -PassThru -ArgumentList @('/i', "`"$installer`"", '/quiet', '/norestart', 'IACCEPTMSODBCSQLLICENSETERMS=YES')
+            if ($result.ExitCode -notin @(0, 3010)) { throw "ODBC installation failed: $($result.ExitCode)" }
+          }
+      - name: Test, build, and smoke-test DBImport.exe
+        shell: pwsh
+        run: ./build_windows.ps1
+      - name: Upload Windows application
+        uses: actions/upload-artifact@v7
+        with:
+          name: DBImport-Windows-x64
+          path: |
+            dist/DBImport.exe
+            dist/DBImport.exe.sha256
+            dist/WINDOWS.md
+          if-no-files-found: error
+          retention-days: 14

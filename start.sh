@@ -41,11 +41,12 @@ fi
 import sys
 try:
     import pyodbc
-    if not any('SQL Server' in driver for driver in pyodbc.drivers()):
-        raise RuntimeError('No SQL Server ODBC driver is installed.')
+    from app import select_sql_server_driver
+    if not select_sql_server_driver(pyodbc.drivers()):
+        raise RuntimeError('No supported SQL Server ODBC driver is installed (18 or 17).')
 except (ImportError, RuntimeError) as error:
     print(f'ODBC setup required: {error}', file=sys.stderr)
-    print('Install Microsoft ODBC Driver 18 for SQL Server, then run bash start.sh again.', file=sys.stderr)
+    print('Install Microsoft ODBC Driver 18 or 17 for SQL Server, then run bash start.sh again.', file=sys.stderr)
     print('https://learn.microsoft.com/sql/connect/odbc/download-odbc-driver-for-sql-server', file=sys.stderr)
     print('Linux also requires the unixODBC driver manager.', file=sys.stderr)
     sys.exit(1)

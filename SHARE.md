@@ -1,15 +1,21 @@
 # Sharing the CSV & SQL version
 
-Share the `feat/csv-import-sql-generator` branch to give someone the version with
-CSV Import and standalone SQL Generate. The branch must be pushed before it can
-be cloned from GitHub.
+Share **DBImport.exe** for the Windows version with CSV Import, SQL Generate,
+progress, elapsed time, and cancellation. Build it on Windows with
+`build_windows.bat`, or download **DBImport-Windows-x64** from a successful
+Windows GitHub Actions run. See [WINDOWS.md](WINDOWS.md) for the complete steps.
+
+Recipients can double-click the executable with a compatible 64-bit ODBC Driver
+18 or 17 installed. They enter their own connection settings; your saved
+credentials are excluded from the package. Share `dist/DBImport.exe`, its SHA-256
+file, and `dist/WINDOWS.md`. Replacing the executable keeps their saved settings.
 
 ## Share source
 
 With read access to the repository:
 
 ```bash
-git clone --branch feat/csv-import-sql-generator --single-branch https://github.com/aungmyomyat-gic/db-import.git
+git clone --branch feat/windows-exe --single-branch https://github.com/aungmyomyat-gic/db-import.git
 cd db-import
 ```
 

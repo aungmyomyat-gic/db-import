@@ -16,7 +16,7 @@ from pathlib import Path
 from flask import Flask, render_template, request, jsonify, session, send_file
 import pyodbc
 
-app = Flask(__name__)
+app = Flask(__name__, template_folder=str(Path(__file__).resolve().parent / "templates"))
 app.secret_key = os.urandom(24)
 CONFIG_PATH = Path(os.environ.get("DB_CONFIG_PATH", "/app/data/db_config.json"))
 IMPORT_BATCH_SIZE = int(os.environ.get("IMPORT_BATCH_SIZE", "5000"))
@@ -172,11 +172,20 @@ def delete_config():
     return jsonify({"ok": True})
 
 
+def select_sql_server_driver(drivers):
+    """Prefer Driver 18, then 17; avoid Windows' legacy 'SQL Server' driver."""
+    available = {name.casefold(): name for name in drivers}
+    for version in (18, 17):
+        name = f"ODBC Driver {version} for SQL Server"
+        if name.casefold() in available:
+            return available[name.casefold()]
+    return None
+
+
 def _build_conn_str(host, port, database, username, password):
-    drivers = [d for d in pyodbc.drivers() if "SQL Server" in d]
-    if not drivers:
-        return None, "No SQL Server ODBC driver found."
-    driver = sorted(drivers)[-1]
+    driver = select_sql_server_driver(pyodbc.drivers())
+    if not driver:
+        return None, "No supported SQL Server ODBC driver found. Install Microsoft ODBC Driver 18 or 17."
     conn_str = (
         f"DRIVER={{{driver}}};"
         f"SERVER={host},{port};"
@@ -621,6 +630,8 @@ def _cancel_import_job(job_id):
 
 def _run_import_job(job_id, cfg, tmp_path, table_name, schema, operation="import"):
     conn = None
+    failure = None
+    cancelled = False
     try:
         if operation == "import":
             _check_import_cancelled(job_id)
@@ -629,32 +640,40 @@ def _run_import_job(job_id, cfg, tmp_path, table_name, schema, operation="import
             cfg["host"], cfg["port"], cfg["database"], cfg["username"], cfg["password"]
         )
         if err:
-            _fail_import_job(job_id, err)
-            return
+            raise RuntimeError(err)
         if operation == "import":
             _check_import_cancelled(job_id)
         conn = pyodbc.connect(conn_str, timeout=10, autocommit=False)
         if operation == "import":
             _check_import_cancelled(job_id)
         _run_csv_import(job_id, conn, tmp_path, table_name, [table_name], schema, operation)
-        _finish_import_job(job_id)
     except ImportCancelled:
         try:
             if conn is not None:
                 conn.rollback()
         except Exception as e:
-            _fail_import_job(job_id, f"Could not roll back cancelled import: {e}")
+            failure = f"Could not roll back cancelled import: {e}"
         else:
-            _cancel_import_job(job_id)
+            cancelled = True
     except Exception as e:
-        _fail_import_job(job_id, f"CSV processing failed: {e}")
+        failure = f"CSV processing failed: {e}"
     finally:
-        Path(tmp_path).unlink(missing_ok=True)
         if conn is not None:
             try:
                 conn.close()
             except Exception:
                 pass
+        try:
+            Path(tmp_path).unlink(missing_ok=True)
+        except OSError:
+            app.logger.warning("Could not remove a completed job's input file.")
+        # Publish completion only after releasing the connection and input.
+        if failure:
+            _fail_import_job(job_id, failure)
+        elif cancelled:
+            _cancel_import_job(job_id)
+        else:
+            _finish_import_job(job_id)
 
 
 def _run_csv_import(job_id, conn, tmp_path, table_name, selected_names, schema, operation="import"):
