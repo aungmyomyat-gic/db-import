@@ -361,7 +361,9 @@
     display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
   }
   .side-panel #card-results > .btn-row .btn { justify-content: center; padding: 9px 10px }
-  .side-panel #card-results > .btn-row #btn-call-batch { grid-column: 1 / -1 }
+  .side-panel #card-results > .btn-row #btn-call-batch,
+  .side-panel #card-results > .btn-row #btn-download-sql { grid-column: 1 / -1 }
+  #btn-download-sql { text-decoration: none }
   .results-summary {
     margin: 14px 2px 4px; padding-top: 12px;
     border-top: 1px solid #2d3148; font-size: .8rem; color: #94a3b8;
@@ -1088,6 +1090,7 @@
       <div id="results-body"></div>
       <div id="batch-status" class="alert hidden"></div>
       <div class="btn-row">
+        <a class="btn success hidden" id="btn-download-sql" download>Download SQL</a>
         <button class="btn hidden" id="btn-call-batch"></button>
         <button class="btn secondary" id="btn-change-sheet-results">Change sheet</button>
         <button class="btn secondary" id="btn-restart">Change file</button>
@@ -2439,6 +2442,7 @@ $('btn-import').addEventListener('click', () => {
   if (!tables.length) { showErr($('err-import'), 'Select at least one table.'); return }
   hide($('err-import'))
   hide($('card-results'))
+  setupSqlDownload({})
   clearImportPolling()
   setSelectedImportStatuses(tables)
   setImportControlsDisabled(true)
@@ -2508,6 +2512,7 @@ function pollImportJob(jobId) {
         setImportControlsDisabled(false)
         if (data.error) showErr($('err-import'), data.error)
         buildResults(data.results || [])
+        setupSqlDownload(data)
         setupBatchButton(data.state === 'done')
         show($('card-results'))
       }
@@ -2557,6 +2562,17 @@ function progressRing(pct) {
 function statusPill(status) {
   const info = statusInfo(status)
   return `<span class="status-pill ${info.cls}">${info.icon ? `${info.icon} ` : ''}${info.label}</span>`
+}
+
+function setupSqlDownload(data) {
+  const btn = $('btn-download-sql')
+  hide(btn)
+  btn.removeAttribute('href')
+  btn.removeAttribute('download')
+  if (data.state !== 'done' || !data.sql_download_url) return
+  btn.href = data.sql_download_url
+  btn.download = data.sql_filename || 'import.sql'
+  show(btn)
 }
 
 function setupBatchButton(importSucceeded) {

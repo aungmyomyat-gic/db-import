@@ -14,6 +14,17 @@ the tables afterwards. It runs in Docker and opens at http://localhost:5000.
   is used as the table name (`MDNNOP.csv` or `MDNNOP (1).csv` → `MDNNOP`). Columns
   are matched to the table by position, and blank values become NULL, or the
   type's default for NOT NULL columns. UTF-8 and Shift-JIS files both work.
+  After a successful CSV import, **Download SQL** appears in Import Results.
+  The UTF-8 `.sql` file starts with `DELETE FROM schema.table;`, followed by
+  `INSERT INTO schema.table` and a `VALUES` block with one tuple per row.
+  Numeric columns use unquoted numbers; text uses `N'...'` literals, preserving
+  leading zeros, Japanese text, and escaped quotes. NULLs and required-column
+  defaults match the import. Full-width mappings omit the column list; partial
+  mappings include it so database defaults still apply to omitted columns.
+  Large exports split inserts into groups of at most 1,000 rows. Run the script
+  against an existing matching table to replace its rows. Database defaults and
+  triggers run again. Imports with row errors do not offer a SQL download.
+  Downloads expire one hour after completion, or when the app restarts.
 - **Truncate Table** — empty one or more tables in a schema.
 - **Data Editor** — browse every record in any table:
   - row numbers, and a summary of primary keys, total rows and columns
@@ -47,6 +58,38 @@ details. They are saved in `./data` and kept across updates.
 
 > If SQL Server runs on your own computer (not in Docker), use
 > `host.docker.internal` as the host.
+
+## Run locally with a shell script
+
+On a Windows customer PC, install **Git for Windows (Git Bash)**, **Python
+3.10 or newer**, and **Microsoft ODBC Driver 18 for SQL Server** once.
+The driver is available from [Microsoft](https://learn.microsoft.com/sql/connect/odbc/download-odbc-driver-for-sql-server).
+For Linux/macOS, install the platform's SQL Server driver and ODBC driver
+manager as well as Python with `venv` support.
+
+Extract or copy this project folder to the PC. Open Git Bash in the folder
+(or a terminal on Linux/macOS), then run:
+
+```bash
+bash start.sh
+```
+
+The script creates a local `.venv`, installs the Python packages on the first
+run (internet access required), checks the ODBC driver, and opens the existing
+UI at http://127.0.0.1:5000. Later runs reuse the installed packages. Keep the
+terminal open while using the app; press **Ctrl+C** to stop it.
+
+Enter the database connection under **Connection**, select a headerless CSV
+named after its table, import it, then click **Download SQL** in the results.
+Connection settings use `data/db_config.json`, including the password, just
+as in the Docker version. Use the actual database server hostname/IP, or
+`localhost` for SQL Server on that PC. To change the local app port:
+
+```bash
+DB_IMPORT_PORT=5055 bash start.sh
+```
+
+`setup.sh` continues to start the Docker version.
 
 ## Update
 
@@ -82,6 +125,14 @@ More detail on sharing, the database host and releasing is in [SHARE.md](SHARE.m
 ---
 
 ## Development (maintainer)
+
+Run the CSV import/SQL download tests with the project's dependencies installed:
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+These tests use a simulated database and do not change any SQL Server data.
 
 ```bash
 docker compose up --build

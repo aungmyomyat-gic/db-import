@@ -13,10 +13,10 @@ import urllib.error
 import urllib.request
 import uuid
 from datetime import date, datetime, time as datetime_time
-from decimal import Decimal
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
-from flask import Flask, render_template, request, jsonify, session
+from flask import Flask, render_template, request, jsonify, session, send_file
 import openpyxl
 from openpyxl.utils import get_column_letter
 import pyodbc
@@ -93,6 +93,8 @@ IMPORT_BATCH_SIZE = int(os.environ.get("IMPORT_BATCH_SIZE", "5000"))
 IMPORT_JOB_TTL_SECONDS = 3600
 IMPORT_JOBS = {}
 IMPORT_JOBS_LOCK = threading.Lock()
+# Export files live only for this process and follow the import-job expiry.
+SQL_EXPORT_DIR = tempfile.TemporaryDirectory(prefix="db-import-sql-")
 
 
 def is_one_line_marker_row(ws, row_num, start_col):
@@ -1150,6 +1152,7 @@ def do_import():
     _cleanup_import_jobs()
     job_id = uuid.uuid4().hex
     job = _new_import_job(job_id, selected_names or [])
+    job["owner"] = session.setdefault("import_owner", uuid.uuid4().hex)
     with IMPORT_JOBS_LOCK:
         IMPORT_JOBS[job_id] = job
         snapshot = _job_snapshot(job)
@@ -1169,9 +1172,24 @@ def import_status(job_id):
     _cleanup_import_jobs()
     with IMPORT_JOBS_LOCK:
         job = IMPORT_JOBS.get(job_id)
-        if not job:
+        if not job or not job.get("owner") or job["owner"] != session.get("import_owner"):
             return jsonify({"error": "Import job not found."}), 404
         return jsonify(_job_snapshot(job))
+
+
+@app.route("/import/sql/<job_id>", methods=["GET"])
+def download_import_sql(job_id):
+    _cleanup_import_jobs()
+    with IMPORT_JOBS_LOCK:
+        job = IMPORT_JOBS.get(job_id)
+        if not job or not job.get("owner") or job["owner"] != session.get("import_owner"):
+            return jsonify({"error": "Import job not found."}), 404
+        if job["state"] != "done" or not job.get("sql_path"):
+            return jsonify({"error": "SQL is available only after a successful CSV import."}), 409
+        if not Path(job["sql_path"]).is_file():
+            return jsonify({"error": "SQL download expired. Please import the CSV again."}), 404
+        return send_file(job["sql_path"], as_attachment=True, download_name=job["sql_filename"],
+                         mimetype="application/sql", conditional=False, max_age=0)
 
 
 @app.route("/truncate", methods=["POST"])
@@ -1255,7 +1273,7 @@ def _new_import_job(job_id, table_names):
 
 
 def _job_snapshot(job):
-    return {
+    snapshot = {
         "job_id": job["id"],
         "state": job["state"],
         "total": job["total"],
@@ -1263,6 +1281,10 @@ def _job_snapshot(job):
         "results": [dict(result) for result in job["results"]],
         "error": job.get("error"),
     }
+    if job["state"] == "done" and job.get("sql_path"):
+        snapshot["sql_download_url"] = f"/import/sql/{job['id']}"
+        snapshot["sql_filename"] = job["sql_filename"]
+    return snapshot
 
 
 def _cleanup_import_jobs():
@@ -1270,6 +1292,11 @@ def _cleanup_import_jobs():
     with IMPORT_JOBS_LOCK:
         for job_id, job in list(IMPORT_JOBS.items()):
             if job["state"] in {"done", "failed"} and job["updated_at"] < cutoff:
+                if job.get("sql_path"):
+                    try:
+                        Path(job["sql_path"]).unlink(missing_ok=True)
+                    except OSError:
+                        app.logger.warning("Could not remove an expired SQL export.")
                 del IMPORT_JOBS[job_id]
 
 
@@ -1453,18 +1480,145 @@ def _run_csv_import(job_id, conn, tmp_path, table_name, selected_names, schema):
             _mark_job_table(job_id, name, "skip", "Table not found in file", [])
         return
     _mark_job_table(job_id, table_name, "running", "Importing", schema=schema)
+    sql_path = Path(SQL_EXPORT_DIR.name) / f"{job_id}.sql"
     try:
         rows, _ = read_csv_rows(tmp_path)
         progress_cb = lambda done, total: _mark_job_progress(job_id, table_name, done, total)
-        result = _import_one(conn, table_name, None, rows, schema, progress_cb)
+        result = _import_one(conn, table_name, None, rows, schema, progress_cb,
+                             sql_export_path=sql_path)
     except Exception as e:
         try:
             conn.rollback()
         except Exception:
             pass
         result = {"name": table_name, "status": "failed", "message": f"Failed: {e}", "errors": []}
+    published = False
+    if result.get("status") == "ok" and sql_path.is_file():
+        with IMPORT_JOBS_LOCK:
+            job = IMPORT_JOBS.get(job_id)
+            if job:
+                job["sql_path"] = str(sql_path)
+                job["sql_filename"] = f"{table_name}_{datetime.now():%Y%m%d_%H%M%S}.sql"
+                published = True
+    if not published:
+        sql_path.unlink(missing_ok=True)
     _mark_job_table(job_id, table_name, result.get("status", "failed"), result.get("message", ""),
                     result.get("errors", []), schema=schema)
+
+
+def _sql_identifier(value):
+    return "[" + str(value).replace("]", "]]") + "]"
+
+
+SQL_RESERVED_WORDS = frozenset("""
+ADD ALL ALTER AND ANY AS ASC AUTHORIZATION BACKUP BEGIN BETWEEN BREAK BROWSE BULK BY
+CASCADE CASE CHECK CHECKPOINT CLOSE CLUSTERED COALESCE COLLATE COLUMN COMMIT COMPUTE
+CONSTRAINT CONTAINS CONTAINSTABLE CONTINUE CONVERT CREATE CROSS CURRENT CURRENT_DATE
+CURRENT_TIME CURRENT_TIMESTAMP CURRENT_USER CURSOR DATABASE DBCC DEALLOCATE DECLARE
+DEFAULT DELETE DENY DESC DISK DISTINCT DISTRIBUTED DOUBLE DROP DUMP ELSE END ERRLVL
+ESCAPE EXCEPT EXEC EXECUTE EXISTS EXIT EXTERNAL FETCH FILE FILLFACTOR FOR FOREIGN
+FREETEXT FREETEXTTABLE FROM FULL FUNCTION GOTO GRANT GROUP HAVING HOLDLOCK IDENTITY
+IDENTITY_INSERT IDENTITYCOL IF IN INDEX INNER INSERT INTERSECT INTO IS JOIN KEY KILL
+LEFT LIKE LINENO LOAD MERGE NATIONAL NOCHECK NONCLUSTERED NOT NULL NULLIF OF OFF
+OFFSETS ON OPEN OPENDATASOURCE OPENQUERY OPENROWSET OPENXML OPTION OR ORDER OUTER
+OVER PERCENT PIVOT PLAN PRECISION PRIMARY PRINT PROC PROCEDURE PUBLIC RAISERROR READ
+READTEXT RECONFIGURE REFERENCES REPLICATION RESTORE RESTRICT RETURN REVERT REVOKE
+RIGHT ROLLBACK ROWCOUNT ROWGUIDCOL RULE SAVE SCHEMA SECURITYAUDIT SELECT
+SEMANTICKEYPHRASETABLE SEMANTICSIMILARITYDETAILSTABLE SEMANTICSIMILARITYTABLE
+SESSION_USER SET SETUSER SHUTDOWN SOME STATISTICS SYSTEM_USER TABLE TABLESAMPLE
+TEXTSIZE THEN TO TOP TRAN TRANSACTION TRIGGER TRUNCATE TRY_CONVERT TSEQUAL UNION
+UNIQUE UNPIVOT UPDATE UPDATETEXT USE USER VALUES VARYING VIEW WAITFOR WHEN WHERE
+WHILE WITH WITHIN WRITETEXT
+""".split())
+SQL_NUMERIC_TYPES = {
+    "int", "bigint", "smallint", "tinyint", "bit", "decimal", "numeric", "money",
+    "smallmoney", "float", "real",
+}
+
+
+def _export_identifier(value):
+    # Keep ordinary names readable, e.g. lvapdbf.MSHBRP. Delimit special names
+    # and SQL keywords so the generated script still works for those tables.
+    if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", value) and value.upper() not in SQL_RESERVED_WORDS:
+        return value
+    return _sql_identifier(value)
+
+
+def _sql_literal(value, dtype=None):
+    """Use the destination column type to distinguish numbers from text.
+
+    Control characters become NCHAR expressions to keep client batch separators
+    such as GO out of standalone lines in the generated script.
+    """
+    if value is None:
+        return "NULL"
+    if isinstance(value, str) and dtype in SQL_NUMERIC_TYPES:
+        text = value.strip()
+        if dtype == "bit" and text.lower() in {"true", "false"}:
+            return "1" if text.lower() == "true" else "0"
+        if re.fullmatch(r"[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?", text):
+            try:
+                number = Decimal(text)
+            except InvalidOperation:
+                number = None
+            if number is not None and dtype in {"float", "real"}:
+                # Scientific literals keep a multi-row float column from being
+                # inferred as int/decimal before it reaches the target table.
+                return format(number, "E")
+            # Keep extreme inputs as strings for SQL Server to validate, without
+            # expanding an arbitrary exponent into a very large Python string.
+            if number is not None and -38 <= number.as_tuple().exponent <= 38 and number.adjusted() <= 38:
+                return format(number, "f")
+        # Invalid numeric inputs retain the importer's existing error handling.
+    if isinstance(value, bool):
+        return "1" if value else "0"
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, Decimal):
+        if not value.is_finite():
+            raise ValueError("Cannot export a non-finite SQL number.")
+        return format(value, "f")
+    if isinstance(value, float):
+        if value != value or value in (float("inf"), float("-inf")):
+            raise ValueError("Cannot export a non-finite SQL number.")
+        return repr(value)
+    if isinstance(value, (bytes, bytearray, memoryview)):
+        return "0x" + bytes(value).hex().upper()
+    if isinstance(value, (date, datetime_time)):
+        value = value.isoformat()
+    text = str(value)
+    if re.search(r"[\x00-\x1f]", text):
+        parts = re.split(r"([\x00-\x1f])", text)
+        expressions = [f"NCHAR({ord(part)})" if len(part) == 1 and ord(part) < 32
+                       else "N'" + part.replace("'", "''") + "'" for part in parts]
+        # A max-length seed avoids truncation when concatenating long cells.
+        return "(CAST(N'' AS nvarchar(max)) + " + " + ".join(expressions) + ")"
+    return "N'" + text.replace("'", "''") + "'"
+
+
+def _write_import_sql(path, schema, table_name, plan, rows, db_cols):
+    """Write DELETE followed by multi-row INSERTs in table column order."""
+    qualified = f"{_export_identifier(schema)}.{_export_identifier(table_name)}"
+    insert_sql = f"INSERT INTO {qualified}"
+    # Full-width CSVs use the user's column-free format. A partial mapping needs
+    # a column list so omitted columns still receive their database defaults.
+    if [column.upper() for column, _ in plan] != list(db_cols):
+        columns = ", ".join(_export_identifier(column) for column, _ in plan)
+        insert_sql += f" ({columns})"
+    types = [db_cols[column.upper()]["type"] for column, _ in plan]
+    with Path(path).open("w", encoding="utf-8-sig", newline="\n") as script:
+        script.write(f"DELETE FROM {qualified};\n")
+        # SQL Server permits at most 1,000 rows in each INSERT ... VALUES.
+        for offset in range(0, len(rows), 1000):
+            batch = rows[offset:offset + 1000]
+            script.write(f"{insert_sql}\nVALUES\n")
+            for index, row in enumerate(batch):
+                values = ", ".join(_sql_literal(value, dtype) for value, dtype in
+                                   zip(_values_for_insert(row, plan, db_cols), types))
+                ending = ";\n" if index == len(batch) - 1 else ",\n"
+                script.write(f"({values}){ending}")
+            if offset + len(batch) < len(rows):
+                script.write("\n")
 
 
 def _values_for_insert(row, plan, db_cols):
@@ -1502,7 +1656,8 @@ def _insert_batch(cursor, insert_sql, batch, error_samples):
     return inserted, errors
 
 
-def _import_one(conn, table_name, headers, rows, preferred_schema="lvapdbf", progress_cb=None):
+def _import_one(conn, table_name, headers, rows, preferred_schema="lvapdbf", progress_cb=None,
+                sql_export_path=None):
     """
     Replace the table's rows. headers=None means a header-less CSV: the row
     values are matched to the table's columns by position.
@@ -1522,7 +1677,7 @@ def _import_one(conn, table_name, headers, rows, preferred_schema="lvapdbf", pro
         return {"name": table_name, "status": "skip",
                 "message": f"Not in schema '{preferred_schema}' (found in: {', '.join(schemas)})"}
     schema = preferred_schema
-    qualified = f"[{schema}].[{table_name}]"
+    qualified = f"{_sql_identifier(schema)}.{_sql_identifier(table_name)}"
 
     # Full column metadata: type + nullability + whether it has a DB default.
     cursor.execute(
@@ -1569,13 +1724,18 @@ def _import_one(conn, table_name, headers, rows, preferred_schema="lvapdbf", pro
 
     # TRUNCATE is minimally logged and skips per-row delete cost; fall back to
     # DELETE only if it's blocked (e.g. a foreign key references this table).
+    clear_sql = f"TRUNCATE TABLE {qualified}"
     try:
-        cursor.execute(f"TRUNCATE TABLE {qualified}")
+        cursor.execute(clear_sql)
     except pyodbc.Error:
         conn.rollback()
-        cursor.execute(f"DELETE FROM {qualified}")
+        clear_sql = f"DELETE FROM {qualified}"
+        cursor.execute(clear_sql)
 
-    cols_sql     = ", ".join(f"[{c}]" for c, _ in plan)
+    if sql_export_path is not None:
+        _write_import_sql(sql_export_path, schema, table_name, plan, rows, db_cols)
+
+    cols_sql     = ", ".join(_sql_identifier(c) for c, _ in plan)
     placeholders = ", ".join("?" for _ in plan)
     insert_sql   = f"INSERT INTO {qualified} ({cols_sql}) VALUES ({placeholders})"
 
