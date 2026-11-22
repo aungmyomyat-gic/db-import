@@ -13,6 +13,11 @@ http://localhost:5000.
 4. Click **Import CSV & Generate SQL**. The import replaces the existing rows
    in that table. Progress and elapsed time appear while it runs; the completed
    duration stays in the result.
+   Use **Cancel import** to stop before changes are saved. Cancellation waits
+   for the current operation to finish, then rolls back the import and keeps
+   the original table rows. The result shows **Cancelled** and its elapsed time.
+   Cancellation is unavailable during the final save. Cancelled imports do not
+   offer a SQL download.
 5. After a successful import, click **Download SQL** to save the matching script.
    Imports with row errors do not offer a SQL download.
 

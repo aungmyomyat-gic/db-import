@@ -77,7 +77,8 @@ class FakeCursor:
 
 class FakeConnection:
     def __init__(self, schema="lvapdbf", metadata=None, truncate_blocked=False,
-                 rejected_code=None, fallback=False, commit_error=False, table_exists=True):
+                 rejected_code=None, fallback=False, commit_error=False, table_exists=True,
+                 existing_rows=None):
         self.schema = schema
         self.metadata = metadata or METADATA
         self.truncate_blocked = truncate_blocked
@@ -85,7 +86,8 @@ class FakeConnection:
         self.fallback = fallback
         self.commit_error = commit_error
         self.table_exists = table_exists
-        self.pending = []
+        self.persisted = list(existing_rows or [])
+        self.pending = list(self.persisted)
         self.committed = None
         self.rollbacks = 0
         self.statements = []
@@ -99,10 +101,11 @@ class FakeConnection:
         if self.commit_error:
             raise pyodbc.Error("Commit failed")
         self.committed = list(self.pending)
+        self.persisted = list(self.pending)
 
     def rollback(self):
         self.rollbacks += 1
-        self.pending = []
+        self.pending = list(self.persisted)
 
     def close(self):
         self.closed = True
@@ -358,7 +361,7 @@ class CsvSqlExportTests(unittest.TestCase):
         while time.monotonic() < deadline:
             status = client.get(response.json["status_url"])
             self.assertEqual(status.status_code, 200)
-            if status.json["state"] in {"done", "failed"}:
+            if status.json["state"] in {"done", "failed", "cancelled"}:
                 return status.json
             time.sleep(0.01)
         self.fail("CSV job did not finish")
@@ -533,6 +536,231 @@ class CsvSqlExportTests(unittest.TestCase):
             response = client.post("/generate-sql", json={})
         self.assertEqual(response.status_code, 400)
         self.assertIn("upload", response.json["error"])
+
+
+    def owned_job(self, client, operation="import"):
+        job = importer._new_import_job(self.job_id, ["MDNNOP"], operation)
+        job["owner"] = "test-owner"
+        importer.IMPORT_JOBS[self.job_id] = job
+        with client.session_transaction() as browser_session:
+            browser_session["import_owner"] = job["owner"]
+        return job
+
+    def assert_cancelled(self, connection, job):
+        snapshot = importer._job_snapshot(job)
+        self.assertEqual(snapshot["state"], "cancelled")
+        self.assertEqual(snapshot["results"][0]["status"], "cancelled")
+        self.assertFalse(snapshot["can_cancel"])
+        self.assertNotIn("sql_download_url", snapshot)
+        self.assertNotIn("sql_path", job)
+        self.assertIsNone(connection.committed)
+        self.assertEqual(connection.persisted, [("ORIGINAL",)])
+        self.assertEqual(connection.pending, [("ORIGINAL",)])
+        self.assertFalse((Path(importer.SQL_EXPORT_DIR.name) / f"{self.job_id}.sql").exists())
+
+    def test_http_cancel_during_batch_rolls_back_original_data_and_freezes_time(self):
+        client = importer.app.test_client()
+        self.upload_csv(client, b"FIRST\nSECOND\nTHIRD\n")
+        connection = FakeConnection(existing_rows=[("ORIGINAL",)])
+        cursor = connection.cursor()
+        original_many = cursor.executemany
+        batch_started, release_batch = threading.Event(), threading.Event()
+
+        def blocked_batch(sql, rows):
+            original_many(sql, rows)
+            batch_started.set()
+            if not release_batch.wait(timeout=3):
+                raise RuntimeError("Test batch was not released")
+
+        with patch.object(importer, "load_config", return_value=CONFIG), \
+             patch.object(importer, "_build_conn_str", return_value=("mock", None)), \
+             patch.object(importer.pyodbc, "connect", return_value=connection), \
+             patch.object(importer, "IMPORT_BATCH_SIZE", 1), \
+             patch.object(cursor, "executemany", side_effect=blocked_batch):
+            response = client.post("/import", json={"schema": "lvapdbf"})
+            self.assertEqual(response.status_code, 202)
+            job_id = response.json["job_id"]
+            try:
+                self.assertTrue(batch_started.wait(timeout=3))
+                cancel_url = f"/import/cancel/{job_id}"
+                stranger = importer.app.test_client()
+                self.assertEqual(stranger.post(cancel_url).status_code, 404)
+                cancelled = client.post(cancel_url)
+                self.assertEqual(cancelled.status_code, 202)
+                self.assertEqual(cancelled.json["state"], "cancelling")
+                self.assertFalse(cancelled.json["can_cancel"])
+                self.assertNotIn("sql_download_url", cancelled.json)
+                self.assertEqual(client.post(cancel_url).status_code, 202)
+                self.assertIsNone(connection.committed)
+            finally:
+                release_batch.set()
+            snapshot = self.await_job(client, response)
+        self.assertEqual(snapshot["state"], "cancelled")
+        self.assertEqual(snapshot["results"][0]["status"], "cancelled")
+        self.assertEqual(snapshot["completed"], 1)
+        self.assertEqual(connection.rollbacks, 1)
+        self.assertEqual(connection.persisted, [("ORIGINAL",)])
+        self.assertEqual(connection.pending, [("ORIGINAL",)])
+        self.assertIsNone(connection.committed)
+        self.assertEqual(sum(sql.startswith("INSERT") for sql in connection.statements), 1)
+        self.assertNotIn("sql_download_url", snapshot)
+        self.assertEqual(client.get(f"/sql/{job_id}").status_code, 409)
+        self.assertEqual(client.get(response.json["status_url"]).json["elapsed_seconds"], snapshot["elapsed_seconds"])
+        self.assertEqual(client.post(cancel_url).json["state"], "cancelled")
+        self.assertFalse((Path(importer.UPLOAD_DIR.name) / f"job-{job_id}.csv").exists())
+        self.assertFalse((Path(importer.SQL_EXPORT_DIR.name) / f"{job_id}.sql").exists())
+        importer.IMPORT_JOBS[job_id]["updated_at"] = 0
+        self.assertEqual(client.get(response.json["status_url"]).status_code, 404)
+
+    def test_cancel_before_worker_starts_skips_database_connection(self):
+        client = importer.app.test_client()
+        self.upload_csv(client, b"FIRST\n")
+        original_worker = importer._run_import_job
+        release_worker, worker_finished = threading.Event(), threading.Event()
+
+        def delayed_worker(*args):
+            try:
+                if release_worker.wait(timeout=3):
+                    original_worker(*args)
+            finally:
+                worker_finished.set()
+
+        with patch.object(importer, "load_config", return_value=CONFIG), \
+             patch.object(importer, "_build_conn_str", return_value=("mock", None)), \
+             patch.object(importer.pyodbc, "connect") as connect, \
+             patch.object(importer, "_run_import_job", side_effect=delayed_worker):
+            response = client.post("/import", json={"schema": "lvapdbf"})
+            self.assertEqual(response.status_code, 202)
+            job_id = response.json["job_id"]
+            try:
+                cancel = client.post(f"/import/cancel/{job_id}")
+                self.assertEqual(cancel.status_code, 202)
+            finally:
+                release_worker.set()
+            self.assertTrue(worker_finished.wait(timeout=3))
+            snapshot = self.await_job(client, response)
+            connect.assert_not_called()
+        self.assertEqual(snapshot["state"], "cancelled")
+        self.assertFalse((Path(importer.UPLOAD_DIR.name) / f"job-{job_id}.csv").exists())
+
+    def test_cancel_during_metadata_stops_before_clearing_table(self):
+        client = importer.app.test_client()
+        job = self.owned_job(client)
+        connection = FakeConnection(existing_rows=[("ORIGINAL",)])
+        cursor = connection.cursor()
+        execute = cursor.execute
+
+        def cancel_after_metadata(sql, *args):
+            result = execute(sql, *args)
+            if sql.startswith("SELECT COLUMN_NAME"):
+                self.assertEqual(client.post(f"/import/cancel/{self.job_id}").status_code, 202)
+            return result
+
+        with patch.object(cursor, "execute", side_effect=cancel_after_metadata):
+            self.run_csv_with_job(connection)
+        self.assert_cancelled(connection, job)
+        self.assertTrue(all(sql.startswith("SELECT ") for sql in connection.statements))
+
+    def run_csv_with_job(self, connection):
+        self.write_csv([["FIRST"], ["SECOND"]])
+        importer._run_csv_import(self.job_id, connection, str(self.csv_path), "MDNNOP", ["MDNNOP"], "lvapdbf")
+        importer._finish_import_job(self.job_id)
+
+    def test_cancel_during_sql_export_rolls_back_cleared_table_and_discards_partial_file(self):
+        client = importer.app.test_client()
+        job = self.owned_job(client)
+        connection = FakeConnection(existing_rows=[("ORIGINAL",)])
+        write_sql = importer._write_import_sql
+
+        def cancel_during_export(path, *args, **kwargs):
+            Path(path).write_text("partial SQL")
+            self.assertEqual(client.post(f"/import/cancel/{self.job_id}").status_code, 202)
+            return write_sql(path, *args, **kwargs)
+
+        with patch.object(importer, "_write_import_sql", side_effect=cancel_during_export):
+            self.run_csv_with_job(connection)
+        self.assert_cancelled(connection, job)
+        self.assertEqual(connection.rollbacks, 1)
+        self.assertFalse(any(sql.startswith("INSERT") for sql in connection.statements))
+
+    def test_cancel_during_row_fallback_stops_remaining_rows_and_rolls_back(self):
+        client = importer.app.test_client()
+        job = self.owned_job(client)
+        connection = FakeConnection(existing_rows=[("ORIGINAL",)], fallback=True)
+        cursor = connection.cursor()
+        execute = cursor.execute
+
+        def cancel_after_first_insert(sql, *args):
+            result = execute(sql, *args)
+            if sql.startswith("INSERT"):
+                self.assertEqual(client.post(f"/import/cancel/{self.job_id}").status_code, 202)
+            return result
+
+        with patch.object(cursor, "execute", side_effect=cancel_after_first_insert):
+            self.run_csv_with_job(connection)
+        self.assert_cancelled(connection, job)
+        # One failed bulk INSERT, then the first single-row fallback INSERT.
+        self.assertEqual(sum(sql.startswith("INSERT") for sql in connection.statements), 2)
+
+    def test_cancel_immediately_before_commit_prevents_commit(self):
+        client = importer.app.test_client()
+        job = self.owned_job(client)
+        connection = FakeConnection(existing_rows=[("ORIGINAL",)])
+        begin_commit = importer._begin_import_commit
+
+        def cancel_at_commit(job_id):
+            self.assertEqual(client.post(f"/import/cancel/{job_id}").status_code, 202)
+            begin_commit(job_id)
+
+        with patch.object(importer, "_begin_import_commit", side_effect=cancel_at_commit):
+            self.run_csv_with_job(connection)
+        self.assert_cancelled(connection, job)
+        self.assertEqual(connection.rollbacks, 1)
+
+    def test_cancel_is_rejected_once_commit_begins_and_completion_is_preserved(self):
+        client = importer.app.test_client()
+        job = self.owned_job(client)
+        connection = FakeConnection(existing_rows=[("ORIGINAL",)])
+        commit = connection.commit
+
+        def cancel_during_commit():
+            snapshot = client.get(f"/jobs/{self.job_id}").json
+            self.assertEqual(snapshot["state"], "committing")
+            self.assertFalse(snapshot["can_cancel"])
+            self.assertEqual(client.post(f"/import/cancel/{self.job_id}").status_code, 409)
+            commit()
+
+        with patch.object(connection, "commit", side_effect=cancel_during_commit):
+            self.run_csv_with_job(connection)
+        self.assertEqual(job["state"], "done")
+        self.assertIsNotNone(connection.committed)
+        self.assertEqual(connection.rollbacks, 0)
+        self.assertIn("sql_download_url", importer._job_snapshot(job))
+        response = client.post(f"/import/cancel/{self.job_id}")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.json["state"], "done")
+        self.assertIn("sql_download_url", response.json)
+
+    def test_cancel_route_rejects_unknown_jobs_and_sql_generation(self):
+        client = importer.app.test_client()
+        self.assertEqual(client.post("/import/cancel/missing").status_code, 404)
+        job = self.owned_job(client, "generate")
+        self.assertFalse(importer._job_snapshot(job)["can_cancel"])
+        response = client.post(f"/import/cancel/{self.job_id}")
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(job["state"], "queued")
+
+    def test_rollback_failure_is_reported_as_failure_instead_of_cancelled(self):
+        client = importer.app.test_client()
+        job = self.owned_job(client)
+        connection = FakeConnection(existing_rows=[("ORIGINAL",)])
+        self.assertEqual(client.post(f"/import/cancel/{self.job_id}").status_code, 202)
+        with patch.object(connection, "rollback", side_effect=pyodbc.Error("Rollback failed")):
+            self.run_csv_with_job(connection)
+        self.assertEqual(job["state"], "failed")
+        self.assertIn("Could not roll back", job["results"][0]["message"])
+        self.assertNotIn("sql_download_url", importer._job_snapshot(job))
+        self.assertIsNone(connection.committed)
 
 
 if __name__ == "__main__":

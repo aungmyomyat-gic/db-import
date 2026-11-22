@@ -68,9 +68,11 @@ def csv_table_name(filename):
     return m.group(0) if m else None
 
 
-def read_csv_rows(path):
+def read_csv_rows(path, cancel_cb=None):
     """Read every non-blank row; short rows are padded so all rows have the same width."""
     raw = Path(path).read_bytes()
+    if cancel_cb:
+        cancel_cb()
     for encoding in CSV_ENCODINGS:
         try:
             text = raw.decode(encoding)
@@ -79,8 +81,12 @@ def read_csv_rows(path):
             continue
     else:
         raise ValueError("CSV is not UTF-8 or Shift-JIS text")
-    rows = [row for row in csv.reader(io.StringIO(text, newline=""))
-            if any(cell.strip() for cell in row)]
+    rows = []
+    for index, row in enumerate(csv.reader(io.StringIO(text, newline=""))):
+        if cancel_cb and index % 1000 == 0:
+            cancel_cb()
+        if any(cell.strip() for cell in row):
+            rows.append(row)
     if not rows:
         raise ValueError("CSV contains no data rows.")
     width = max(len(row) for row in rows)
@@ -326,6 +332,25 @@ def import_status(job_id):
         return jsonify(_job_snapshot(job))
 
 
+@app.route("/import/cancel/<job_id>", methods=["POST"])
+def cancel_import(job_id):
+    _cleanup_import_jobs()
+    with IMPORT_JOBS_LOCK:
+        job = IMPORT_JOBS.get(job_id)
+        if not job or not job.get("owner") or job["owner"] != session.get("import_owner"):
+            return jsonify({"error": "CSV job not found."}), 404
+        if job["operation"] != "import":
+            return jsonify({"error": "Only CSV imports can be cancelled."}), 409
+        if job["state"] == "committing":
+            return jsonify({"error": "The import is saving its changes and can no longer be cancelled."}), 409
+        if job["state"] in {"done", "failed", "cancelled"}:
+            return jsonify(_job_snapshot(job))
+        job["cancel_requested"] = True
+        job["state"] = "cancelling"
+        job["updated_at"] = time.time()
+        return jsonify(_job_snapshot(job)), 202
+
+
 @app.route("/sql/<job_id>", methods=["GET"])
 @app.route("/import/sql/<job_id>", methods=["GET"])
 def download_import_sql(job_id):
@@ -348,6 +373,7 @@ def _new_import_job(job_id, table_names, operation="import"):
         "id": job_id,
         "state": "queued",
         "operation": operation,
+        "cancel_requested": False,
         "started_at": time.perf_counter(),
         "total": len(table_names),
         "completed": 0,
@@ -368,6 +394,8 @@ def _job_snapshot(job):
         "state": job["state"],
         "operation": job["operation"],
         "status_url": f"/jobs/{job['id']}",
+        "can_cancel": job["operation"] == "import" and job["state"] in {"queued", "running"}
+                      and not job["cancel_requested"],
         "elapsed_seconds": round(max(0, job.get("finished_at", time.perf_counter())
                                      - job["started_at"]), 3),
         "total": job["total"],
@@ -385,7 +413,7 @@ def _cleanup_import_jobs():
     cutoff = time.time() - IMPORT_JOB_TTL_SECONDS
     with IMPORT_JOBS_LOCK:
         for job_id, job in list(IMPORT_JOBS.items()):
-            if job["state"] in {"done", "failed"} and job["updated_at"] < cutoff:
+            if job["state"] in {"done", "failed", "cancelled"} and job["updated_at"] < cutoff:
                 if job.get("sql_path"):
                     try:
                         Path(job["sql_path"]).unlink(missing_ok=True)
@@ -415,13 +443,13 @@ def _set_job_state(job_id, state, error=None):
         job = IMPORT_JOBS.get(job_id)
         if not job:
             return
-        job["state"] = state
+        job["state"] = "cancelling" if state == "running" and job["cancel_requested"] else state
         job["error"] = error
         job["updated_at"] = time.time()
 
 
 def _mark_job_table(job_id, table_name, status, message, errors=None, schema=None):
-    final_statuses = {"ok", "warn", "skip", "failed"}
+    final_statuses = {"ok", "warn", "skip", "failed", "cancelled"}
     with IMPORT_JOBS_LOCK:
         job = IMPORT_JOBS.get(job_id)
         if not job:
@@ -463,8 +491,9 @@ def _finish_import_job(job_id):
         job = IMPORT_JOBS.get(job_id)
         if not job:
             return
-        if job["state"] != "failed":
-            job["state"] = "failed" if any(r["status"] == "failed" for r in job["results"]) else "done"
+        if job["state"] not in {"failed", "cancelled"}:
+            statuses = {r["status"] for r in job["results"]}
+            job["state"] = "failed" if "failed" in statuses else "cancelled" if "cancelled" in statuses else "done"
         job.setdefault("finished_at", time.perf_counter())
         job["updated_at"] = time.time()
 
@@ -474,7 +503,7 @@ def _fail_import_job(job_id, message):
         job = IMPORT_JOBS.get(job_id)
         if not job:
             return
-        final_statuses = {"ok", "warn", "skip", "failed"}
+        final_statuses = {"ok", "warn", "skip", "failed", "cancelled"}
         for result in job["results"]:
             if result["status"] not in final_statuses:
                 result["status"] = "failed"
@@ -487,9 +516,48 @@ def _fail_import_job(job_id, message):
         job["updated_at"] = time.time()
 
 
+class ImportCancelled(Exception):
+    """Raised at a cancellation checkpoint before the import commits."""
+
+
+def _check_import_cancelled(job_id):
+    with IMPORT_JOBS_LOCK:
+        job = IMPORT_JOBS.get(job_id)
+        if not job or job["cancel_requested"]:
+            raise ImportCancelled()
+
+
+def _begin_import_commit(job_id):
+    # Claim the commit phase under the same lock as cancellation. Once claimed,
+    # a cancellation request cannot promise to undo changes being committed.
+    with IMPORT_JOBS_LOCK:
+        job = IMPORT_JOBS.get(job_id)
+        if not job or job["cancel_requested"]:
+            raise ImportCancelled()
+        job["state"] = "committing"
+        for result in job["results"]:
+            result["message"] = "Saving changes…"
+        job["updated_at"] = time.time()
+
+
+def _cancel_import_job(job_id):
+    with IMPORT_JOBS_LOCK:
+        job = IMPORT_JOBS.get(job_id)
+        if not job:
+            return
+        for result in job["results"]:
+            result.update(status="cancelled", message="Import cancelled. No changes were saved.", errors=[])
+        job["completed"] = len(job["results"])
+        job["state"] = "cancelled"
+        job.setdefault("finished_at", time.perf_counter())
+        job["updated_at"] = time.time()
+
+
 def _run_import_job(job_id, cfg, tmp_path, table_name, schema, operation="import"):
     conn = None
     try:
+        if operation == "import":
+            _check_import_cancelled(job_id)
         _set_job_state(job_id, "running")
         conn_str, err = _build_conn_str(
             cfg["host"], cfg["port"], cfg["database"], cfg["username"], cfg["password"]
@@ -497,9 +565,21 @@ def _run_import_job(job_id, cfg, tmp_path, table_name, schema, operation="import
         if err:
             _fail_import_job(job_id, err)
             return
-        conn = pyodbc.connect(conn_str, timeout=10)
+        if operation == "import":
+            _check_import_cancelled(job_id)
+        conn = pyodbc.connect(conn_str, timeout=10, autocommit=False)
+        if operation == "import":
+            _check_import_cancelled(job_id)
         _run_csv_import(job_id, conn, tmp_path, table_name, [table_name], schema, operation)
         _finish_import_job(job_id)
+    except ImportCancelled:
+        try:
+            if conn is not None:
+                conn.rollback()
+        except Exception as e:
+            _fail_import_job(job_id, f"Could not roll back cancelled import: {e}")
+        else:
+            _cancel_import_job(job_id)
     except Exception as e:
         _fail_import_job(job_id, f"CSV processing failed: {e}")
     finally:
@@ -521,12 +601,16 @@ def _run_csv_import(job_id, conn, tmp_path, table_name, selected_names, schema, 
     action = "Importing" if operation == "import" else "Generating SQL"
     _mark_job_table(job_id, table_name, "running", action, schema=schema)
     sql_path = Path(SQL_EXPORT_DIR.name) / f"{job_id}.sql"
+    cancel_cb = (lambda: _check_import_cancelled(job_id)) if operation == "import" else None
     try:
-        rows, _ = read_csv_rows(tmp_path)
+        if cancel_cb:
+            cancel_cb()
+        rows, _ = read_csv_rows(tmp_path, cancel_cb=cancel_cb)
         progress_cb = lambda done, total: _mark_job_progress(job_id, table_name, done, total)
         if operation == "import":
             result = _import_one(conn, table_name, rows, schema, progress_cb,
-                                 sql_export_path=sql_path)
+                                 sql_export_path=sql_path, cancel_cb=cancel_cb,
+                                 before_commit_cb=lambda: _begin_import_commit(job_id))
         else:
             prepared = _prepare_csv(conn.cursor(), table_name, rows, schema)
             _write_import_sql(sql_path, schema, table_name, prepared["plan"],
@@ -534,6 +618,13 @@ def _run_csv_import(job_id, conn, tmp_path, table_name, selected_names, schema, 
             progress_cb(len(rows), len(rows))
             result = {"status": "ok", "message": f"SQL generated for {len(rows)} rows"
                       + prepared["message_suffix"], "errors": []}
+    except ImportCancelled:
+        try:
+            conn.rollback()
+        except Exception as e:
+            result = {"status": "failed", "message": f"Could not roll back cancelled import: {e}", "errors": []}
+        else:
+            result = {"status": "cancelled", "message": "Import cancelled. No changes were saved.", "errors": []}
     except Exception as e:
         if operation == "import":
             try:
@@ -645,7 +736,7 @@ def _sql_literal(value, dtype=None):
     return "N'" + text.replace("'", "''") + "'"
 
 
-def _write_import_sql(path, schema, table_name, plan, rows, db_cols):
+def _write_import_sql(path, schema, table_name, plan, rows, db_cols, cancel_cb=None):
     """Write DELETE followed by multi-row INSERTs in table column order."""
     qualified = f"{_export_identifier(schema)}.{_export_identifier(table_name)}"
     insert_sql = f"INSERT INTO {qualified}"
@@ -659,6 +750,8 @@ def _write_import_sql(path, schema, table_name, plan, rows, db_cols):
         script.write(f"DELETE FROM {qualified};\n")
         # SQL Server permits at most 1,000 rows in each INSERT ... VALUES.
         for offset in range(0, len(rows), 1000):
+            if cancel_cb:
+                cancel_cb()
             batch = rows[offset:offset + 1000]
             script.write(f"{insert_sql}\nVALUES\n")
             for index, row in enumerate(batch):
@@ -683,18 +776,26 @@ def _values_for_insert(row, plan, db_cols):
     return tuple(values)
 
 
-def _insert_batch(cursor, insert_sql, batch, error_samples):
+def _insert_batch(cursor, insert_sql, batch, error_samples, cancel_cb=None):
+    if cancel_cb:
+        cancel_cb()
     cursor.execute("SAVE TRANSACTION import_batch")
     try:
         cursor.fast_executemany = True
         cursor.executemany(insert_sql, batch)
+        if cancel_cb:
+            cancel_cb()
         return len(batch), 0
     except pyodbc.Error:
+        if cancel_cb:
+            cancel_cb()
         cursor.fast_executemany = False
         cursor.execute("ROLLBACK TRANSACTION import_batch")
 
     inserted = errors = 0
     for values in batch:
+        if cancel_cb:
+            cancel_cb()
         try:
             cursor.execute(insert_sql, values)
             inserted += 1
@@ -702,15 +803,20 @@ def _insert_batch(cursor, insert_sql, batch, error_samples):
             errors += 1
             if len(error_samples) < 2:
                 error_samples.append(str(e))
+    if cancel_cb:
+        cancel_cb()
     return inserted, errors
 
-def _prepare_csv(cursor, table_name, rows, schema):
+
+def _prepare_csv(cursor, table_name, rows, schema, cancel_cb=None):
     """Resolve column types and defaults once for both CSV workflows; read only."""
     cursor.execute(
         "SELECT TABLE_SCHEMA FROM INFORMATION_SCHEMA.TABLES "
         "WHERE TABLE_NAME = ? AND TABLE_TYPE = 'BASE TABLE'", table_name,
     )
     schemas = [r[0] for r in cursor.fetchall()]
+    if cancel_cb:
+        cancel_cb()
     if not schemas:
         raise ValueError("Table not found in DB")
     if schema not in schemas:
@@ -727,6 +833,8 @@ def _prepare_csv(cursor, table_name, rows, schema):
             "name": name, "type": (dtype or "").lower(),
             "nullable": nullable == "YES", "has_default": default is not None,
         }
+    if cancel_cb:
+        cancel_cb()
     if not db_cols:
         raise ValueError("No matching columns")
     width = max((len(row) for row in rows), default=0)
@@ -734,7 +842,11 @@ def _prepare_csv(cursor, table_name, rows, schema):
         raise ValueError("CSV contains no data rows.")
     ordered = list(db_cols.values())
     types = [info["type"] for info in ordered[:width]]
-    converted = [[_csv_value(value, dtype) for value, dtype in zip(row, types)] for row in rows]
+    converted = []
+    for index, row in enumerate(rows):
+        if cancel_cb and index % 1000 == 0:
+            cancel_cb()
+        converted.append([_csv_value(value, dtype) for value, dtype in zip(row, types)])
     plan, filled = [], []
     for index, info in enumerate(ordered):
         if index < width:
@@ -751,16 +863,20 @@ def _prepare_csv(cursor, table_name, rows, schema):
 
 
 def _import_one(conn, table_name, rows, preferred_schema="lvapdbf", progress_cb=None,
-                sql_export_path=None):
+                sql_export_path=None, cancel_cb=None, before_commit_cb=None):
     """Replace one table's rows and write the SQL that reproduces the CSV values."""
     cursor = conn.cursor()
     schema = preferred_schema
+    if cancel_cb:
+        cancel_cb()
     try:
-        prepared = _prepare_csv(cursor, table_name, rows, schema)
+        prepared = _prepare_csv(cursor, table_name, rows, schema, cancel_cb=cancel_cb)
     except ValueError as e:
         return {"name": table_name, "status": "skip", "message": str(e)}
     rows, db_cols, plan = prepared["rows"], prepared["columns"], prepared["plan"]
     qualified = f"{_sql_identifier(schema)}.{_sql_identifier(table_name)}"
+    if cancel_cb:
+        cancel_cb()
 
     # TRUNCATE is minimally logged and skips per-row delete cost; fall back to
     # DELETE only if it's blocked (e.g. a foreign key references this table).
@@ -769,11 +885,15 @@ def _import_one(conn, table_name, rows, preferred_schema="lvapdbf", progress_cb=
         cursor.execute(clear_sql)
     except pyodbc.Error:
         conn.rollback()
+        if cancel_cb:
+            cancel_cb()
         clear_sql = f"DELETE FROM {qualified}"
         cursor.execute(clear_sql)
 
+    if cancel_cb:
+        cancel_cb()
     if sql_export_path is not None:
-        _write_import_sql(sql_export_path, schema, table_name, plan, rows, db_cols)
+        _write_import_sql(sql_export_path, schema, table_name, plan, rows, db_cols, cancel_cb=cancel_cb)
 
     cols_sql     = ", ".join(_sql_identifier(c) for c, _ in plan)
     placeholders = ", ".join("?" for _ in plan)
@@ -788,17 +908,21 @@ def _import_one(conn, table_name, rows, preferred_schema="lvapdbf", progress_cb=
     for row in rows:
         batch.append(_values_for_insert(row, plan, db_cols))
         if len(batch) >= IMPORT_BATCH_SIZE:
-            batch_inserted, batch_errors = _insert_batch(cursor, insert_sql, batch, error_samples)
+            batch_inserted, batch_errors = _insert_batch(cursor, insert_sql, batch, error_samples, cancel_cb)
             inserted += batch_inserted
             errors += batch_errors
             batch = []
             if progress_cb:
                 progress_cb(inserted + errors, total_rows)
     if batch:
-        batch_inserted, batch_errors = _insert_batch(cursor, insert_sql, batch, error_samples)
+        batch_inserted, batch_errors = _insert_batch(cursor, insert_sql, batch, error_samples, cancel_cb)
         inserted += batch_inserted
         errors += batch_errors
 
+    if cancel_cb:
+        cancel_cb()
+    if before_commit_cb:
+        before_commit_cb()
     conn.commit()
     if progress_cb:
         progress_cb(inserted + errors, total_rows)

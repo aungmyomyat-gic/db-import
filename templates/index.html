@@ -55,7 +55,7 @@
   .elapsed { color: #a5b4fc; font-variant-numeric: tabular-nums; font-size: .85rem }
   .status { display: inline-block; font-size: .75rem; border-radius: 999px; padding: 4px 10px; background: #242b46; color: #c7d2fe; margin: 4px 0 12px }
   .status.ok { color: #86efac; background: #15362d }
-  .status.warn, .status.skip { color: #fde68a; background: #3b321e }
+  .status.warn, .status.skip, .status.cancelled { color: #fde68a; background: #3b321e }
   .status.failed { color: #fecaca; background: #45232f }
   progress { width: 100%; height: 8px; accent-color: #818cf8; margin: 16px 0 8px }
   .connection-summary { color: #94a3b8; font-size: .8rem; margin-bottom: 24px; overflow-wrap: anywhere }
@@ -121,6 +121,12 @@
       <progress id="{{ purpose }}-progress" max="100" value="0" aria-label="CSV processing progress"></progress>
       <p class="hint" id="{{ purpose }}-progress-label"></p>
       <div class="alert error hidden" id="{{ purpose }}-details"></div>
+      {% if purpose == 'import' %}
+      <div class="btn-row hidden" id="import-cancel-row">
+        <button class="btn danger" id="import-cancel" disabled>Cancel import</button>
+        <span class="hint">Cancellation rolls back the import after the current operation finishes.</span>
+      </div>
+      {% endif %}
       <div class="btn-row hidden" id="{{ purpose }}-download-row">
         <a class="btn" id="{{ purpose }}-download">Download SQL</a>
         <span class="hint">Available for one hour, until the app restarts.</span>
@@ -160,7 +166,7 @@ const show = el => el.classList.remove('hidden')
 const hide = el => el.classList.add('hidden')
 const purposes = ['import', 'generate']
 const workflows = Object.fromEntries(purposes.map(purpose => [purpose, {
-  preview: null, busy: false, jobId: null, clock: null, elapsed: 0, timer: null
+  preview: null, busy: false, jobId: null, clock: null, elapsed: 0, timer: null, cancelPending: false
 }]))
 let configured = false
 let savedConfig = null
@@ -349,6 +355,12 @@ async function startJob(purpose) {
   if (busy() || !state.preview || !schemasReady) return
   state.busy = true
   state.jobId = null
+  state.cancelPending = false
+  if (purpose === 'import') {
+    $('import-cancel').disabled = true
+    $('import-cancel').textContent = 'Cancel import'
+    show($('import-cancel-row'))
+  }
   state.clock = performance.now()
   state.elapsed = 0
   resetDownload(purpose)
@@ -374,6 +386,7 @@ async function startJob(purpose) {
     state.elapsed = Math.max(0, (performance.now() - state.clock) / 1000)
     state.clock = null
     state.busy = false
+    if (purpose === 'import') hide($('import-cancel-row'))
     $(purpose + '-status').className = 'status failed'
     $(purpose + '-status').textContent = 'Failed'
     $(purpose + '-message').textContent = error.message
@@ -384,15 +397,26 @@ async function startJob(purpose) {
 }
 function applyJob(purpose, data) {
   const state = workflows[purpose]
+  if (data.job_id !== state.jobId) return
+  const terminal = ['done', 'failed', 'cancelled'].includes(data.state)
+  // A cancellation response can arrive after a terminal polling response.
+  if (!state.busy && !terminal) return
   state.elapsed = data.elapsed_seconds
-  const terminal = ['done', 'failed'].includes(data.state)
   state.clock = terminal ? null : performance.now() - data.elapsed_seconds * 1000
   const result = data.results[0]
-  const status = result ? result.status : data.state
-  const labels = {queued: 'Queued', running: 'In progress', ok: 'Completed', warn: 'Completed with errors', skip: 'Skipped', failed: 'Failed'}
+  const cancelling = !terminal && (data.state === 'cancelling' || state.cancelPending)
+  const status = cancelling ? 'cancelling' : data.state === 'committing' ? 'committing' : result ? result.status : data.state
+  const labels = {queued: 'Queued', running: 'In progress', committing: 'Saving changes', cancelling: 'Cancelling…', cancelled: 'Cancelled', ok: 'Completed', warn: 'Completed with errors', skip: 'Skipped', failed: 'Failed'}
   $(purpose + '-status').className = 'status ' + status
   $(purpose + '-status').textContent = labels[status] || status
-  $(purpose + '-message').textContent = data.error || (result && result.message) || 'Processing CSV…'
+  $(purpose + '-message').textContent = cancelling
+    ? 'Waiting for the current operation to finish, then rolling back the import…'
+    : data.error || (result && result.message) || 'Processing CSV…'
+  if (purpose === 'import') {
+    $('import-cancel-row').classList.toggle('hidden', terminal || data.state === 'committing')
+    $('import-cancel').disabled = !data.can_cancel || cancelling
+    $('import-cancel').textContent = cancelling ? 'Cancelling…' : 'Cancel import'
+  }
   const progress = (result && result.progress) || {done: 0, total: 0}
   $(purpose + '-progress').classList.toggle('hidden', terminal)
   if (progress.total) {
@@ -408,27 +432,52 @@ function applyJob(purpose, data) {
   } else hide($(purpose + '-details'))
   if (terminal) {
     state.busy = false
+    state.cancelPending = false
     clearTimeout(state.timer)
+    resetDownload(purpose)
     if (data.state === 'done' && data.sql_download_url) {
       $(purpose + '-download').href = data.sql_download_url
       $(purpose + '-download').download = data.sql_filename
       show($(purpose + '-download-row'))
     }
-    renderElapsed(purpose, status === 'ok' || status === 'warn' ? 'Completed in' : 'Stopped after')
+    renderElapsed(purpose, status === 'cancelled' ? 'Cancelled after' : status === 'ok' || status === 'warn' ? 'Completed in' : 'Stopped after')
     syncControls()
   }
 }
+$('import-cancel').addEventListener('click', async () => {
+  const state = workflows.import
+  if (!state.busy || !state.jobId || state.cancelPending) return
+  const jobId = state.jobId
+  state.cancelPending = true
+  $('import-cancel').disabled = true
+  $('import-cancel').textContent = 'Cancelling…'
+  hide($('import-error'))
+  try {
+    const data = await api('/import/cancel/' + encodeURIComponent(jobId), {method: 'POST'})
+    if (state.jobId === jobId) applyJob('import', data)
+  } catch (error) {
+    if (state.jobId !== jobId || !state.busy) return
+    state.cancelPending = false
+    $('import-cancel').disabled = false
+    $('import-cancel').textContent = 'Cancel import'
+    errorAt('import-error', error)
+  }
+})
 async function pollJob(purpose, statusUrl) {
   const state = workflows[purpose]
+  const jobId = state.jobId
   try {
     const data = await api(statusUrl)
+    if (state.jobId !== jobId || !state.busy) return
     hide($(purpose + '-error'))
     applyJob(purpose, data)
   } catch (error) {
+    if (state.jobId !== jobId || !state.busy) return
     if (error.status === 404) {
       state.elapsed = Math.max(0, (performance.now() - state.clock) / 1000)
       state.clock = null
       state.busy = false
+      if (purpose === 'import') hide($('import-cancel-row'))
       $(purpose + '-status').className = 'status failed'
       $(purpose + '-status').textContent = 'Unavailable'
       $(purpose + '-message').textContent = 'Job no longer available. Check the database before importing again.'
