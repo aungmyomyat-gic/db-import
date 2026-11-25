@@ -31,9 +31,10 @@ the tables afterwards. It runs in Docker and opens at http://localhost:5000.
   Downloads expire one hour after completion, or when the app restarts.
 - **CSV → TSV** — for CSV files from systems that do not quote values, where a
   file name such as `a,b,c.pdf` is split into several cells. The table comes
-  from the file name and its columns are read from the database. In the
-  table's file-name columns (`MSHHKP`: `SHKTRM`, `SHKFL1`, `SHKFL2`, `SHKFL3`;
-  more tables can be added to `COMMA_FILE_COLUMNS` in `app.py`). A line with
+  from the file name and its columns are read from the database. Type the
+  table's file-name columns into the required **File-name columns** box,
+  separated by commas (`MSHHKP`: `SHKTRM, SHKFL1, SHKFL2, SHKFL3`; any other
+  table, e.g. `COL1, COL2`); without them nothing is converted. A line with
   one cell per table column (empty cells at the end of the line are dropped)
   just has its commas changed to tabs. Otherwise, in the file-name columns, a
   cell that is neither blank nor ending in one of the known extensions

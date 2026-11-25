@@ -8,7 +8,7 @@ from unittest.mock import patch
 import app as importer
 from test_csv_sql_export import FakeConnection
 
-FILE_COLUMNS = importer.COMMA_FILE_COLUMNS["MSHHKP"]
+FILE_COLUMNS = ("SHKTRM", "SHKFL1", "SHKFL2", "SHKFL3")
 # Short stand-in for the 31-column table: two plain columns around the four file columns.
 COLUMNS = ["SHKCD", "SHKNM", "SHKTRM", "SHKFL1", "SHKFL2", "SHKFL3", "UPDDT"]
 
@@ -97,14 +97,15 @@ class CommaCsvToTsvTests(unittest.TestCase):
         self.assertTrue(with_bom.startswith(b"\xef\xbb\xbf"))
         self.assertFalse(without.startswith(b"\xef\xbb\xbf"))
 
-    def post(self, filename, connection=None):
+    def post(self, filename, connection=None, file_columns="SHKTRM, SHKFL1, SHKFL2, SHKFL3",
+             raw=b"1,N,a,b,c.pdf,,,,X\n"):
         config = dict(host="example", port=1433, database="test", username="user", password="secret")
         with patch.object(importer, "load_config", return_value=config), \
              patch.object(importer, "_build_conn_str", return_value=("mock", None)), \
              patch.object(importer.pyodbc, "connect", return_value=connection or FakeConnection()):
             return importer.app.test_client().post("/convert/comma-csv-to-tsv", data={
-                "schema": "lvapdbf",
-                "file": (io.BytesIO(b"1,N,a,b,c.pdf,,,,X\n"), filename),
+                "schema": "lvapdbf", "file_columns": file_columns,
+                "file": (io.BytesIO(raw), filename),
             }, content_type="multipart/form-data")
 
     def test_route_reads_columns_from_the_table_and_returns_the_tsv(self):
@@ -112,19 +113,36 @@ class CommaCsvToTsvTests(unittest.TestCase):
         response = self.post("MSHHKP (1).csv", connection)
         self.assertEqual(response.status_code, 200)
         data = response.get_json()
-        self.assertEqual((data["table"], data["columns"], data["tsv_filename"]),
-                         ("MSHHKP", 7, "MSHHKP (1).tsv"))
+        self.assertEqual((data["table"], data["columns"], data["tsv_filename"], data["file_columns"]),
+                         ("MSHHKP", 7, "MSHHKP (1).tsv", list(FILE_COLUMNS)))
         self.assertEqual(base64.b64decode(data["tsv_base64"]).decode(),
                          "1\tN\ta,b,c.pdf\t\t\t\tX\n")
         self.assertTrue(connection.closed)
 
-    def test_route_refuses_tables_without_a_rule_or_without_the_columns(self):
-        response = self.post("MDNNOP.csv")
-        self.assertEqual(response.status_code, 400)
-        self.assertIn("No file-name column rule for table MDNNOP", response.get_json()["error"])
+    def test_route_requires_the_file_name_columns(self):
+        for blank in ("", "  ", " , 、 "):
+            response = self.post("MSHHKP.csv", file_columns=blank)
+            self.assertEqual(response.status_code, 400)
+            self.assertIn("Enter the file-name columns", response.get_json()["error"])
+
+    def test_route_refuses_columns_that_are_not_in_the_table(self):
         response = self.post("MSHHKP.csv", FakeConnection(metadata=[("SHKCD",), ("SHKTRM",)]))
         self.assertEqual(response.status_code, 400)
         self.assertIn("has no column SHKFL1, SHKFL2, SHKFL3", response.get_json()["error"])
+
+    def test_any_table_works_with_the_columns_the_user_types(self):
+        connection = FakeConnection(metadata=[("ID",), ("col1",), ("COL2",), ("NOTE",)])
+        response = self.post("OTHER.csv", connection, file_columns="ｃｏｌ１、col2",
+                             raw=b"1,a,b.pdf,c,d.png,memo\n")
+        data = response.get_json()
+        self.assertEqual(response.status_code, 200, data)
+        self.assertEqual(data["file_columns"], ["col1", "COL2"])   # the table's spelling
+        self.assertEqual(base64.b64decode(data["tsv_base64"]).decode(), "1\ta,b.pdf\tc,d.png\tmemo\n")
+
+    def test_column_list_parsing(self):
+        self.assertEqual(importer.parse_column_list(" SHKTRM, SHKFL1 SHKFL2、SHKFL3，shktrm "),
+                         ["SHKTRM", "SHKFL1", "SHKFL2", "SHKFL3"])
+        self.assertEqual(importer.parse_column_list(None), [])
 
 
 if __name__ == "__main__":

@@ -590,16 +590,26 @@ def _temp_log_csv_check(conn, path, schema, table_name):
 
 # ── Comma CSV → TSV for tables with file-name columns ─────────────────────────
 # Some systems write CSV without quoting, so a file name such as a,b,c.pdf
-# becomes three cells. For the tables below, the listed columns hold file
-# names. A line with exactly one cell per table column (after dropping empty
+# becomes three cells. The user names the table's file-name columns (e.g.
+# SHKTRM, SHKFL1, SHKFL2, SHKFL3 for MSHHKP). A line with exactly one cell per table column (after dropping empty
 # cells at the end of the line) is used as is. Otherwise the cells are taken
 # column by column; in a file-name column, a cell that is neither blank nor
 # ending in one of FILE_EXTENSIONS is joined with the next cell until a cell
 # with an extension is reached. The result is written as TSV, so only
 # the commas inside those file names remain.
-COMMA_FILE_COLUMNS = {
-    "MSHHKP": ("SHKTRM", "SHKFL1", "SHKFL2", "SHKFL3"),
-}
+
+
+def parse_column_list(text):
+    """'SHKTRM, SHKFL1 SHKFL2、SHKFL3' -> ['SHKTRM', 'SHKFL1', 'SHKFL2', 'SHKFL3'].
+
+    Commas (also full-width), Japanese commas and spaces separate names;
+    duplicates are dropped and the order is kept.
+    """
+    names = []
+    for name in re.split(r"[,\s、]+", normalize_cell(text or "")):
+        if name and name.upper() not in {n.upper() for n in names}:
+            names.append(name)
+    return names
 # Only these count (any letter case), so text such as "JN75 0.35GR" or "2014.11"
 # is not taken for the end of a file name. They are every extension found in
 # the MSHHKP export; a file with another extension shows up as an error row.
@@ -757,19 +767,19 @@ def convert_comma_csv_to_tsv():
     table_name = csv_table_name(file.filename)
     if not table_name:
         return jsonify({"error": "CSV file name must start with the table name, e.g. MSHHKP.csv."}), 400
-    file_columns = COMMA_FILE_COLUMNS.get(table_name)
+    file_columns = parse_column_list(request.form.get("file_columns", ""))
     if not file_columns:
-        return jsonify({"error": f"No file-name column rule for table {table_name}. "
-                                 f"Supported: {', '.join(sorted(COMMA_FILE_COLUMNS))}."}), 400
+        return jsonify({"error": "Enter the file-name columns, e.g. SHKTRM, SHKFL1, SHKFL2, SHKFL3."}), 400
     schema = request.form.get("schema", "").strip()
     try:
         column_names = _db_table_columns(_saved_config(), schema, table_name)
     except RouteError as e:
         return jsonify({"error": e.message}), e.status
-    missing = [name for name in file_columns
-               if name.upper() not in {c.upper() for c in column_names}]
+    by_upper = {c.upper(): c for c in column_names}
+    missing = [name for name in file_columns if name.upper() not in by_upper]
     if missing:
         return jsonify({"error": f"{schema}.{table_name} has no column {', '.join(missing)}."}), 400
+    file_columns = [by_upper[name.upper()] for name in file_columns]   # the table's spelling
     try:
         tsv, report = comma_csv_to_tsv(file.read(), column_names, file_columns)
     except (ValueError, UnicodeError) as e:

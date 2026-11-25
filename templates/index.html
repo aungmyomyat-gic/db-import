@@ -932,11 +932,17 @@
   <!-- ── Comma CSV → TSV (file-name columns with unquoted commas) ── -->
   <div class="card hidden" id="card-comma-tsv">
     <div class="card-title active"><span class="step step-tsv"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h13l-3-3"/><path d="M20 17H7l3 3"/></svg></span> CSV → TSV</div>
-    <p class="subtitle" style="margin-bottom:18px">For CSV files whose file-name columns contain commas without quotes (e.g. <code>a,b,c.pdf</code>). The table comes from the file name (MSHHKP.csv → MSHHKP) and its columns are read from the database. A line with one cell per column (empty cells at the end of the line are dropped) just has its commas changed to tabs. Otherwise, in the file-name columns (MSHHKP: SHKTRM, SHKFL1, SHKFL2, SHKFL3), a cell that is not blank and does not end with a known extension (pdf, docx, xlsx, jpg, xls, doc, png, txt, tif, jpeg, pptx, gif, ppt) is joined with the next cell. Every other comma becomes a tab. A value that itself contains a tab is written in double quotes (<code>"a⇥b"</code>) so it stays one value; TSV Import removes the quotes and keeps the tab. Rows that do not come out to exactly one value per column are left out and listed below. Nothing is imported.</p>
+    <p class="subtitle" style="margin-bottom:18px">For CSV files whose file-name columns contain commas without quotes (e.g. <code>a,b,c.pdf</code>). The table comes from the file name (MSHHKP.csv → MSHHKP) and its columns are read from the database. A line with one cell per column (empty cells at the end of the line are dropped) just has its commas changed to tabs. Otherwise, in the file-name columns you enter below (MSHHKP: SHKTRM, SHKFL1, SHKFL2, SHKFL3), a cell that is not blank and does not end with a known extension (pdf, docx, xlsx, jpg, xls, doc, png, txt, tif, jpeg, pptx, gif, ppt) is joined with the next cell. Every other comma becomes a tab. A value that itself contains a tab is written in double quotes (<code>"a⇥b"</code>) so it stays one value; TSV Import removes the quotes and keeps the tab. Rows that do not come out to exactly one value per column are left out and listed below. Nothing is imported.</p>
     <div id="err-tsv" class="alert error hidden"></div>
     <div style="margin-bottom:14px;max-width:320px">
       <label for="tsv-schema">Schema</label>
       <select id="tsv-schema"><option value="">Loading schemas…</option></select>
+    </div>
+    <div style="margin-bottom:14px;max-width:640px">
+      <label for="tsv-file-columns">File-name columns <span style="color:#f87171">*</span></label>
+      <input type="text" id="tsv-file-columns" required autocomplete="off" spellcheck="false"
+        placeholder="e.g. SHKTRM, SHKFL1, SHKFL2, SHKFL3">
+      <div class="drop-hint" style="margin-top:4px">Required. The table's columns whose values are file names that may contain commas, separated by commas. Other tables: e.g. COL1, COL2.</div>
     </div>
     <div class="drop-zone" id="tsv-drop-zone">
       <input type="file" id="tsv-file-input" accept=".csv">
@@ -3908,17 +3914,31 @@ function loadTsvSchemas() {
 let lastTsvFile = null
 let lastTsvResult = null
 $('tsv-schema').addEventListener('change', () => runTsvConvert(lastTsvFile))
+// Typing new columns and leaving the box (or pressing Enter) converts the chosen file again.
+$('tsv-file-columns').addEventListener('change', () => runTsvConvert(lastTsvFile))
+$('tsv-file-columns').addEventListener('keydown', e => {
+  if (e.key === 'Enter') { e.preventDefault(); runTsvConvert(lastTsvFile) }
+})
 
 function runTsvConvert(file) {
   if (!file) return
   lastTsvFile = file
   lastTsvResult = null
   hide($('err-tsv')); hide($('tsv-results'))
+  const fileColumns = $('tsv-file-columns').value.trim()
+  if (!fileColumns) {
+    $('tsv-file-name').textContent = `${file.name} — enter the file-name columns to convert`
+    show($('tsv-file-name'))
+    showErr($('err-tsv'), 'File-name columns are required, e.g. SHKTRM, SHKFL1, SHKFL2, SHKFL3.')
+    $('tsv-file-columns').focus()
+    return
+  }
   $('tsv-file-name').textContent = `Converting ${file.name}…`
   show($('tsv-file-name'))
   const form = new FormData()
   form.append('file', file)
   form.append('schema', $('tsv-schema').value)
+  form.append('file_columns', fileColumns)
   fetch('/convert/comma-csv-to-tsv', { method: 'POST', body: form }).then(r => r.json()).then(data => {
     if (data.error) throw new Error(data.error)
     lastTsvResult = data
