@@ -40,15 +40,18 @@ the tables afterwards. It runs in Docker and opens at http://localhost:5000.
   (`FILE_EXTENSIONS` in `app.py`: pdf, docx, xlsx, jpg, xls, doc, png, txt,
   tif, jpeg, pptx, gif, ppt, any letter case) is joined with the next cell, so
   text like `JN75 0.35GR` is not taken for the end of a file name.
-  Every other comma becomes a tab. A header row is kept, and
+  Every other comma becomes a tab. A value that itself contains a tab (e.g. a
+  memo pasted from Excel) is written in double quotes, `"a<TAB>b"`, so it stays
+  one value; TSV Import removes the quotes and keeps the tab. A header row is kept, and
   the encoding (UTF-8 or Shift-JIS) and line endings stay the same. Rows that
   do not come out to exactly one value per column are left out of the TSV and
   listed with their CSV line number so they can be fixed by hand.
 - **TSV Import** — import a tab-separated `.tsv` file, such as the one made by
   CSV → TSV. It works like CSV import (file name = table name, header row
   matched by name or values matched by position, blank → NULL/default, the
-  table's rows are replaced, Download SQL afterwards). Only tabs separate
-  values: commas and double quotes are kept as part of the value. Before the
+  table's rows are replaced, Download SQL afterwards). Tabs separate values;
+  a value in double quotes may contain tabs, and the quotes are removed
+  (`""` inside stands for one `"`), as CSV → TSV writes it. Before the
   import, a preview shows the row count, whether a header was found, and the
   lines that do not have one value per column; the import asks for
   confirmation.

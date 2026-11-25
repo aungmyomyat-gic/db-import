@@ -372,8 +372,8 @@ def is_tsv_filename(filename):
 def parse_delimited(raw, delimiter=","):
     """Decode CSV/TSV bytes; return [(line_number, cells)] for every non-blank row.
 
-    A TSV is read without quote handling: every tab separates two values and a
-    double quote is kept as part of the value, as the CSV → TSV tab writes it.
+    Quoting works the same for both: a value in double quotes may hold the
+    separator ("a,b" in a CSV, "a<TAB>b" in a TSV) and the quotes are removed.
     """
     for encoding in CSV_ENCODINGS:
         try:
@@ -383,10 +383,7 @@ def parse_delimited(raw, delimiter=","):
             continue
     else:
         raise ValueError("File is not UTF-8 or Shift-JIS text")
-    if delimiter == "\t":
-        reader = csv.reader(io.StringIO(text, newline=""), delimiter="\t", quoting=csv.QUOTE_NONE)
-    else:
-        reader = csv.reader(io.StringIO(text, newline=""))
+    reader = csv.reader(io.StringIO(text, newline=""), delimiter=delimiter)
     return [(reader.line_num, row) for row in reader if any(cell.strip() for cell in row)]
 
 
@@ -623,7 +620,7 @@ def _split_comma_row(cells, column_names, file_positions):
     while len(trimmed) > width and trimmed[-1] == "":
         trimmed.pop()   # empty cells after the last column (",,,," at the end of the line)
     if len(trimmed) == width:
-        return _tab_safe(trimmed, False)
+        return trimmed, False, None
     values, i, joined = [], 0, False
     for position, name in enumerate(column_names):
         if i >= len(cells):
@@ -642,13 +639,16 @@ def _split_comma_row(cells, column_names, file_positions):
     if any(cell != "" for cell in cells[i:]):
         return None, False, (f"{len(cells)} cells: {len(cells) - i} left over after the last "
                              f"column, table has {len(column_names)} columns")
-    return _tab_safe(values, joined)
-
-
-def _tab_safe(values, joined):
-    if any("\t" in value for value in values):
-        return None, False, "a value contains a tab character"
     return values, joined, None
+
+
+def _tsv_line(values):
+    """One TSV line. A value holding a tab or a double quote is written in double
+    quotes ("a<TAB>b", a quote inside doubled), like CSV quoting, so it stays one
+    value; TSV import removes the quotes again."""
+    buffer = io.StringIO()
+    csv.writer(buffer, delimiter="\t", lineterminator="").writerow(values)
+    return buffer.getvalue()
 
 
 def comma_csv_to_tsv(raw, column_names, file_columns):
@@ -656,6 +656,8 @@ def comma_csv_to_tsv(raw, column_names, file_columns):
 
     Rows that do not come out to exactly one value per column are left out and
     listed in report["errors"] with their line number, for fixing by hand.
+    report["quoted_lines"] lists the lines with a value written in quotes
+    because it contains a tab.
     """
     for encoding in CSV_ENCODINGS:
         try:
@@ -671,7 +673,9 @@ def comma_csv_to_tsv(raw, column_names, file_columns):
     file_positions = {i for i, name in enumerate(column_names) if name.upper() in wanted}
     newline = "\r\n" if "\r\n" in text else "\n"
     out, errors = [], []
+    quoted_lines = []
     report = {"header": False, "rows": 0, "written": 0, "joined": 0, "errors": errors,
+              "quoted_lines": quoted_lines,
               "encoding": "Shift-JIS" if encoding == "cp932" else "UTF-8"}
     first = True
     for line_number, line in enumerate(text.split("\n"), 1):
@@ -683,14 +687,16 @@ def comma_csv_to_tsv(raw, column_names, file_columns):
             first = False
             if csv_has_header(cells, column_names):
                 report["header"] = True
-                out.append("\t".join(cells))
+                out.append(_tsv_line(cells))
                 continue
         report["rows"] += 1
         values, joined, reason = _split_comma_row(cells, column_names, file_positions)
         if values is None:
             errors.append({"line": line_number, "reason": reason, "text": line})
             continue
-        out.append("\t".join(values))
+        out.append(_tsv_line(values))
+        if any("\t" in value for value in values):
+            quoted_lines.append(line_number)
         report["written"] += 1
         report["joined"] += joined
     tsv = (newline.join(out) + newline) if out else ""
@@ -772,6 +778,8 @@ def convert_comma_csv_to_tsv():
         **report,
         "errors": report["errors"][:2000],
         "error_count": len(report["errors"]),
+        "quoted_count": len(report["quoted_lines"]),
+        "quoted_lines": report["quoted_lines"][:200],
         "filename": file.filename, "schema": schema, "table": table_name,
         "columns": len(column_names), "file_columns": list(file_columns),
         "tsv_filename": Path(file.filename).stem + ".tsv",

@@ -71,6 +71,14 @@ class CommaCsvToTsvTests(unittest.TestCase):
         self.assertTrue(importer._ends_file_name(" 報告書.PDF "))
         self.assertFalse(importer._ends_file_name("archive.zip"))   # not in FILE_EXTENSIONS
 
+    def test_value_with_a_tab_is_written_in_quotes(self):
+        # Like line 5985: a memo with a tab, in a row whose file names also have commas.
+        tsv, report = convert("1,N,a,b.pdf,,,,マスター→\t8885→変更\n"
+                              "2,N,x.pdf,,,,plain\n")
+        self.assertEqual(tsv, '1\tN\ta,b.pdf\t\t\t\t"マスター→\t8885→変更"\n'
+                              "2\tN\tx.pdf\t\t\t\tplain\n")
+        self.assertEqual((report["written"], report["errors"], report["quoted_lines"]), (2, [], [1]))
+
     def test_missing_extension_at_end_of_line(self):
         _, report = convert("1,N,a,b,c\n")
         self.assertIn("SHKTRM: no file extension found in 'a,b,c'", report["errors"][0]["reason"])

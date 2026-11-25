@@ -932,7 +932,7 @@
   <!-- ── Comma CSV → TSV (file-name columns with unquoted commas) ── -->
   <div class="card hidden" id="card-comma-tsv">
     <div class="card-title active"><span class="step step-tsv"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h13l-3-3"/><path d="M20 17H7l3 3"/></svg></span> CSV → TSV</div>
-    <p class="subtitle" style="margin-bottom:18px">For CSV files whose file-name columns contain commas without quotes (e.g. <code>a,b,c.pdf</code>). The table comes from the file name (MSHHKP.csv → MSHHKP) and its columns are read from the database. A line with one cell per column (empty cells at the end of the line are dropped) just has its commas changed to tabs. Otherwise, in the file-name columns (MSHHKP: SHKTRM, SHKFL1, SHKFL2, SHKFL3), a cell that is not blank and does not end with a known extension (pdf, docx, xlsx, jpg, xls, doc, png, txt, tif, jpeg, pptx, gif, ppt) is joined with the next cell. Every other comma becomes a tab. Rows that do not come out to exactly one value per column are left out and listed below. Nothing is imported.</p>
+    <p class="subtitle" style="margin-bottom:18px">For CSV files whose file-name columns contain commas without quotes (e.g. <code>a,b,c.pdf</code>). The table comes from the file name (MSHHKP.csv → MSHHKP) and its columns are read from the database. A line with one cell per column (empty cells at the end of the line are dropped) just has its commas changed to tabs. Otherwise, in the file-name columns (MSHHKP: SHKTRM, SHKFL1, SHKFL2, SHKFL3), a cell that is not blank and does not end with a known extension (pdf, docx, xlsx, jpg, xls, doc, png, txt, tif, jpeg, pptx, gif, ppt) is joined with the next cell. Every other comma becomes a tab. A value that itself contains a tab is written in double quotes (<code>"a⇥b"</code>) so it stays one value; TSV Import removes the quotes and keeps the tab. Rows that do not come out to exactly one value per column are left out and listed below. Nothing is imported.</p>
     <div id="err-tsv" class="alert error hidden"></div>
     <div style="margin-bottom:14px;max-width:320px">
       <label for="tsv-schema">Schema</label>
@@ -960,7 +960,7 @@
   <!-- ── TSV Import ───────────────────────────────────── -->
   <div class="card hidden" id="card-tsv-import">
     <div class="card-title active"><span class="step step-tsvimport"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg></span> TSV Import</div>
-    <p class="subtitle" style="margin-bottom:18px">Imports a tab-separated <code>.tsv</code> file, for example the file made by the CSV → TSV tab. It works like CSV import: the table comes from the file name (MSHHKP.tsv → MSHHKP), a header row is matched by column name, otherwise values are matched to the table's columns by position, and blank values become NULL (or the type's default for NOT NULL columns). Only tabs separate values; commas and quotes are kept as they are. <strong>The import replaces every row in the table.</strong></p>
+    <p class="subtitle" style="margin-bottom:18px">Imports a tab-separated <code>.tsv</code> file, for example the file made by the CSV → TSV tab. It works like CSV import: the table comes from the file name (MSHHKP.tsv → MSHHKP), a header row is matched by column name, otherwise values are matched to the table's columns by position, and blank values become NULL (or the type's default for NOT NULL columns). Tabs separate values; a value in double quotes may contain tabs, and the quotes are removed, as CSV → TSV writes it. <strong>The import replaces every row in the table.</strong></p>
     <div id="err-tsvimp" class="alert error hidden"></div>
     <div style="margin-bottom:14px;max-width:320px">
       <label for="tsvimp-schema">Schema</label>
@@ -3928,6 +3928,9 @@ function runTsvConvert(file) {
     summary.className = 'alert ' + (data.error_count ? 'error' : 'info')
     const parts = [`${data.rows} rows read`, `${data.written} rows written to TSV`,
                    `${data.joined} rows had commas inside a file name`]
+    if (data.quoted_count)
+      parts.push(`${data.quoted_count} rows have a tab inside a value — written in quotes so the tab is kept ` +
+                 `(lines ${data.quoted_lines.slice(0, 20).join(', ')}${data.quoted_count > 20 ? ', …' : ''})`)
     if (data.header) parts.push('header row kept')
     if (data.error_count) parts.push(`${data.error_count} rows left out — fix them by hand`)
     summary.textContent = parts.join(' · ') +

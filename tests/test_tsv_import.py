@@ -36,10 +36,15 @@ class TsvImportTests(unittest.TestCase):
         return client.post(url, data={"schema": schema, "file": (io.BytesIO(raw), filename)},
                            content_type="multipart/form-data")
 
-    def test_tabs_split_values_while_commas_and_quotes_stay(self):
-        raw = '1\ta,b,c.pdf\t3\n\n2\t"quoted" name.pdf\t\n'.encode("cp932")
+    def test_tabs_split_values_and_quoted_values_keep_their_tabs(self):
+        raw = '1\ta,b,c.pdf\t3\n\n2\t"memo\twith tab"\t"say ""hi"""\n'.encode("cp932")
         self.assertEqual(importer.parse_delimited(raw, "\t"),
-                         [(1, ["1", "a,b,c.pdf", "3"]), (3, ["2", '"quoted" name.pdf', ""])])
+                         [(1, ["1", "a,b,c.pdf", "3"]), (3, ["2", "memo\twith tab", 'say "hi"'])])
+
+    def test_what_csv_to_tsv_writes_is_read_back_exactly(self):
+        values = ["06800", "→\t8885008400920。\t\tマ", 'a "b".pdf', "a,b,c.pdf", " ", ""]
+        line = importer._tsv_line(values)
+        self.assertEqual(importer.parse_delimited(line.encode("utf-8"), "\t"), [(1, values)])
         # The comma CSV reader is unchanged.
         self.assertEqual(importer.parse_delimited(b'1,"a,b.pdf",3\n'), [(1, ["1", "a,b.pdf", "3"])])
 
@@ -62,7 +67,8 @@ class TsvImportTests(unittest.TestCase):
 
     def test_import_replaces_rows_and_offers_sql_download(self):
         connection = FakeConnection(metadata=METADATA)
-        raw = "CODE\tFILE_NAME\tQTY\r\n1\t熱衝撃試験（1-08,2-08と併用).pdf\t3\r\n2\t \t\r\n".encode("cp932")
+        raw = ("CODE\tFILE_NAME\tQTY\r\n1\t熱衝撃試験（1-08,2-08と併用).pdf\t3\r\n2\t \t\r\n"
+               '3\t"→\t8885"\t4\r\n').encode("cp932")
         client = importer.app.test_client()
         p1, p2, p3 = self.patched(connection)
         with p1, p2, p3:
@@ -79,13 +85,13 @@ class TsvImportTests(unittest.TestCase):
             result = snapshot["results"][0]
             self.assertEqual((result["name"], result["status"], result["schema"]),
                              ("MSHHKP", "ok", "lvapdbf"))
-            self.assertIn("2 rows inserted", result["message"])
+            self.assertIn("3 rows inserted", result["message"])
             self.assertIn("header row found", result["message"])
             download = client.get(snapshot["sql_download_url"])
             sql = download.data.decode("utf-8-sig")
             download.close()
         self.assertEqual(connection.committed, [("1", "熱衝撃試験（1-08,2-08と併用).pdf", "3"),
-                                                ("2", " ", None)])
+                                                ("2", " ", None), ("3", "→\t8885", "4")])
         self.assertIn("N'熱衝撃試験（1-08,2-08と併用).pdf'", sql)
         self.assertTrue(any(s.startswith("TRUNCATE") for s in connection.statements))
 
