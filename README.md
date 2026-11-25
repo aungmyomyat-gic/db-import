@@ -146,7 +146,6 @@ so code and template changes apply without a rebuild. Rebuild only when
 | --- | --- |
 | `app.py` | Flask backend: Excel scanning, import jobs, truncate, data editor API, version check |
 | `templates/index.html` | The whole UI (HTML, CSS and JS in one file) |
-| `main.py` | Older command-line version of the importer |
 | `version.json` | Current version, release notes and the update-check URL |
 | `release.sh` | Release script (see below) |
 | `update.sh` / `update.bat` | Update scripts for users |

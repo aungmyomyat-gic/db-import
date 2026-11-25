@@ -389,6 +389,142 @@ def _csv_preview(table_name, rows, width):
     }
 
 
+# ── TEMP: CSV check against table columns ────────────────────────────────────
+# Temporary debugging aid: compares each CSV value with the column it will be
+# imported into (matched by position, like the CSV import) using the column
+# types, lengths and precision from INFORMATION_SCHEMA. Used by the "CSV Check"
+# tab and printed to the container log on every CSV import. Remove this block,
+# the /temp/csv-check route and the call in _run_csv_import.
+_TEMP_INT_RANGES = {
+    "tinyint": (0, 255),
+    "smallint": (-2**15, 2**15 - 1),
+    "int": (-2**31, 2**31 - 1),
+    "bigint": (-2**63, 2**63 - 1),
+}
+_TEMP_INT_RE = re.compile(r"[+-]?[0-9]+")
+_TEMP_DECIMAL_RE = re.compile(r"[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)")
+_TEMP_FLOAT_RE = re.compile(r"[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?")
+
+
+def _temp_table_columns(cursor, schema, table_name):
+    cursor.execute(
+        "SELECT COLUMN_NAME, DATA_TYPE, CHARACTER_MAXIMUM_LENGTH, NUMERIC_PRECISION, "
+        "NUMERIC_SCALE, IS_NULLABLE FROM INFORMATION_SCHEMA.COLUMNS "
+        "WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? ORDER BY ORDINAL_POSITION",
+        schema, table_name,
+    )
+    columns = []
+    for name, dtype, max_len, precision, scale, nullable in cursor.fetchall():
+        dtype = (dtype or "").lower()
+        if dtype in ("decimal", "numeric"):
+            label = f"{dtype}({precision},{scale})"
+        elif dtype in STRING_TYPES and dtype not in ("text", "ntext"):
+            label = f"{dtype}({'max' if max_len == -1 else max_len})"
+        else:
+            label = dtype
+        columns.append({"name": name, "type": dtype, "label": label,
+                        "max_len": max_len, "precision": precision, "scale": scale,
+                        "nullable": nullable == "YES"})
+    return columns
+
+
+def _temp_value_problem(value, col):
+    """Return (severity, reason) when value does not fit col, else None."""
+    dtype = col["type"]
+    if dtype not in STRING_TYPES:
+        value = value.strip()
+    if value == "":
+        return None   # blank -> NULL, or the type default for NOT NULL columns
+    if dtype in _TEMP_INT_RANGES:
+        if not _TEMP_INT_RE.fullmatch(value):
+            return "error", "Not an integer"
+        low, high = _TEMP_INT_RANGES[dtype]
+        if not low <= int(value) <= high:
+            return "error", f"Out of range for {dtype} ({low} to {high})"
+    elif dtype == "bit":
+        if value.lower() not in ("0", "1", "true", "false"):
+            return "error", "Not 0/1/true/false"
+    elif dtype in ("decimal", "numeric"):
+        if not _TEMP_DECIMAL_RE.fullmatch(value):
+            return "error", "Not a number"
+        whole, _, frac = value.lstrip("+-").partition(".")
+        whole = whole.lstrip("0")
+        precision, scale = col["precision"] or 18, col["scale"] or 0
+        if len(whole) > precision - scale:
+            return "error", (f"Too many digits: {len(whole)} before the decimal point, "
+                             f"{col['label']} allows {precision - scale}")
+        if len(frac.rstrip("0")) > scale:
+            return "warning", f"{len(frac.rstrip('0'))} decimals, {col['label']} keeps {scale} (rounded)"
+    elif dtype in ("money", "smallmoney", "float", "real"):
+        if not _TEMP_FLOAT_RE.fullmatch(value):
+            return "error", "Not a number"
+    elif dtype in ("char", "varchar", "nchar", "nvarchar") and col["max_len"] not in (None, -1):
+        if dtype in ("nchar", "nvarchar"):
+            size, unit = len(value.encode("utf-16-le")) // 2, "characters"
+        else:
+            size, unit = len(value.encode("cp932", errors="replace")), "bytes (Shift-JIS)"
+        if size > col["max_len"]:
+            return "error", f"Too long: {size} {unit}, {col['label']} allows {col['max_len']}"
+    return None
+
+
+def _temp_csv_issues(raw, columns):
+    """Return (rows_checked, issues) for CSV bytes checked against table columns."""
+    for encoding in CSV_ENCODINGS:
+        try:
+            text = raw.decode(encoding)
+            break
+        except UnicodeDecodeError:
+            continue
+    else:
+        raise ValueError("CSV is not UTF-8 or Shift-JIS text")
+    issues = []
+    rows_checked = 0
+    reader = csv.reader(io.StringIO(text, newline=""))
+    for row in reader:
+        if not any(cell.strip() for cell in row):
+            continue   # the import skips blank lines too
+        rows_checked += 1
+        base = {"row": rows_checked, "line": reader.line_num,
+                "record_id": row[0] if row else "", "full_row": row}
+        if len(row) != len(columns):
+            more = len(row) > len(columns)
+            issues.append({**base, "column": None, "type": None, "position": None, "value": None,
+                           "severity": "warning",
+                           "reason": f"{len(row)} columns, table has {len(columns)}"
+                                     + (" (extra columns are skipped)" if more
+                                        else " (missing columns become NULL/default)")})
+        for index, (value, col) in enumerate(zip(row, columns)):
+            problem = _temp_value_problem(value, col)
+            if problem:
+                issues.append({**base, "column": col["name"], "type": col["label"],
+                               "position": index + 1, "value": value,
+                               "severity": problem[0], "reason": problem[1]})
+    return rows_checked, issues
+
+
+def _temp_log_csv_check(conn, path, schema, table_name):
+    columns = _temp_table_columns(conn.cursor(), schema, table_name)
+    if not columns:
+        return
+    _, issues = _temp_csv_issues(Path(path).read_bytes(), columns)
+    print(f"[TEMP CSV CHECK] {schema}.{table_name}: {len(issues)} problems", flush=True)
+    for i in issues:
+        if i["column"] is None:
+            print(f"Row {i['row']} (CSV line {i['line']}): {i['reason']}", flush=True)
+            continue
+        print(f"{i['severity'].upper()} ROW: {i['row']}\n"
+              f"CSV LINE: {i['line']}\n"
+              f"Record ID: {i['record_id']}\n"
+              f"Column: {i['column']} {i['type']}\n"
+              f"Column position: {i['position']}\n"
+              f"Invalid value: {i['value']!r}\n"
+              f"Problem: {i['reason']}\n"
+              f"Full row: {i['full_row']}\n" + "-" * 60, flush=True)
+    print(f"[TEMP CSV CHECK] {schema}.{table_name}: done", flush=True)
+# ── END TEMP ──────────────────────────────────────────────────────────────────
+
+
 def _csv_value(value, dtype):
     """CSV text -> insert value. Blank becomes NULL (NOT NULL columns get a default later)."""
     if dtype not in STRING_TYPES:
@@ -477,6 +613,53 @@ def _test_connection(host, port, database, username, password):
         return None
     except pyodbc.Error as e:
         return str(e)
+
+
+@app.route("/temp/csv-check", methods=["POST"])   # TEMP: remove with the TEMP CSV check block
+def temp_csv_check():
+    file = request.files.get("file")
+    if not file or not file.filename:
+        return jsonify({"error": "No file selected."}), 400
+    if not is_csv_filename(file.filename):
+        return jsonify({"error": "Please choose a .csv file."}), 400
+    table_name = csv_table_name(file.filename)
+    if not table_name:
+        return jsonify({"error": "CSV file name must start with the table name, e.g. MDNNOP.csv."}), 400
+    schema = request.form.get("schema", "").strip()
+    if not schema:
+        return jsonify({"error": "Schema is required."}), 400
+    cfg = load_config()
+    if not cfg:
+        return jsonify({"error": "No DB connection saved."}), 400
+    conn_str, err = _build_conn_str(
+        cfg["host"], cfg["port"], cfg["database"], cfg["username"], cfg["password"]
+    )
+    if err:
+        return jsonify({"error": err}), 500
+    try:
+        conn = pyodbc.connect(conn_str, timeout=10)
+        try:
+            columns = _temp_table_columns(conn.cursor(), schema, table_name)
+        finally:
+            conn.close()
+    except pyodbc.Error as e:
+        return jsonify({"error": f"Could not read table columns: {e}"}), 400
+    if not columns:
+        return jsonify({"error": f"Table {schema}.{table_name} not found."}), 404
+    try:
+        rows_checked, issues = _temp_csv_issues(file.read(), columns)
+    except Exception as e:
+        return jsonify({"error": f"Cannot read file: {e}"}), 400
+    return jsonify({
+        "filename": file.filename, "schema": schema, "table": table_name,
+        "columns": [{"name": c["name"], "type": c["label"]} for c in columns],
+        "rows_checked": rows_checked,
+        "bad_rows": len({i["row"] for i in issues if i["severity"] == "error"}),
+        "error_count": sum(i["severity"] == "error" for i in issues),
+        "warning_count": sum(i["severity"] == "warning" for i in issues),
+        "issue_count": len(issues),
+        "issues": issues[:2000],
+    })
 
 
 @app.route("/upload", methods=["POST"])
@@ -1481,6 +1664,10 @@ def _run_csv_import(job_id, conn, tmp_path, table_name, selected_names, schema):
         return
     _mark_job_table(job_id, table_name, "running", "Importing", schema=schema)
     sql_path = Path(SQL_EXPORT_DIR.name) / f"{job_id}.sql"
+    try:   # TEMP: remove with the TEMP CSV check block
+        _temp_log_csv_check(conn, tmp_path, schema, table_name)
+    except Exception as e:
+        print(f"[TEMP CSV CHECK] failed: {e}", flush=True)
     try:
         rows, _ = read_csv_rows(tmp_path)
         progress_cb = lambda done, total: _mark_job_progress(job_id, table_name, done, total)
