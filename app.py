@@ -1,3 +1,4 @@
+import base64
 import csv
 import io
 import re
@@ -573,6 +574,168 @@ def _temp_log_csv_check(conn, path, schema, table_name):
               f"Full row: {i['full_row']}\n" + "-" * 60, flush=True)
     print(f"[TEMP CSV CHECK] {schema}.{table_name}: done", flush=True)
 # ── END TEMP ──────────────────────────────────────────────────────────────────
+
+
+# ── Comma CSV → TSV for tables with file-name columns ─────────────────────────
+# Some systems write CSV without quoting, so a file name such as a,b,c.pdf
+# becomes three cells. For the tables below, the listed columns hold file
+# names. A line with exactly one cell per table column (after dropping empty
+# cells at the end of the line) is used as is. Otherwise the cells are taken
+# column by column; in a file-name column, a cell that is neither blank nor
+# ending in a file extension (.pdf, .png, …) is joined with the next cell until
+# a cell with an extension is reached. The result is written as TSV, so only
+# the commas inside those file names remain.
+COMMA_FILE_COLUMNS = {
+    "MSHHKP": ("SHKTRM", "SHKFL1", "SHKFL2", "SHKFL3"),
+}
+# 1-5 letters/digits with at least one letter, so "2014.11" is not an extension.
+FILE_EXTENSION_RE = re.compile(r"\.(?=[A-Za-z0-9]*[A-Za-z])[A-Za-z0-9]{1,5}$")
+
+
+def _ends_file_name(cell):
+    cell = cell.strip()
+    return cell == "" or bool(FILE_EXTENSION_RE.search(cell))
+
+
+def _split_comma_row(cells, column_names, file_positions):
+    """Return (values, joined, None) with one value per column, or (None, False, reason)."""
+    width = len(column_names)
+    trimmed = list(cells)
+    while len(trimmed) > width and trimmed[-1] == "":
+        trimmed.pop()   # empty cells after the last column (",,,," at the end of the line)
+    if len(trimmed) == width:
+        return _tab_safe(trimmed, False)
+    values, i, joined = [], 0, False
+    for position, name in enumerate(column_names):
+        if i >= len(cells):
+            return None, False, (f"{len(cells)} cells: ran out at column {position + 1} {name}, "
+                                 f"table has {len(column_names)} columns")
+        start = i
+        if position in file_positions:
+            while not _ends_file_name(cells[i]):
+                i += 1
+                if i == len(cells):
+                    return None, False, (f"{name}: no file extension found in "
+                                         f"{','.join(cells[start:])!r}")
+        values.append(",".join(cells[start:i + 1]))
+        joined = joined or i > start
+        i += 1
+    if any(cell != "" for cell in cells[i:]):
+        return None, False, (f"{len(cells)} cells: {len(cells) - i} left over after the last "
+                             f"column, table has {len(column_names)} columns")
+    return _tab_safe(values, joined)
+
+
+def _tab_safe(values, joined):
+    if any("\t" in value for value in values):
+        return None, False, "a value contains a tab character"
+    return values, joined, None
+
+
+def comma_csv_to_tsv(raw, column_names, file_columns):
+    """Convert unquoted comma CSV bytes to TSV bytes in the same encoding.
+
+    Rows that do not come out to exactly one value per column are left out and
+    listed in report["errors"] with their line number, for fixing by hand.
+    """
+    for encoding in CSV_ENCODINGS:
+        try:
+            text = raw.decode(encoding)
+            break
+        except UnicodeDecodeError:
+            continue
+    else:
+        raise ValueError("CSV is not UTF-8 or Shift-JIS text")
+    if encoding == "utf-8-sig" and not raw.startswith(b"\xef\xbb\xbf"):
+        encoding = "utf-8"   # keep "no BOM" when the input had none
+    wanted = {name.upper() for name in file_columns}
+    file_positions = {i for i, name in enumerate(column_names) if name.upper() in wanted}
+    newline = "\r\n" if "\r\n" in text else "\n"
+    out, errors = [], []
+    report = {"header": False, "rows": 0, "written": 0, "joined": 0, "errors": errors,
+              "encoding": "Shift-JIS" if encoding == "cp932" else "UTF-8"}
+    first = True
+    for line_number, line in enumerate(text.split("\n"), 1):
+        line = line.rstrip("\r")
+        if not line.strip():
+            continue
+        cells = line.split(",")
+        if first:
+            first = False
+            if csv_has_header(cells, column_names):
+                report["header"] = True
+                out.append("\t".join(cells))
+                continue
+        report["rows"] += 1
+        values, joined, reason = _split_comma_row(cells, column_names, file_positions)
+        if values is None:
+            errors.append({"line": line_number, "reason": reason, "text": line})
+            continue
+        out.append("\t".join(values))
+        report["written"] += 1
+        report["joined"] += joined
+    tsv = (newline.join(out) + newline) if out else ""
+    return tsv.encode(encoding, errors="strict"), report
+
+
+@app.route("/convert/comma-csv-to-tsv", methods=["POST"])
+def convert_comma_csv_to_tsv():
+    file = request.files.get("file")
+    if not file or not file.filename:
+        return jsonify({"error": "No file selected."}), 400
+    if not is_csv_filename(file.filename):
+        return jsonify({"error": "Please choose a .csv file."}), 400
+    table_name = csv_table_name(file.filename)
+    if not table_name:
+        return jsonify({"error": "CSV file name must start with the table name, e.g. MSHHKP.csv."}), 400
+    file_columns = COMMA_FILE_COLUMNS.get(table_name)
+    if not file_columns:
+        return jsonify({"error": f"No file-name column rule for table {table_name}. "
+                                 f"Supported: {', '.join(sorted(COMMA_FILE_COLUMNS))}."}), 400
+    schema = request.form.get("schema", "").strip()
+    if not schema:
+        return jsonify({"error": "Schema is required."}), 400
+    cfg = load_config()
+    if not cfg:
+        return jsonify({"error": "No DB connection saved."}), 400
+    conn_str, err = _build_conn_str(
+        cfg["host"], cfg["port"], cfg["database"], cfg["username"], cfg["password"]
+    )
+    if err:
+        return jsonify({"error": err}), 500
+    try:
+        conn = pyodbc.connect(conn_str, timeout=10)
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS "
+                "WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? ORDER BY ORDINAL_POSITION",
+                schema, table_name,
+            )
+            column_names = [row[0] for row in cursor.fetchall()]
+        finally:
+            conn.close()
+    except pyodbc.Error as e:
+        return jsonify({"error": f"Could not read table columns: {e}"}), 400
+    if not column_names:
+        return jsonify({"error": f"Table {schema}.{table_name} not found."}), 404
+    missing = [name for name in file_columns
+               if name.upper() not in {c.upper() for c in column_names}]
+    if missing:
+        return jsonify({"error": f"{schema}.{table_name} has no column {', '.join(missing)}."}), 400
+    try:
+        tsv, report = comma_csv_to_tsv(file.read(), column_names, file_columns)
+    except (ValueError, UnicodeError) as e:
+        return jsonify({"error": f"Cannot convert file: {e}"}), 400
+    return jsonify({
+        **report,
+        "errors": report["errors"][:2000],
+        "error_count": len(report["errors"]),
+        "filename": file.filename, "schema": schema, "table": table_name,
+        "columns": len(column_names), "file_columns": list(file_columns),
+        "tsv_filename": Path(file.filename).stem + ".tsv",
+        "tsv_base64": base64.b64encode(tsv).decode("ascii"),
+    })
 
 
 def _csv_value(value, dtype):

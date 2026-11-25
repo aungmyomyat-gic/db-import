@@ -433,6 +433,8 @@
   .card-title .step-check  { --c1: #4ade80; --c2: #16a34a }
   .card-title .step-schema { --c1: #2dd4bf; --c2: #0d9488 }
   .card-title .step-check  { --c1: #fbbf24; --c2: #d97706 }   /* TEMP: CSV check */
+  .card-title .step-tsv    { --c1: #38bdf8; --c2: #0284c7 }
+  #tsv-errors .tbl td.mono { font-family: ui-monospace, Consolas, monospace; white-space: nowrap }
   #csvcheck-results .tbl td { white-space: nowrap }
   #csvcheck-results .tbl td.mono { font-family: ui-monospace, Consolas, monospace }
 
@@ -787,6 +789,7 @@
       <button class="nav-btn" id="nav-query" disabled>SQL Runner</button>
       <button class="nav-btn" id="nav-schema" disabled>Schema</button>
       <button class="nav-btn" id="nav-csvcheck" title="Temporary: check a CSV against its table columns" disabled>CSV Check</button>  <!-- TEMP -->
+      <button class="nav-btn" id="nav-tsv" title="Convert a comma CSV whose file-name columns contain commas to TSV" disabled>CSV → TSV</button>
       <button class="nav-btn" id="nav-connection" title="Not connected"><span class="nav-dot" id="nav-conn-dot"></span>Connection</button>
       <button class="nav-btn" id="nav-about"><svg class="nav-icon-info" viewBox="0 0 24 24" aria-hidden="true"><defs><linearGradient id="info-grad" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4fb3ff"/><stop offset="1" stop-color="#1565d8"/></linearGradient></defs><circle cx="12" cy="12" r="12" fill="url(#info-grad)"/><circle cx="12" cy="6.8" r="1.9" fill="#fff"/><rect x="10.3" y="10" width="3.4" height="9" rx="1.7" fill="#fff"/></svg>About</button>
     </nav>
@@ -917,6 +920,34 @@
         <table class="tbl">
           <thead><tr><th>Row</th><th>CSV line</th><th>Record ID</th><th>Column</th><th>Type</th><th>Position</th><th>Value</th><th>Problem</th></tr></thead>
           <tbody id="csvcheck-body"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Comma CSV → TSV (file-name columns with unquoted commas) ── -->
+  <div class="card hidden" id="card-comma-tsv">
+    <div class="card-title active"><span class="step step-tsv"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h13l-3-3"/><path d="M20 17H7l3 3"/></svg></span> CSV → TSV</div>
+    <p class="subtitle" style="margin-bottom:18px">For CSV files whose file-name columns contain commas without quotes (e.g. <code>a,b,c.pdf</code>). The table comes from the file name (MSHHKP.csv → MSHHKP) and its columns are read from the database. A line with one cell per column (empty cells at the end of the line are dropped) just has its commas changed to tabs. Otherwise, in the file-name columns (MSHHKP: SHKTRM, SHKFL1, SHKFL2, SHKFL3), a cell that is not blank and does not end with an extension such as .pdf or .png is joined with the next cell. Every other comma becomes a tab. Rows that do not come out to exactly one value per column are left out and listed below. Nothing is imported.</p>
+    <div id="err-tsv" class="alert error hidden"></div>
+    <div style="margin-bottom:14px;max-width:320px">
+      <label for="tsv-schema">Schema</label>
+      <select id="tsv-schema"><option value="">Loading schemas…</option></select>
+    </div>
+    <div class="drop-zone" id="tsv-drop-zone">
+      <input type="file" id="tsv-file-input" accept=".csv">
+      <div class="drop-icon">⇄</div>
+      <div class="drop-label"><span>Click to browse</span> or drag &amp; drop a CSV file</div>
+      <div class="drop-hint">The conversion runs as soon as a file is chosen</div>
+      <div class="file-name hidden" id="tsv-file-name"></div>
+    </div>
+    <div id="tsv-results" class="hidden" style="margin-top:18px">
+      <div id="tsv-summary" class="alert info"></div>
+      <button class="btn sm" id="btn-download-tsv" style="margin-bottom:14px">⤓ Download TSV</button>
+      <div id="tsv-errors" class="hidden" style="overflow-x:auto">
+        <table class="tbl">
+          <thead><tr><th>CSV line</th><th>Problem</th><th>Line</th></tr></thead>
+          <tbody id="tsv-error-body"></tbody>
         </table>
       </div>
     </div>
@@ -3688,7 +3719,7 @@ function resetToFileUpload() {
 }
 
 // ── TEMP: CSV check against table columns ────────────────────────────────────
-const CSVCHECK_OTHER_NAVS = ['nav-import', 'nav-truncate', 'nav-editor', 'nav-query', 'nav-schema', 'nav-connection', 'nav-about']
+const CSVCHECK_OTHER_NAVS = ['nav-import', 'nav-truncate', 'nav-editor', 'nav-query', 'nav-schema', 'nav-tsv', 'nav-connection', 'nav-about']
 
 $('nav-csvcheck').addEventListener('click', () => {
   document.querySelector('.container').classList.remove('editor-layout', 'about-layout')
@@ -3696,7 +3727,7 @@ $('nav-csvcheck').addEventListener('click', () => {
   if (visible && visible !== 'card-conn') lastImportCard = visible
   restoreImportResults = !$('card-results').classList.contains('hidden')
   ;['card-conn', 'card-upload', 'card-preview', 'card-truncate-manager', 'card-data-editor', 'card-about',
-    'card-updates', 'card-results', 'card-query-runner', 'card-schema-manager'].forEach(id => hide($(id)))
+    'card-updates', 'card-results', 'card-query-runner', 'card-schema-manager', 'card-comma-tsv'].forEach(id => hide($(id)))
   closeQuerySuggestions()
   show($('card-csv-check'))
   CSVCHECK_OTHER_NAVS.forEach(id => $(id).classList.remove('active'))
@@ -3791,6 +3822,121 @@ csvCheckZone.addEventListener('drop', e => {
   runCsvCheck(e.dataTransfer.files[0])
 })
 // ── END TEMP ──────────────────────────────────────────────────────────────────
+
+// ── Comma CSV → TSV ───────────────────────────────────────────────────────────
+const TSV_OTHER_NAVS = ['nav-import', 'nav-truncate', 'nav-editor', 'nav-query', 'nav-schema', 'nav-csvcheck', 'nav-connection', 'nav-about']
+
+$('nav-tsv').addEventListener('click', () => {
+  document.querySelector('.container').classList.remove('editor-layout', 'about-layout')
+  const visible = ['card-conn', 'card-upload', 'card-preview'].find(id => !$(id).classList.contains('hidden'))
+  if (visible && visible !== 'card-conn') lastImportCard = visible
+  restoreImportResults = !$('card-results').classList.contains('hidden')
+  ;['card-conn', 'card-upload', 'card-preview', 'card-truncate-manager', 'card-data-editor', 'card-about',
+    'card-updates', 'card-results', 'card-query-runner', 'card-schema-manager', 'card-csv-check'].forEach(id => hide($(id)))
+  closeQuerySuggestions()
+  show($('card-comma-tsv'))
+  TSV_OTHER_NAVS.forEach(id => $(id).classList.remove('active'))
+  $('nav-tsv').classList.add('active')
+  loadTsvSchemas()
+})
+
+TSV_OTHER_NAVS.forEach(id => {
+  $(id).addEventListener('click', () => {
+    hide($('card-comma-tsv'))
+    $('nav-tsv').classList.remove('active')
+  })
+})
+
+// Needs a DB connection to read the table's columns.
+new MutationObserver(() => { $('nav-tsv').disabled = $('nav-editor').disabled })
+  .observe($('nav-editor'), { attributes: true, attributeFilter: ['disabled'] })
+$('nav-tsv').disabled = $('nav-editor').disabled
+
+function loadTsvSchemas() {
+  const select = $('tsv-schema')
+  const current = select.value
+  fetch('/schemas').then(r => r.json()).then(data => {
+    if (data.error) throw new Error(data.error)
+    select.innerHTML = ''
+    data.schemas.forEach(name => select.add(new Option(name, name)))
+    const target = data.schemas.includes(current) ? current : data.default
+    if (data.schemas.includes(target)) select.value = target
+  }).catch(error => showErr($('err-tsv'), error.message))
+}
+
+let lastTsvFile = null
+let lastTsvResult = null
+$('tsv-schema').addEventListener('change', () => runTsvConvert(lastTsvFile))
+
+function runTsvConvert(file) {
+  if (!file) return
+  lastTsvFile = file
+  lastTsvResult = null
+  hide($('err-tsv')); hide($('tsv-results'))
+  $('tsv-file-name').textContent = `Converting ${file.name}…`
+  show($('tsv-file-name'))
+  const form = new FormData()
+  form.append('file', file)
+  form.append('schema', $('tsv-schema').value)
+  fetch('/convert/comma-csv-to-tsv', { method: 'POST', body: form }).then(r => r.json()).then(data => {
+    if (data.error) throw new Error(data.error)
+    lastTsvResult = data
+    $('tsv-file-name').textContent = `${data.filename} → ${data.schema}.${data.table} (${data.columns} columns) · ` +
+      `file-name columns: ${data.file_columns.join(', ')} · ${data.encoding}`
+    const summary = $('tsv-summary')
+    summary.className = 'alert ' + (data.error_count ? 'error' : 'info')
+    const parts = [`${data.rows} rows read`, `${data.written} rows written to TSV`,
+                   `${data.joined} rows had commas inside a file name`]
+    if (data.header) parts.push('header row kept')
+    if (data.error_count) parts.push(`${data.error_count} rows left out — fix them by hand`)
+    summary.textContent = parts.join(' · ') +
+      (data.error_count > data.errors.length ? ` (showing the first ${data.errors.length})` : '')
+    $('btn-download-tsv').disabled = !data.written && !data.header
+    $('tsv-error-body').innerHTML = data.errors.map(e => `
+      <tr><td>${e.line}</td><td><span class="badge red">${escapeHtml(e.reason)}</span></td>
+        <td class="mono">${escapeHtml(e.text)}</td></tr>`).join('')
+    $('tsv-errors').classList.toggle('hidden', !data.error_count)
+    show($('tsv-results'))
+  }).catch(error => {
+    hide($('tsv-file-name'))
+    showErr($('err-tsv'), error.message)
+  })
+}
+
+$('btn-download-tsv').addEventListener('click', () => {
+  if (!lastTsvResult) return
+  const bytes = Uint8Array.from(atob(lastTsvResult.tsv_base64), c => c.charCodeAt(0))
+  const url = URL.createObjectURL(new Blob([bytes], { type: 'text/tab-separated-values' }))
+  const link = document.createElement('a')
+  link.href = url
+  link.download = lastTsvResult.tsv_filename
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
+})
+
+$('tsv-file-input').addEventListener('change', e => {
+  runTsvConvert(e.target.files[0])
+  e.target.value = ''   // allow converting the same file again after editing it
+})
+const tsvZone = $('tsv-drop-zone')
+tsvZone.tabIndex = 0
+tsvZone.setAttribute('role', 'button')
+tsvZone.addEventListener('click', e => {
+  if (e.target !== $('tsv-file-input')) $('tsv-file-input').click()
+})
+tsvZone.addEventListener('keydown', e => {
+  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('tsv-file-input').click() }
+})
+;['dragover', 'dragenter'].forEach(ev => tsvZone.addEventListener(ev, e => {
+  e.preventDefault(); tsvZone.classList.add('drag-over')
+}))
+tsvZone.addEventListener('dragleave', () => tsvZone.classList.remove('drag-over'))
+tsvZone.addEventListener('drop', e => {
+  e.preventDefault(); tsvZone.classList.remove('drag-over')
+  runTsvConvert(e.dataTransfer.files[0])
+})
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function setLoading(btn, loading, label) {

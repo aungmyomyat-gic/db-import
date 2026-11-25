@@ -29,6 +29,19 @@ the tables afterwards. It runs in Docker and opens at http://localhost:5000.
   against an existing matching table to replace its rows. Database defaults and
   triggers run again. Imports with row errors do not offer a SQL download.
   Downloads expire one hour after completion, or when the app restarts.
+- **CSV → TSV** — for CSV files from systems that do not quote values, where a
+  file name such as `a,b,c.pdf` is split into several cells. The table comes
+  from the file name and its columns are read from the database. In the
+  table's file-name columns (`MSHHKP`: `SHKTRM`, `SHKFL1`, `SHKFL2`, `SHKFL3`;
+  more tables can be added to `COMMA_FILE_COLUMNS` in `app.py`). A line with
+  one cell per table column (empty cells at the end of the line are dropped)
+  just has its commas changed to tabs. Otherwise, in the file-name columns, a
+  cell that is neither blank nor ending in an extension (`.pdf`, `.png`, …; at
+  least one letter, so `2014.11` does not count) is joined with the next cell.
+  Every other comma becomes a tab. A header row is kept, and
+  the encoding (UTF-8 or Shift-JIS) and line endings stay the same. Rows that
+  do not come out to exactly one value per column are left out of the TSV and
+  listed with their CSV line number so they can be fixed by hand.
 - **Truncate Table** — empty one or more tables in a schema.
 - **Data Editor** — browse every record in any table:
   - pages of 1,000, 2,000, 5,000 or 10,000 rows (the choice is remembered)
