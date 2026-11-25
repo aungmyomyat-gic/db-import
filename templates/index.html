@@ -4420,6 +4420,9 @@ sqlGenZone.addEventListener('drop', e => {
 // The tools are ordinary nav buttons inside a menu, so each keeps its own click
 // handler. The menu button shows which one is open and is highlighted while any
 // of them is active.
+// Close functions of every nav menu: opening one menu closes the others.
+const navMenuClosers = []
+
 function setupNavMenu(groupId, triggerId, panelId, labelId, defaultLabel) {
   const trigger = $(triggerId)
   const panel = $(panelId)
@@ -4432,6 +4435,7 @@ function setupNavMenu(groupId, triggerId, panelId, labelId, defaultLabel) {
     panel.style.left = `${Math.max(8, Math.min(box.left, window.innerWidth - width - 8))}px`
   }
   function setOpen(open) {
+    if (open) navMenuClosers.forEach(close => { if (close !== closeMenu) close() })
     panel.classList.toggle('hidden', !open)
     trigger.setAttribute('aria-expanded', String(open))
     if (open) {
@@ -4441,6 +4445,8 @@ function setupNavMenu(groupId, triggerId, panelId, labelId, defaultLabel) {
       if (first) first.focus({ preventScroll: true })
     }
   }
+  function closeMenu() { setOpen(false) }
+  navMenuClosers.push(closeMenu)
   function syncTrigger() {
     const current = items.find(item => item.classList.contains('active'))
     trigger.classList.toggle('active', Boolean(current))
