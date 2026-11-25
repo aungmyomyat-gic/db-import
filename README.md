@@ -58,10 +58,12 @@ the tables afterwards. It runs in Docker and opens at http://localhost:5000.
   listed with their CSV line number so they can be fixed by hand.
   **Download error CSV** saves just those lines, unchanged (plus the header
   row, if any), as `TABLE (errors).csv`; fix them and convert that file again.
-- **CSV Check** — check a CSV against its table before importing it: every
-  value is compared with its column's type, length and precision from the
-  database. Nothing is imported. The same check is printed to the container
-  log on every CSV import.
+- **Data Check** — check a CSV (comma) or TSV (tab) file against its table
+  before importing it: every value is compared with its column's type, length
+  and precision from the database, and rows with the wrong number of values
+  are listed. A header row is found the same way as in the import, and a
+  partial match is shown as a warning. Nothing is imported. The same check is
+  printed to the container log on every CSV / TSV import.
 - **SQL Generate** — turn a CSV or TSV into the same SQL file the import offers
   for download, without importing it. Only the table's column metadata is read;
   no rows are changed.

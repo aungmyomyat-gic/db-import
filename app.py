@@ -489,23 +489,24 @@ def _csv_preview(table_name, rows, width, has_header=False):
     }
 
 
-# ── CSV check against table columns ──────────────────────────────────────────
-# Compares each CSV value with the column it will be
-# imported into (matched by position, like the CSV import) using the column
-# types, lengths and precision from INFORMATION_SCHEMA. Used by the "CSV Check"
-# tab, and printed to the container log on every CSV import.
-_CSVCHECK_INT_RANGES = {
+# ── Data check against table columns ─────────────────────────────────────────
+# Compares each value of a CSV / TSV with the column it will be imported into
+# (matched by name with a header row, otherwise by position, like the import)
+# using the column types, lengths and precision from INFORMATION_SCHEMA. Used
+# by the "Data Check" tab, and printed to the container log on every CSV / TSV
+# import.
+_DATACHECK_INT_RANGES = {
     "tinyint": (0, 255),
     "smallint": (-2**15, 2**15 - 1),
     "int": (-2**31, 2**31 - 1),
     "bigint": (-2**63, 2**63 - 1),
 }
-_CSVCHECK_INT_RE = re.compile(r"[+-]?[0-9]+")
-_CSVCHECK_DECIMAL_RE = re.compile(r"[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)")
-_CSVCHECK_FLOAT_RE = re.compile(r"[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?")
+_DATACHECK_INT_RE = re.compile(r"[+-]?[0-9]+")
+_DATACHECK_DECIMAL_RE = re.compile(r"[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)")
+_DATACHECK_FLOAT_RE = re.compile(r"[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?")
 
 
-def _csvcheck_table_columns(cursor, schema, table_name):
+def _datacheck_table_columns(cursor, schema, table_name):
     cursor.execute(
         "SELECT COLUMN_NAME, DATA_TYPE, CHARACTER_MAXIMUM_LENGTH, NUMERIC_PRECISION, "
         "NUMERIC_SCALE, IS_NULLABLE FROM INFORMATION_SCHEMA.COLUMNS "
@@ -527,24 +528,24 @@ def _csvcheck_table_columns(cursor, schema, table_name):
     return columns
 
 
-def _csvcheck_value_problem(value, col):
+def _datacheck_value_problem(value, col):
     """Return (severity, reason) when value does not fit col, else None."""
     dtype = col["type"]
     if dtype not in STRING_TYPES:
         value = value.strip()
     if value == "":
         return None   # blank -> NULL, or the type default for NOT NULL columns
-    if dtype in _CSVCHECK_INT_RANGES:
-        if not _CSVCHECK_INT_RE.fullmatch(value):
+    if dtype in _DATACHECK_INT_RANGES:
+        if not _DATACHECK_INT_RE.fullmatch(value):
             return "error", "Not an integer"
-        low, high = _CSVCHECK_INT_RANGES[dtype]
+        low, high = _DATACHECK_INT_RANGES[dtype]
         if not low <= int(value) <= high:
             return "error", f"Out of range for {dtype} ({low} to {high})"
     elif dtype == "bit":
         if value.lower() not in ("0", "1", "true", "false"):
             return "error", "Not 0/1/true/false"
     elif dtype in ("decimal", "numeric"):
-        if not _CSVCHECK_DECIMAL_RE.fullmatch(value):
+        if not _DATACHECK_DECIMAL_RE.fullmatch(value):
             return "error", "Not a number"
         whole, _, frac = value.lstrip("+-").partition(".")
         whole = whole.lstrip("0")
@@ -555,7 +556,7 @@ def _csvcheck_value_problem(value, col):
         if len(frac.rstrip("0")) > scale:
             return "warning", f"{len(frac.rstrip('0'))} decimals, {col['label']} keeps {scale} (rounded)"
     elif dtype in ("money", "smallmoney", "float", "real"):
-        if not _CSVCHECK_FLOAT_RE.fullmatch(value):
+        if not _DATACHECK_FLOAT_RE.fullmatch(value):
             return "error", "Not a number"
     elif dtype in ("char", "varchar", "nchar", "nvarchar") and col["max_len"] not in (None, -1):
         if dtype in ("nchar", "nvarchar"):
@@ -567,8 +568,8 @@ def _csvcheck_value_problem(value, col):
     return None
 
 
-def _csvcheck_csv_issues(raw, columns):
-    """Return (rows_checked, issues) for CSV bytes checked against table columns."""
+def _datacheck_file_issues(raw, columns, delimiter=","):
+    """Return (rows_checked, issues, header) for CSV / TSV bytes checked against table columns."""
     for encoding in CSV_ENCODINGS:
         try:
             text = raw.decode(encoding)
@@ -576,13 +577,13 @@ def _csvcheck_csv_issues(raw, columns):
         except UnicodeDecodeError:
             continue
     else:
-        raise ValueError("CSV is not UTF-8 or Shift-JIS text")
+        raise ValueError("File is not UTF-8 or Shift-JIS text")
     issues = []
     rows_checked = 0
     header = None   # set when the first row is a header: columns are matched by name
     by_name = {c["name"].upper(): c for c in columns}
     positional = columns
-    reader = csv.reader(io.StringIO(text, newline=""))
+    reader = csv.reader(io.StringIO(text, newline=""), delimiter=delimiter)
     for row in reader:
         if not any(cell.strip() for cell in row):
             continue   # the import skips blank lines too
@@ -605,7 +606,7 @@ def _csvcheck_csv_issues(raw, columns):
         for index, (value, col) in enumerate(zip(row, positional)):
             if col is None:
                 continue   # header column that is not in the table: the import skips it
-            problem = _csvcheck_value_problem(value, col)
+            problem = _datacheck_value_problem(value, col)
             if problem:
                 issues.append({**base, "column": col["name"], "type": col["label"],
                                "position": index + 1, "value": value,
@@ -613,25 +614,25 @@ def _csvcheck_csv_issues(raw, columns):
     return rows_checked, issues, header
 
 
-def _csvcheck_log_csv_check(conn, path, schema, table_name):
-    columns = _csvcheck_table_columns(conn.cursor(), schema, table_name)
+def _datacheck_log(conn, path, schema, table_name, delimiter=","):
+    columns = _datacheck_table_columns(conn.cursor(), schema, table_name)
     if not columns:
         return
-    _, issues, _ = _csvcheck_csv_issues(Path(path).read_bytes(), columns)
-    print(f"[CSV CHECK] {schema}.{table_name}: {len(issues)} problems", flush=True)
+    _, issues, _ = _datacheck_file_issues(Path(path).read_bytes(), columns, delimiter)
+    print(f"[DATA CHECK] {schema}.{table_name}: {len(issues)} problems", flush=True)
     for i in issues:
         if i["column"] is None:
-            print(f"Row {i['row']} (CSV line {i['line']}): {i['reason']}", flush=True)
+            print(f"Row {i['row']} (line {i['line']}): {i['reason']}", flush=True)
             continue
         print(f"{i['severity'].upper()} ROW: {i['row']}\n"
-              f"CSV LINE: {i['line']}\n"
+              f"LINE: {i['line']}\n"
               f"Record ID: {i['record_id']}\n"
               f"Column: {i['column']} {i['type']}\n"
               f"Column position: {i['position']}\n"
               f"Invalid value: {i['value']!r}\n"
               f"Problem: {i['reason']}\n"
               f"Full row: {i['full_row']}\n" + "-" * 60, flush=True)
-    print(f"[CSV CHECK] {schema}.{table_name}: done", flush=True)
+    print(f"[DATA CHECK] {schema}.{table_name}: done", flush=True)
 
 
 # ── Comma CSV → TSV for tables with file-name columns ─────────────────────────
@@ -944,16 +945,20 @@ def _test_connection(host, port, database, username, password):
         return str(e)
 
 
-@app.route("/csv/check", methods=["POST"])
-def csv_check():
+@app.route("/data/check", methods=["POST"])
+def data_check():
+    """Check every value of a CSV / TSV against its table's columns. Nothing is imported."""
     file = request.files.get("file")
     if not file or not file.filename:
         return jsonify({"error": "No file selected."}), 400
-    if not is_csv_filename(file.filename):
-        return jsonify({"error": "Please choose a .csv file."}), 400
+    delimiter = delimiter_for(file.filename)
+    if not delimiter:
+        return jsonify({"error": "Please choose a .csv or .tsv file."}), 400
+    fmt = "tsv" if delimiter == "\t" else "csv"
     table_name = csv_table_name(file.filename)
     if not table_name:
-        return jsonify({"error": "CSV file name must start with the table name, e.g. MDNNOP.csv."}), 400
+        return jsonify({"error": f"{fmt.upper()} file name must start with the table name, "
+                                 f"e.g. MDNNOP.{fmt}."}), 400
     schema = request.form.get("schema", "").strip()
     if not schema:
         return jsonify({"error": "Schema is required."}), 400
@@ -968,19 +973,23 @@ def csv_check():
     try:
         conn = pyodbc.connect(conn_str, timeout=10)
         try:
-            columns = _csvcheck_table_columns(conn.cursor(), schema, table_name)
+            columns = _datacheck_table_columns(conn.cursor(), schema, table_name)
         finally:
             conn.close()
     except pyodbc.Error as e:
         return jsonify({"error": f"Could not read table columns: {e}"}), 400
     if not columns:
         return jsonify({"error": f"Table {schema}.{table_name} not found."}), 404
+    raw = file.read()
     try:
-        rows_checked, issues, header = _csvcheck_csv_issues(file.read(), columns)
+        rows_checked, issues, header = _datacheck_file_issues(raw, columns, delimiter)
+        first_row = first_file_row(raw, delimiter)
     except Exception as e:
         return jsonify({"error": f"Cannot read file: {e}"}), 400
     return jsonify({
-        "filename": file.filename, "schema": schema, "table": table_name,
+        "filename": file.filename, "format": fmt, "schema": schema, "table": table_name,
+        # Same header check as the import; "partial" is shown as a warning.
+        "header_check": check_header(first_row, [c["name"] for c in columns]),
         "columns": [{"name": c["name"], "type": c["label"]} for c in columns],
         "header": header is not None,
         "unknown_header_columns": [h for h in (header or [])
@@ -2291,11 +2300,10 @@ def _run_csv_import(job_id, conn, tmp_path, table_name, selected_names, schema, 
         return
     _mark_job_table(job_id, table_name, "running", "Importing", schema=schema)
     sql_path = Path(SQL_EXPORT_DIR.name) / f"{job_id}.sql"
-    if delimiter == ",":
-        try:   # also logs the CSV check to the container log
-            _csvcheck_log_csv_check(conn, tmp_path, schema, table_name)
-        except Exception as e:
-            print(f"[CSV CHECK] failed: {e}", flush=True)
+    try:   # also logs the data check to the container log
+        _datacheck_log(conn, tmp_path, schema, table_name, delimiter)
+    except Exception as e:
+        print(f"[DATA CHECK] failed: {e}", flush=True)
     try:
         rows, _ = read_csv_rows(tmp_path, delimiter)
         progress_cb = lambda done, total: _mark_job_progress(job_id, table_name, done, total)

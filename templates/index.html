@@ -456,8 +456,8 @@
   .card-title .step-sqlgen { --c1: #34d399; --c2: #059669 }
   #csv-mismatch .tbl td.mono { font-family: ui-monospace, Consolas, monospace; white-space: nowrap }
   #tsv-errors .tbl td.mono { font-family: ui-monospace, Consolas, monospace; white-space: nowrap }
-  #csvcheck-results .tbl td { white-space: nowrap }
-  #csvcheck-results .tbl td.mono { font-family: ui-monospace, Consolas, monospace }
+  #datacheck-results .tbl td { white-space: nowrap }
+  #datacheck-results .tbl td.mono { font-family: ui-monospace, Consolas, monospace }
 
   label { display: block; font-size: .85rem; color: #94a3b8; margin-bottom: 6px }
   input[type=text], input[type=password], select {
@@ -815,7 +815,7 @@
         <div class="nav-menu hidden" id="nav-import-panel" role="menu" aria-label="Import">
           <button class="nav-btn active" id="nav-import" role="menuitem" data-label="Import">Excel / CSV / TSV Import<span class="menu-sub">Excel sheets, or one CSV / TSV file per table</span></button>
           <button class="nav-btn" id="nav-tsv" role="menuitem" data-label="CSV → TSV" disabled>CSV → TSV<span class="menu-sub">Fix unquoted commas in file names</span></button>
-          <button class="nav-btn" id="nav-csvcheck" role="menuitem" data-label="CSV Check" disabled>CSV Check<span class="menu-sub">Check a CSV against its table columns</span></button>
+          <button class="nav-btn" id="nav-datacheck" role="menuitem" data-label="Data Check" disabled>Data Check<span class="menu-sub">Check a CSV / TSV against its table columns</span></button>
         </div>
       </div>
       <div class="nav-group" id="nav-group-db">
@@ -937,28 +937,28 @@
     </table>
   </div>
 
-  <!-- ── CSV check against table columns ─────────────── -->
-  <div class="card hidden" id="card-csv-check">
-    <div class="card-title active"><span class="step step-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></span> CSV Check</div>
-    <p class="subtitle" style="margin-bottom:18px">Checks a CSV against its table before you import it. The table comes from the file name (DSHKKP.csv → DSHKKP). If the first row holds column names it is used as the header and columns are matched by name; otherwise they are matched by position. Column types, lengths and precision are read from the database. Nothing is imported.</p>
-    <div id="err-csvcheck" class="alert error hidden"></div>
+  <!-- ── Data check against table columns ────────────── -->
+  <div class="card hidden" id="card-data-check">
+    <div class="card-title active"><span class="step step-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></span> Data Check</div>
+    <p class="subtitle" style="margin-bottom:18px">Checks a CSV or TSV against its table before you import it. Values are separated by commas in a <code>.csv</code> and by tabs in a <code>.tsv</code>. The table comes from the file name (DSHKKP.csv or DSHKKP.tsv → DSHKKP). If the first row holds column names it is used as the header and columns are matched by name; otherwise they are matched by position. Column types, lengths and precision are read from the database. Nothing is imported.</p>
+    <div id="err-datacheck" class="alert error hidden"></div>
     <div style="margin-bottom:14px;max-width:320px">
-      <label for="csvcheck-schema">Schema</label>
-      <select id="csvcheck-schema"><option value="">Loading schemas…</option></select>
+      <label for="datacheck-schema">Schema</label>
+      <select id="datacheck-schema"><option value="">Loading schemas…</option></select>
     </div>
-    <div class="drop-zone" id="csvcheck-drop-zone">
-      <input type="file" id="csvcheck-file-input" accept=".csv">
+    <div class="drop-zone" id="datacheck-drop-zone">
+      <input type="file" id="datacheck-file-input" accept=".csv,.tsv">
       <div class="drop-icon">🔎</div>
-      <div class="drop-label"><span>Click to browse</span> or drag &amp; drop a CSV file</div>
+      <div class="drop-label"><span>Click to browse</span> or drag &amp; drop a CSV or TSV file</div>
       <div class="drop-hint">The check runs as soon as a file is chosen</div>
-      <div class="file-name hidden" id="csvcheck-file-name"></div>
+      <div class="file-name hidden" id="datacheck-file-name"></div>
     </div>
-    <div id="csvcheck-results" class="hidden" style="margin-top:18px">
-      <div id="csvcheck-summary" class="alert info"></div>
+    <div id="datacheck-results" class="hidden" style="margin-top:18px">
+      <div id="datacheck-summary" class="alert info"></div>
       <div style="overflow-x:auto">
         <table class="tbl">
-          <thead><tr><th>Row</th><th>CSV line</th><th>Record ID</th><th>Column</th><th>Type</th><th>Position</th><th>Value</th><th>Problem</th></tr></thead>
-          <tbody id="csvcheck-body"></tbody>
+          <thead><tr><th>Row</th><th>Line</th><th>Record ID</th><th>Column</th><th>Type</th><th>Position</th><th>Value</th><th>Problem</th></tr></thead>
+          <tbody id="datacheck-body"></tbody>
         </table>
       </div>
     </div>
@@ -3912,10 +3912,10 @@ function resetToFileUpload() {
   show($('card-upload'))
 }
 
-// ── CSV check against table columns ──────────────────────────────────────────
-const CSVCHECK_OTHER_NAVS = ['nav-import', 'nav-truncate', 'nav-editor', 'nav-query', 'nav-schema', 'nav-tsv', 'nav-connection', 'nav-about']
+// ── Data check against table columns ─────────────────────────────────────────
+const DATACHECK_OTHER_NAVS = ['nav-import', 'nav-truncate', 'nav-editor', 'nav-query', 'nav-schema', 'nav-tsv', 'nav-connection', 'nav-about']
 
-$('nav-csvcheck').addEventListener('click', () => {
+$('nav-datacheck').addEventListener('click', () => {
   document.querySelector('.container').classList.remove('editor-layout', 'about-layout')
   const visible = ['card-conn', 'card-upload', 'card-preview'].find(id => !$(id).classList.contains('hidden'))
   if (visible && visible !== 'card-conn') lastImportCard = visible
@@ -3923,26 +3923,26 @@ $('nav-csvcheck').addEventListener('click', () => {
   ;['card-conn', 'card-upload', 'card-preview', 'card-truncate-manager', 'card-data-editor', 'card-about',
     'card-updates', 'card-results', 'card-query-runner', 'card-schema-manager', 'card-comma-tsv'].forEach(id => hide($(id)))
   closeQuerySuggestions()
-  show($('card-csv-check'))
-  CSVCHECK_OTHER_NAVS.forEach(id => $(id).classList.remove('active'))
-  $('nav-csvcheck').classList.add('active')
-  loadCsvCheckSchemas()
+  show($('card-data-check'))
+  DATACHECK_OTHER_NAVS.forEach(id => $(id).classList.remove('active'))
+  $('nav-datacheck').classList.add('active')
+  loadDataCheckSchemas()
 })
 
-CSVCHECK_OTHER_NAVS.forEach(id => {
+DATACHECK_OTHER_NAVS.forEach(id => {
   $(id).addEventListener('click', () => {
-    hide($('card-csv-check'))
-    $('nav-csvcheck').classList.remove('active')
+    hide($('card-data-check'))
+    $('nav-datacheck').classList.remove('active')
   })
 })
 
 // Needs a DB connection, like the Data Editor.
-new MutationObserver(() => { $('nav-csvcheck').disabled = $('nav-editor').disabled })
+new MutationObserver(() => { $('nav-datacheck').disabled = $('nav-editor').disabled })
   .observe($('nav-editor'), { attributes: true, attributeFilter: ['disabled'] })
-$('nav-csvcheck').disabled = $('nav-editor').disabled
+$('nav-datacheck').disabled = $('nav-editor').disabled
 
-function loadCsvCheckSchemas() {
-  const select = $('csvcheck-schema')
+function loadDataCheckSchemas() {
+  const select = $('datacheck-schema')
   const current = select.value
   fetch('/schemas').then(r => r.json()).then(data => {
     if (data.error) throw new Error(data.error)
@@ -3950,28 +3950,34 @@ function loadCsvCheckSchemas() {
     data.schemas.forEach(name => select.add(new Option(name, name)))
     const target = data.schemas.includes(current) ? current : data.default
     if (data.schemas.includes(target)) select.value = target
-  }).catch(error => showErr($('err-csvcheck'), error.message))
+  }).catch(error => showErr($('err-datacheck'), error.message))
 }
 
-let lastCsvCheckFile = null
-$('csvcheck-schema').addEventListener('change', () => runCsvCheck(lastCsvCheckFile))
+let lastDataCheckFile = null
+$('datacheck-schema').addEventListener('change', () => runDataCheck(lastDataCheckFile))
 
-function runCsvCheck(file) {
+function runDataCheck(file) {
   if (!file) return
-  lastCsvCheckFile = file
-  hide($('err-csvcheck')); hide($('csvcheck-results'))
-  $('csvcheck-file-name').textContent = `Checking ${file.name}…`
-  show($('csvcheck-file-name'))
+  lastDataCheckFile = file
+  hide($('err-datacheck')); hide($('datacheck-results'))
+  $('datacheck-file-name').textContent = `Checking ${file.name}…`
+  show($('datacheck-file-name'))
   const form = new FormData()
   form.append('file', file)
-  form.append('schema', $('csvcheck-schema').value)
-  fetch('/csv/check', { method: 'POST', body: form }).then(r => r.json()).then(data => {
+  form.append('schema', $('datacheck-schema').value)
+  fetch('/data/check', { method: 'POST', body: form }).then(r => r.json()).then(data => {
     if (data.error) throw new Error(data.error)
-    $('csvcheck-file-name').textContent = `${data.filename} → ${data.schema}.${data.table} (${data.columns.length} columns) · ` +
+    $('datacheck-file-name').textContent = `${data.filename} → ${data.schema}.${data.table} (${data.columns.length} columns) · ` +
       (data.header ? 'header row found, matched by name' : 'no header row, matched by position')
-    const summary = $('csvcheck-summary')
-    summary.className = 'alert ' + (data.error_count ? 'error' : 'info')
-    const parts = [`${data.rows_checked} rows checked`]
+    const summary = $('datacheck-summary')
+    const hc = data.header_check
+    const partial = hc && hc.status === 'partial'
+    summary.className = 'alert ' + (data.error_count ? 'error' : partial ? 'warn' : 'info')
+    const parts = [`${data.format.toUpperCase()} · ${data.rows_checked} rows checked`]
+    if (partial)
+      parts.push(`⚠ first row: ${hc.matched} of ${hc.cells} values are column names (${hc.percent}%) — ` +
+                 `${data.header ? 'checked as a header' : 'checked as data'}; not column names: ${hc.unknown.slice(0, 15).join(', ')}` +
+                 (hc.unknown.length > 15 ? ', …' : ''))
     if (data.unknown_header_columns && data.unknown_header_columns.length)
       parts.push(`header columns not in the table (skipped): ${data.unknown_header_columns.join(', ')}`)
     if (data.error_count) parts.push(`${data.bad_rows} bad rows`, `${data.error_count} errors`)
@@ -3979,7 +3985,7 @@ function runCsvCheck(file) {
     if (!data.issue_count) parts.push('no problems found')
     summary.textContent = parts.join(' · ') +
       (data.issue_count > data.issues.length ? ` (showing the first ${data.issues.length})` : '')
-    $('csvcheck-body').innerHTML = data.issues.map(i => `
+    $('datacheck-body').innerHTML = data.issues.map(i => `
       <tr title="${escapeAttr(JSON.stringify(i.full_row))}">
         <td>${i.row}</td><td>${i.line}</td><td class="mono">${escapeHtml(i.record_id)}</td>
         <td>${escapeHtml(i.column ?? '—')}</td><td class="mono">${escapeHtml(i.type ?? '—')}</td>
@@ -3987,37 +3993,37 @@ function runCsvCheck(file) {
         <td class="mono">${i.value === null ? '—' : escapeHtml(JSON.stringify(i.value))}</td>
         <td><span class="badge ${i.severity === 'error' ? 'red' : 'yellow'}">${escapeHtml(i.reason)}</span></td>
       </tr>`).join('')
-    show($('csvcheck-results'))
+    show($('datacheck-results'))
   }).catch(error => {
-    hide($('csvcheck-file-name'))
-    showErr($('err-csvcheck'), error.message)
+    hide($('datacheck-file-name'))
+    showErr($('err-datacheck'), error.message)
   })
 }
 
-$('csvcheck-file-input').addEventListener('change', e => {
-  runCsvCheck(e.target.files[0])
+$('datacheck-file-input').addEventListener('change', e => {
+  runDataCheck(e.target.files[0])
   e.target.value = ''   // allow re-checking the same file after editing it
 })
-const csvCheckZone = $('csvcheck-drop-zone')
-csvCheckZone.tabIndex = 0
-csvCheckZone.setAttribute('role', 'button')
-csvCheckZone.addEventListener('click', e => {
-  if (e.target !== $('csvcheck-file-input')) $('csvcheck-file-input').click()
+const dataCheckZone = $('datacheck-drop-zone')
+dataCheckZone.tabIndex = 0
+dataCheckZone.setAttribute('role', 'button')
+dataCheckZone.addEventListener('click', e => {
+  if (e.target !== $('datacheck-file-input')) $('datacheck-file-input').click()
 })
-csvCheckZone.addEventListener('keydown', e => {
-  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('csvcheck-file-input').click() }
+dataCheckZone.addEventListener('keydown', e => {
+  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('datacheck-file-input').click() }
 })
-;['dragover', 'dragenter'].forEach(ev => csvCheckZone.addEventListener(ev, e => {
-  e.preventDefault(); csvCheckZone.classList.add('drag-over')
+;['dragover', 'dragenter'].forEach(ev => dataCheckZone.addEventListener(ev, e => {
+  e.preventDefault(); dataCheckZone.classList.add('drag-over')
 }))
-csvCheckZone.addEventListener('dragleave', () => csvCheckZone.classList.remove('drag-over'))
-csvCheckZone.addEventListener('drop', e => {
-  e.preventDefault(); csvCheckZone.classList.remove('drag-over')
-  runCsvCheck(e.dataTransfer.files[0])
+dataCheckZone.addEventListener('dragleave', () => dataCheckZone.classList.remove('drag-over'))
+dataCheckZone.addEventListener('drop', e => {
+  e.preventDefault(); dataCheckZone.classList.remove('drag-over')
+  runDataCheck(e.dataTransfer.files[0])
 })
 
 // ── Comma CSV → TSV ───────────────────────────────────────────────────────────
-const TSV_OTHER_NAVS = ['nav-import', 'nav-truncate', 'nav-editor', 'nav-query', 'nav-schema', 'nav-csvcheck', 'nav-connection', 'nav-about']
+const TSV_OTHER_NAVS = ['nav-import', 'nav-truncate', 'nav-editor', 'nav-query', 'nav-schema', 'nav-datacheck', 'nav-connection', 'nav-about']
 
 $('nav-tsv').addEventListener('click', () => {
   document.querySelector('.container').classList.remove('editor-layout', 'about-layout')
@@ -4025,7 +4031,7 @@ $('nav-tsv').addEventListener('click', () => {
   if (visible && visible !== 'card-conn') lastImportCard = visible
   restoreImportResults = !$('card-results').classList.contains('hidden')
   ;['card-conn', 'card-upload', 'card-preview', 'card-truncate-manager', 'card-data-editor', 'card-about',
-    'card-updates', 'card-results', 'card-query-runner', 'card-schema-manager', 'card-csv-check'].forEach(id => hide($(id)))
+    'card-updates', 'card-results', 'card-query-runner', 'card-schema-manager', 'card-data-check'].forEach(id => hide($(id)))
   closeQuerySuggestions()
   show($('card-comma-tsv'))
   TSV_OTHER_NAVS.forEach(id => $(id).classList.remove('active'))
@@ -4159,7 +4165,7 @@ tsvZone.addEventListener('drop', e => {
 })
 
 // ── SQL Generate ──────────────────────────────────────────────────────────────
-const SQLGEN_OTHER_NAVS = ['nav-import', 'nav-truncate', 'nav-editor', 'nav-query', 'nav-schema', 'nav-csvcheck',
+const SQLGEN_OTHER_NAVS = ['nav-import', 'nav-truncate', 'nav-editor', 'nav-query', 'nav-schema', 'nav-datacheck',
   'nav-tsv', 'nav-connection', 'nav-about']
 
 $('nav-sqlgen').addEventListener('click', () => {
@@ -4168,7 +4174,7 @@ $('nav-sqlgen').addEventListener('click', () => {
   if (visible && visible !== 'card-conn') lastImportCard = visible
   restoreImportResults = !$('card-results').classList.contains('hidden')
   ;['card-conn', 'card-upload', 'card-preview', 'card-truncate-manager', 'card-data-editor', 'card-about',
-    'card-updates', 'card-results', 'card-query-runner', 'card-schema-manager', 'card-csv-check',
+    'card-updates', 'card-results', 'card-query-runner', 'card-schema-manager', 'card-data-check',
     'card-comma-tsv'].forEach(id => hide($(id)))
   closeQuerySuggestions()
   show($('card-sql-generate'))
