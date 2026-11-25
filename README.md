@@ -10,15 +10,24 @@ the tables afterwards. It runs in Docker and opens at http://localhost:5000.
   Preview them, choose which to import, and insert them into the target schema.
   If the file name contains `day job 12` / `month job 3`, the matching batch job
   can be triggered after the import.
-- **CSV import** — choose a `.csv` file and the file name is used as the table
-  name (`MDNNOP.csv` or `MDNNOP (1).csv` → `MDNNOP`). The file may have a header
-  row or not. If more than half of the first row's cells are column names of
-  the table, that row is the header and columns are matched **by name** (any
-  order; header columns not in the table are skipped). Otherwise every row is
-  data and columns are matched **by position**. The preview shows which one was
-  found. Blank values become NULL, or the type's default for NOT NULL columns.
+- **CSV / TSV import** — in the same Import tab, choose a `.csv` (comma) or
+  `.tsv` (tab) file; the file name is used as the table name (`MDNNOP.csv`,
+  `MDNNOP.tsv` or `MDNNOP (1).csv` → `MDNNOP`). A value in double quotes may
+  contain the separator, and the quotes are removed (`""` inside stands for one
+  `"`). The file may have a header row or not: the preview fetches the table's
+  columns in the chosen schema and compares the first row with them.
+  - every value is a column name (100%) → **header**: columns are matched
+    **by name**, in any order
+  - no value is a column name (0%) → **no header**: values are matched
+    **by position**
+  - anything in between, even one value → a **warning** listing the values
+    that are not column names; choose **Header** (those columns are skipped)
+    or **Data row**. The default is Header when more than half match.
+  The preview also lists the lines that do not have the expected number of
+  values, and the import asks for confirmation before replacing the table's
+  rows. Blank values become NULL, or the type's default for NOT NULL columns.
   UTF-8 and Shift-JIS files both work.
-  After a successful CSV import, **Download SQL** appears in Import Results.
+  After a successful CSV / TSV import, **Download SQL** appears in Import Results.
   The UTF-8 `.sql` file starts with `DELETE FROM schema.table;`, followed by
   `INSERT INTO schema.table` and a `VALUES` block with one tuple per row.
   Numeric columns use unquoted numbers; text uses `N'...'` literals, preserving
@@ -43,21 +52,19 @@ the tables afterwards. It runs in Docker and opens at http://localhost:5000.
   text like `JN75 0.35GR` is not taken for the end of a file name.
   Every other comma becomes a tab. A value that itself contains a tab (e.g. a
   memo pasted from Excel) is written in double quotes, `"a<TAB>b"`, so it stays
-  one value; TSV Import removes the quotes and keeps the tab. A header row is kept, and
+  one value; the TSV import removes the quotes and keeps the tab. A header row is kept, and
   the encoding (UTF-8 or Shift-JIS) and line endings stay the same. Rows that
   do not come out to exactly one value per column are left out of the TSV and
   listed with their CSV line number so they can be fixed by hand.
   **Download error CSV** saves just those lines, unchanged (plus the header
   row, if any), as `TABLE (errors).csv`; fix them and convert that file again.
-- **TSV Import** — import a tab-separated `.tsv` file, such as the one made by
-  CSV → TSV. It works like CSV import (file name = table name, header row
-  matched by name or values matched by position, blank → NULL/default, the
-  table's rows are replaced, Download SQL afterwards). Tabs separate values;
-  a value in double quotes may contain tabs, and the quotes are removed
-  (`""` inside stands for one `"`), as CSV → TSV writes it. Before the
-  import, a preview shows the row count, whether a header was found, and the
-  lines that do not have one value per column; the import asks for
-  confirmation.
+- **CSV Check** — check a CSV against its table before importing it: every
+  value is compared with its column's type, length and precision from the
+  database. Nothing is imported. The same check is printed to the container
+  log on every CSV import.
+- **SQL Generate** — turn a CSV or TSV into the same SQL file the import offers
+  for download, without importing it. Only the table's column metadata is read;
+  no rows are changed.
 - **Truncate Table** — empty one or more tables in a schema.
 - **Data Editor** — browse every record in any table:
   - pages of 1,000, 2,000, 5,000 or 10,000 rows (the choice is remembered)

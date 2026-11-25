@@ -451,12 +451,10 @@
   .card-title .step-update { --c1: #a78bfa; --c2: #7c3aed }
   .card-title .step-check  { --c1: #4ade80; --c2: #16a34a }
   .card-title .step-schema { --c1: #2dd4bf; --c2: #0d9488 }
-  .card-title .step-check  { --c1: #fbbf24; --c2: #d97706 }   /* TEMP: CSV check */
+  .card-title .step-check  { --c1: #fbbf24; --c2: #d97706 }
   .card-title .step-tsv    { --c1: #38bdf8; --c2: #0284c7 }
-  .card-title .step-tsvimport { --c1: #a78bfa; --c2: #7c3aed }
   .card-title .step-sqlgen { --c1: #34d399; --c2: #059669 }
-  #tsvimp-mismatch .tbl td.mono { font-family: ui-monospace, Consolas, monospace; white-space: nowrap }
-  #btn-tsvimp-sql { text-decoration: none }
+  #csv-mismatch .tbl td.mono { font-family: ui-monospace, Consolas, monospace; white-space: nowrap }
   #tsv-errors .tbl td.mono { font-family: ui-monospace, Consolas, monospace; white-space: nowrap }
   #csvcheck-results .tbl td { white-space: nowrap }
   #csvcheck-results .tbl td.mono { font-family: ui-monospace, Consolas, monospace }
@@ -815,10 +813,9 @@
         <button class="nav-btn nav-group-btn active" id="nav-import-menu" aria-haspopup="menu" aria-expanded="false"
           aria-controls="nav-import-panel"><span id="nav-import-menu-label">Import</span><span class="nav-caret" aria-hidden="true">▾</span></button>
         <div class="nav-menu hidden" id="nav-import-panel" role="menu" aria-label="Import">
-          <button class="nav-btn active" id="nav-import" role="menuitem" data-label="Import">Excel / CSV Import<span class="menu-sub">Excel sheets, or one comma CSV per table</span></button>
-          <button class="nav-btn" id="nav-tsvimport" role="menuitem" data-label="TSV Import" disabled>TSV Import<span class="menu-sub">Import a tab-separated .tsv file</span></button>
+          <button class="nav-btn active" id="nav-import" role="menuitem" data-label="Import">Excel / CSV / TSV Import<span class="menu-sub">Excel sheets, or one CSV / TSV file per table</span></button>
           <button class="nav-btn" id="nav-tsv" role="menuitem" data-label="CSV → TSV" disabled>CSV → TSV<span class="menu-sub">Fix unquoted commas in file names</span></button>
-          <button class="nav-btn" id="nav-csvcheck" role="menuitem" data-label="CSV Check" disabled>CSV Check <span class="badge yellow">Temporary</span><span class="menu-sub">Check a CSV against its table columns</span></button>  <!-- TEMP -->
+          <button class="nav-btn" id="nav-csvcheck" role="menuitem" data-label="CSV Check" disabled>CSV Check<span class="menu-sub">Check a CSV against its table columns</span></button>
         </div>
       </div>
       <div class="nav-group" id="nav-group-db">
@@ -940,9 +937,9 @@
     </table>
   </div>
 
-  <!-- ── TEMP: CSV check against table columns ────────── -->
+  <!-- ── CSV check against table columns ─────────────── -->
   <div class="card hidden" id="card-csv-check">
-    <div class="card-title active"><span class="step step-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></span> CSV Check <span class="badge yellow" style="margin-left:8px">Temporary</span></div>
+    <div class="card-title active"><span class="step step-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></span> CSV Check</div>
     <p class="subtitle" style="margin-bottom:18px">Checks a CSV against its table before you import it. The table comes from the file name (DSHKKP.csv → DSHKKP). If the first row holds column names it is used as the header and columns are matched by name; otherwise they are matched by position. Column types, lengths and precision are read from the database. Nothing is imported.</p>
     <div id="err-csvcheck" class="alert error hidden"></div>
     <div style="margin-bottom:14px;max-width:320px">
@@ -970,7 +967,7 @@
   <!-- ── Comma CSV → TSV (file-name columns with unquoted commas) ── -->
   <div class="card hidden" id="card-comma-tsv">
     <div class="card-title active"><span class="step step-tsv"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 7h13l-3-3"/><path d="M20 17H7l3 3"/></svg></span> CSV → TSV</div>
-    <p class="subtitle" style="margin-bottom:18px">For CSV files whose file-name columns contain commas without quotes (e.g. <code>a,b,c.pdf</code>). The table comes from the file name (MSHHKP.csv → MSHHKP) and its columns are read from the database. A line with one cell per column (empty cells at the end of the line are dropped) just has its commas changed to tabs. Otherwise, in the file-name columns you enter below (MSHHKP: SHKTRM, SHKFL1, SHKFL2, SHKFL3), a cell that is not blank and does not end with a known extension (pdf, docx, xlsx, jpg, xls, doc, png, txt, tif, jpeg, pptx, gif, ppt) is joined with the next cell. Every other comma becomes a tab. A value that itself contains a tab is written in double quotes (<code>"a⇥b"</code>) so it stays one value; TSV Import removes the quotes and keeps the tab. Rows that do not come out to exactly one value per column are left out and listed below. Nothing is imported.</p>
+    <p class="subtitle" style="margin-bottom:18px">For CSV files whose file-name columns contain commas without quotes (e.g. <code>a,b,c.pdf</code>). The table comes from the file name (MSHHKP.csv → MSHHKP) and its columns are read from the database. A line with one cell per column (empty cells at the end of the line are dropped) just has its commas changed to tabs. Otherwise, in the file-name columns you enter below (MSHHKP: SHKTRM, SHKFL1, SHKFL2, SHKFL3), a cell that is not blank and does not end with a known extension (pdf, docx, xlsx, jpg, xls, doc, png, txt, tif, jpeg, pptx, gif, ppt) is joined with the next cell. Every other comma becomes a tab. A value that itself contains a tab is written in double quotes (<code>"a⇥b"</code>) so it stays one value; Excel / CSV / TSV Import removes the quotes and keeps the tab. Rows that do not come out to exactly one value per column are left out and listed below. Nothing is imported.</p>
     <div id="err-tsv" class="alert error hidden"></div>
     <div style="margin-bottom:14px;max-width:320px">
       <label for="tsv-schema">Schema</label>
@@ -1000,44 +997,6 @@
           <thead><tr><th>CSV line</th><th>Problem</th><th>Line</th></tr></thead>
           <tbody id="tsv-error-body"></tbody>
         </table>
-      </div>
-    </div>
-  </div>
-
-  <!-- ── TSV Import ───────────────────────────────────── -->
-  <div class="card hidden" id="card-tsv-import">
-    <div class="card-title active"><span class="step step-tsvimport"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m7 10 5 5 5-5"/><path d="M5 21h14"/></svg></span> TSV Import</div>
-    <p class="subtitle" style="margin-bottom:18px">Imports a tab-separated <code>.tsv</code> file, for example the file made by the CSV → TSV tab. It works like CSV import: the table comes from the file name (MSHHKP.tsv → MSHHKP), a header row is matched by column name, otherwise values are matched to the table's columns by position, and blank values become NULL (or the type's default for NOT NULL columns). Tabs separate values; a value in double quotes may contain tabs, and the quotes are removed, as CSV → TSV writes it. <strong>The import replaces every row in the table.</strong></p>
-    <div id="err-tsvimp" class="alert error hidden"></div>
-    <div style="margin-bottom:14px;max-width:320px">
-      <label for="tsvimp-schema">Schema</label>
-      <select id="tsvimp-schema"><option value="">Loading schemas…</option></select>
-    </div>
-    <div class="drop-zone" id="tsvimp-drop-zone">
-      <input type="file" id="tsvimp-file-input" accept=".tsv">
-      <div class="drop-icon">📥</div>
-      <div class="drop-label"><span>Click to browse</span> or drag &amp; drop a TSV file</div>
-      <div class="drop-hint">File name = table name, e.g. MSHHKP.tsv</div>
-      <div class="file-name hidden" id="tsvimp-file-name"></div>
-    </div>
-    <div id="tsvimp-preview" class="hidden" style="margin-top:18px">
-      <div id="tsvimp-header-check" class="alert info" aria-live="polite"></div>
-      <div id="tsvimp-summary" class="alert info"></div>
-      <div id="tsvimp-mismatch" class="hidden" style="overflow-x:auto;margin-bottom:14px">
-        <table class="tbl">
-          <thead><tr><th>TSV line</th><th>Values</th><th>First value</th></tr></thead>
-          <tbody id="tsvimp-mismatch-body"></tbody>
-        </table>
-      </div>
-      <div class="btn-row">
-        <button class="btn" id="btn-tsvimp-import">Import</button>
-        <span id="tsvimp-status"></span>
-      </div>
-    </div>
-    <div id="tsvimp-results" class="hidden" style="margin-top:18px">
-      <div id="tsvimp-results-body"></div>
-      <div class="btn-row" style="margin-top:12px">
-        <a class="btn success hidden" id="btn-tsvimp-sql" download>Download SQL</a>
       </div>
     </div>
   </div>
@@ -1232,10 +1191,10 @@
     <div id="err-upload" class="alert error hidden"></div>
 
     <div class="drop-zone" id="drop-zone">
-      <input type="file" id="file-input" accept=".xlsx,.xls,.csv">
+      <input type="file" id="file-input" accept=".xlsx,.xls,.csv,.tsv">
       <div class="drop-icon">📂</div>
-      <div class="drop-label"><span>Click to browse</span> or drag &amp; drop your Excel or CSV file</div>
-      <div class="drop-hint">CSV: file name = table name (e.g. MDNNOP.csv → MDNNOP), with or without a header row</div>
+      <div class="drop-label"><span>Click to browse</span> or drag &amp; drop your Excel, CSV or TSV file</div>
+      <div class="drop-hint">CSV / TSV: file name = table name (e.g. MDNNOP.csv or MDNNOP.tsv → MDNNOP), with or without a header row</div>
       <div class="file-name hidden" id="file-name"></div>
     </div>
 
@@ -1266,6 +1225,13 @@
       </div>
     </div>
     <div id="csv-header-check" class="alert info hidden" aria-live="polite"></div>
+    <div id="csv-mismatch" class="hidden" style="overflow-x:auto;margin-bottom:14px">
+      <div id="csv-mismatch-summary" class="alert error"></div>
+      <table class="tbl">
+        <thead><tr><th>Line</th><th>Values</th><th>First value</th></tr></thead>
+        <tbody id="csv-mismatch-body"></tbody>
+      </table>
+    </div>
 
     <table class="tbl" id="preview-tbl">
       <thead><tr>
@@ -1367,6 +1333,7 @@ const hide = el => el.classList.add('hidden')
 let importPollTimer = null
 let currentBatchJob = null
 let currentFileKind = 'excel'
+let currentFileFormat = 'csv'   // 'csv' or 'tsv' when currentFileKind is 'csv'
 let currentFileHandle = null
 let currentFileStamp = null
 let fileWatchTimer = null
@@ -2609,10 +2576,11 @@ async function chooseLocalFile() {
   try {
     const handles = await window.showOpenFilePicker({
       multiple: false,
-      types: [{ description: 'Excel or CSV files', accept: {
+      types: [{ description: 'Excel, CSV or TSV files', accept: {
         'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
         'application/vnd.ms-excel': ['.xls'],
-        'text/csv': ['.csv']
+        'text/csv': ['.csv'],
+        'text/tab-separated-values': ['.tsv']
       }}]
     })
     currentFileHandle = handles[0]
@@ -2639,26 +2607,27 @@ function handleFile(file) {
       currentFileStamp = `${file.lastModified}:${file.size}`
       hide($('file-change-warning'))
       currentBatchJob = data.batch_job || null
-      setFileKind(data.kind === 'csv' ? 'csv' : 'excel')
+      setFileKind(data.kind === 'csv' ? 'csv' : 'excel', data.format)
       const sel = $('sheet-select')
       sel.innerHTML = '<option value="">— select a sheet —</option>'
       data.sheets.forEach(s => {
-        const label = currentFileKind === 'csv' ? `${s} (CSV)` : s
+        const label = currentFileKind === 'csv' ? `${s} (${currentFileFormat.toUpperCase()})` : s
         const o = document.createElement('option'); o.value = s; o.textContent = label
         sel.appendChild(o)
       })
       sel.disabled = false
       if (data.sheets.length === 1) { sel.value = data.sheets[0]; $('btn-scan').disabled = false }
-      // A CSV holds exactly one table, so go straight to the preview.
+      // A CSV / TSV holds exactly one table, so go straight to the preview.
       if (currentFileKind === 'csv') return scanSheet($('btn-scan')).then(() => data)
       return data
     })
     .catch(e => showErr($('err-upload'), 'Upload failed: ' + e))
 }
 
-function setFileKind(kind) {
+function setFileKind(kind, format) {
   currentFileKind = kind
-  // A CSV has no sheets to switch between.
+  currentFileFormat = format === 'tsv' ? 'tsv' : 'csv'
+  // A CSV / TSV has no sheets to switch between.
   ;['btn-change-sheet', 'btn-change-sheet-results'].forEach(id => {
     $(id).classList.toggle('hidden', kind === 'csv')
   })
@@ -2736,10 +2705,9 @@ function scanSheet(btn) {
 function buildPreview(tables, sheet) {
   csvHeaderReport = null
   csvHeaderMode = 'auto'
-  csvPreviewRows = currentFileKind === 'csv' && tables[0] ? (tables[0].records ?? 0) : 0
-  hide($('csv-header-check'))
+  hide($('csv-header-check')); hide($('csv-mismatch'))
   $('preview-summary').innerHTML = currentFileKind === 'csv'
-    ? `CSV <strong>${escapeHtml($('file-name').textContent)}</strong> → table
+    ? `${currentFileFormat.toUpperCase()} <strong>${escapeHtml($('file-name').textContent)}</strong> → table
        <strong>${escapeHtml(sheet)}</strong>`
     : `Found <strong>${tables.length}</strong> table${tables.length !== 1 ? 's' : ''} in sheet
      <strong>${escapeHtml(sheet)}</strong>`
@@ -2816,7 +2784,6 @@ function headerCheckView(report, mode, radioName) {
 
 let csvHeaderReport = null
 let csvHeaderMode = 'auto'
-let csvPreviewRows = 0
 let csvHeaderRequest = 0
 
 function checkCsvHeader() {
@@ -2830,9 +2797,9 @@ function checkCsvHeader() {
   fetch('/csv/header-check', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ schema: schemaFor(table) })
+    body: JSON.stringify({ schema: schemaFor(table), header: csvHeaderMode })
   }).then(r => r.json()).then(data => {
-    if (token !== csvHeaderRequest) return   // the schema changed meanwhile
+    if (token !== csvHeaderRequest) return   // the schema or the choice changed meanwhile
     if (data.error) throw new Error(data.error)
     csvHeaderReport = data
     renderCsvHeaderCheck()
@@ -2840,6 +2807,7 @@ function checkCsvHeader() {
     if (token !== csvHeaderRequest) return
     box.className = 'alert error'
     box.textContent = 'Header check failed: ' + error.message + ' — the import will decide by itself.'
+    hide($('csv-mismatch'))
   })
 }
 
@@ -2849,9 +2817,18 @@ function renderCsvHeaderCheck() {
   box.className = 'alert ' + (view.warn ? 'warn' : 'info')
   box.innerHTML = view.html
   box.querySelectorAll('input[name="csv-header-mode"]').forEach(radio =>
-    radio.addEventListener('change', () => { csvHeaderMode = radio.value; renderCsvHeaderCheck() }))
+    radio.addEventListener('change', () => { csvHeaderMode = radio.value; checkCsvHeader() }))
+  const data = csvHeaderReport
   const badge = document.querySelector('#preview-body .records-badge')
-  if (badge) badge.textContent = Math.max(0, csvPreviewRows - (view.header ? 1 : 0))
+  if (badge) badge.textContent = data.records
+  // Rows whose number of values differs from the header (or the table, without a header).
+  $('csv-mismatch-summary').textContent =
+    `${data.mismatched_count} ${data.mismatched_count === 1 ? 'row does' : 'rows do'} not have ${data.expected} values — check ` +
+    `${data.mismatched_count === 1 ? 'it' : 'them'} before importing` +
+    (data.mismatched_count > data.mismatched.length ? ` (showing the first ${data.mismatched.length})` : '')
+  $('csv-mismatch-body').innerHTML = data.mismatched.map(m => `
+    <tr><td>${m.line}</td><td>${m.cells} of ${data.expected}</td><td class="mono">${escapeHtml(m.first)}</td></tr>`).join('')
+  $('csv-mismatch').classList.toggle('hidden', !data.mismatched_count)
 }
 
 function loadSchemas() {
@@ -2905,6 +2882,14 @@ function updateSelectCount() {
 $('btn-import').addEventListener('click', () => {
   const tables = selectedNames()
   if (!tables.length) { showErr($('err-import'), 'Select at least one table.'); return }
+  if (currentFileKind === 'csv') {
+    const data = csvHeaderReport
+    const target = `${schemaFor(tables[0])}.${tables[0]}`
+    const rows = data ? ` with the ${data.records} rows of ${$('file-name').textContent}` : ''
+    const warning = data && data.mismatched_count
+      ? `\n\n${data.mismatched_count} rows do not have ${data.expected} values.` : ''
+    if (!confirm(`Replace every row in ${target}${rows}?${warning}`)) return
+  }
   hide($('err-import'))
   hide($('card-results'))
   setupSqlDownload({})
@@ -3927,8 +3912,8 @@ function resetToFileUpload() {
   show($('card-upload'))
 }
 
-// ── TEMP: CSV check against table columns ────────────────────────────────────
-const CSVCHECK_OTHER_NAVS = ['nav-import', 'nav-truncate', 'nav-editor', 'nav-query', 'nav-schema', 'nav-tsv', 'nav-tsvimport', 'nav-connection', 'nav-about']
+// ── CSV check against table columns ──────────────────────────────────────────
+const CSVCHECK_OTHER_NAVS = ['nav-import', 'nav-truncate', 'nav-editor', 'nav-query', 'nav-schema', 'nav-tsv', 'nav-connection', 'nav-about']
 
 $('nav-csvcheck').addEventListener('click', () => {
   document.querySelector('.container').classList.remove('editor-layout', 'about-layout')
@@ -3936,7 +3921,7 @@ $('nav-csvcheck').addEventListener('click', () => {
   if (visible && visible !== 'card-conn') lastImportCard = visible
   restoreImportResults = !$('card-results').classList.contains('hidden')
   ;['card-conn', 'card-upload', 'card-preview', 'card-truncate-manager', 'card-data-editor', 'card-about',
-    'card-updates', 'card-results', 'card-query-runner', 'card-schema-manager', 'card-comma-tsv', 'card-tsv-import'].forEach(id => hide($(id)))
+    'card-updates', 'card-results', 'card-query-runner', 'card-schema-manager', 'card-comma-tsv'].forEach(id => hide($(id)))
   closeQuerySuggestions()
   show($('card-csv-check'))
   CSVCHECK_OTHER_NAVS.forEach(id => $(id).classList.remove('active'))
@@ -3980,7 +3965,7 @@ function runCsvCheck(file) {
   const form = new FormData()
   form.append('file', file)
   form.append('schema', $('csvcheck-schema').value)
-  fetch('/temp/csv-check', { method: 'POST', body: form }).then(r => r.json()).then(data => {
+  fetch('/csv/check', { method: 'POST', body: form }).then(r => r.json()).then(data => {
     if (data.error) throw new Error(data.error)
     $('csvcheck-file-name').textContent = `${data.filename} → ${data.schema}.${data.table} (${data.columns.length} columns) · ` +
       (data.header ? 'header row found, matched by name' : 'no header row, matched by position')
@@ -4030,10 +4015,9 @@ csvCheckZone.addEventListener('drop', e => {
   e.preventDefault(); csvCheckZone.classList.remove('drag-over')
   runCsvCheck(e.dataTransfer.files[0])
 })
-// ── END TEMP ──────────────────────────────────────────────────────────────────
 
 // ── Comma CSV → TSV ───────────────────────────────────────────────────────────
-const TSV_OTHER_NAVS = ['nav-import', 'nav-truncate', 'nav-editor', 'nav-query', 'nav-schema', 'nav-csvcheck', 'nav-tsvimport', 'nav-connection', 'nav-about']
+const TSV_OTHER_NAVS = ['nav-import', 'nav-truncate', 'nav-editor', 'nav-query', 'nav-schema', 'nav-csvcheck', 'nav-connection', 'nav-about']
 
 $('nav-tsv').addEventListener('click', () => {
   document.querySelector('.container').classList.remove('editor-layout', 'about-layout')
@@ -4041,7 +4025,7 @@ $('nav-tsv').addEventListener('click', () => {
   if (visible && visible !== 'card-conn') lastImportCard = visible
   restoreImportResults = !$('card-results').classList.contains('hidden')
   ;['card-conn', 'card-upload', 'card-preview', 'card-truncate-manager', 'card-data-editor', 'card-about',
-    'card-updates', 'card-results', 'card-query-runner', 'card-schema-manager', 'card-csv-check', 'card-tsv-import'].forEach(id => hide($(id)))
+    'card-updates', 'card-results', 'card-query-runner', 'card-schema-manager', 'card-csv-check'].forEach(id => hide($(id)))
   closeQuerySuggestions()
   show($('card-comma-tsv'))
   TSV_OTHER_NAVS.forEach(id => $(id).classList.remove('active'))
@@ -4174,202 +4158,9 @@ tsvZone.addEventListener('drop', e => {
   runTsvConvert(e.dataTransfer.files[0])
 })
 
-// ── TSV Import ────────────────────────────────────────────────────────────────
-const TSVIMP_OTHER_NAVS = ['nav-import', 'nav-truncate', 'nav-editor', 'nav-query', 'nav-schema', 'nav-csvcheck', 'nav-tsv', 'nav-connection', 'nav-about']
-
-$('nav-tsvimport').addEventListener('click', () => {
-  document.querySelector('.container').classList.remove('editor-layout', 'about-layout')
-  const visible = ['card-conn', 'card-upload', 'card-preview'].find(id => !$(id).classList.contains('hidden'))
-  if (visible && visible !== 'card-conn') lastImportCard = visible
-  restoreImportResults = !$('card-results').classList.contains('hidden')
-  ;['card-conn', 'card-upload', 'card-preview', 'card-truncate-manager', 'card-data-editor', 'card-about',
-    'card-updates', 'card-results', 'card-query-runner', 'card-schema-manager', 'card-csv-check',
-    'card-comma-tsv'].forEach(id => hide($(id)))
-  closeQuerySuggestions()
-  show($('card-tsv-import'))
-  TSVIMP_OTHER_NAVS.forEach(id => $(id).classList.remove('active'))
-  $('nav-tsvimport').classList.add('active')
-  loadTsvImportSchemas()
-})
-
-TSVIMP_OTHER_NAVS.forEach(id => {
-  $(id).addEventListener('click', () => {
-    hide($('card-tsv-import'))
-    $('nav-tsvimport').classList.remove('active')
-  })
-})
-
-new MutationObserver(() => { $('nav-tsvimport').disabled = $('nav-editor').disabled })
-  .observe($('nav-editor'), { attributes: true, attributeFilter: ['disabled'] })
-$('nav-tsvimport').disabled = $('nav-editor').disabled
-
-function loadTsvImportSchemas() {
-  const select = $('tsvimp-schema')
-  const current = select.value
-  fetch('/schemas').then(r => r.json()).then(data => {
-    if (data.error) throw new Error(data.error)
-    select.innerHTML = ''
-    data.schemas.forEach(name => select.add(new Option(name, name)))
-    const target = data.schemas.includes(current) ? current : data.default
-    if (data.schemas.includes(target)) select.value = target
-  }).catch(error => showErr($('err-tsvimp'), error.message))
-}
-
-let tsvImpFile = null
-let tsvImpPreview = null
-let tsvImpTimer = null
-let tsvImpRunning = false
-
-let tsvImpHeaderMode = 'auto'
-
-function tsvImpForm() {
-  const form = new FormData()
-  form.append('file', tsvImpFile)
-  form.append('schema', $('tsvimp-schema').value)
-  form.append('header', tsvImpHeaderMode)
-  return form
-}
-
-function setTsvImpBusy(busy, label) {
-  tsvImpRunning = busy
-  $('tsvimp-schema').disabled = busy
-  $('tsvimp-drop-zone').classList.toggle('disabled', busy)
-  setLoading($('btn-tsvimp-import'), busy, label)
-}
-
-// keepHeaderMode: re-check after the user picked Header / Data row for a partial match.
-function previewTsvImport(file, keepHeaderMode) {
-  if (!file || tsvImpRunning) return
-  if (!keepHeaderMode) tsvImpHeaderMode = 'auto'
-  tsvImpFile = file
-  tsvImpPreview = null
-  hide($('err-tsvimp')); hide($('tsvimp-preview')); hide($('tsvimp-results'))
-  $('tsvimp-status').innerHTML = ''
-  $('tsvimp-file-name').textContent = `Checking ${file.name}…`
-  show($('tsvimp-file-name'))
-  fetch('/tsv/preview', { method: 'POST', body: tsvImpForm() }).then(r => r.json()).then(data => {
-    if (data.error) throw new Error(data.error)
-    tsvImpPreview = data
-    $('tsvimp-file-name').textContent = `${data.filename} → ${data.schema}.${data.table} (${data.columns} columns)`
-    const view = headerCheckView({ schema: data.schema, table: data.table, table_columns: data.columns,
-                                   file_values: data.file_values, check: data.check },
-                                 data.header_mode, 'tsvimp-header-mode')
-    const headerBox = $('tsvimp-header-check')
-    headerBox.className = 'alert ' + (view.warn ? 'warn' : 'info')
-    headerBox.innerHTML = view.html
-    headerBox.querySelectorAll('input[name="tsvimp-header-mode"]').forEach(radio =>
-      radio.addEventListener('change', () => { tsvImpHeaderMode = radio.value; previewTsvImport(tsvImpFile, true) }))
-    const parts = [`${data.records} rows`]
-    if (data.mismatched_count)
-      parts.push(`${data.mismatched_count} rows do not have ${data.expected} values — check them before importing`)
-    const summary = $('tsvimp-summary')
-    summary.className = 'alert ' + (data.mismatched_count ? 'error' : 'info')
-    summary.textContent = parts.join(' · ') +
-      (data.mismatched_count > data.mismatched.length ? ` (showing the first ${data.mismatched.length})` : '')
-    $('tsvimp-mismatch-body').innerHTML = data.mismatched.map(m => `
-      <tr><td>${m.line}</td><td>${m.cells} of ${data.expected}</td><td class="mono">${escapeHtml(m.first)}</td></tr>`).join('')
-    $('tsvimp-mismatch').classList.toggle('hidden', !data.mismatched_count)
-    setLoading($('btn-tsvimp-import'), false, `Import ${data.records} rows into ${data.schema}.${data.table}`)
-    $('btn-tsvimp-import').disabled = !data.records
-    show($('tsvimp-preview'))
-  }).catch(error => {
-    hide($('tsvimp-file-name'))
-    showErr($('err-tsvimp'), error.message)
-  })
-}
-
-$('btn-tsvimp-import').addEventListener('click', () => {
-  const data = tsvImpPreview
-  if (!data || !tsvImpFile || tsvImpRunning) return
-  const warning = data.mismatched_count ? `\n\n${data.mismatched_count} rows do not have ${data.expected} values.` : ''
-  if (!confirm(`Replace every row in ${data.schema}.${data.table} with the ${data.records} rows of ${data.filename}?${warning}`)) return
-  hide($('err-tsvimp')); hide($('tsvimp-results'))
-  setTsvImpBusy(true, 'Starting…')
-  fetch('/tsv/import', { method: 'POST', body: tsvImpForm() }).then(r => r.json()).then(job => {
-    if (job.error) throw new Error(job.error)
-    setLoading($('btn-tsvimp-import'), true, 'Importing…')
-    const poll = () => fetch(`/import/status/${encodeURIComponent(job.job_id)}`).then(r => r.json()).then(status => {
-      if (status.error && !status.state) throw new Error(status.error)
-      const result = (status.results || [])[0]
-      if (result) {
-        $('tsvimp-status').innerHTML = result.status === 'running' && result.progress && result.progress.total > 0
-          ? progressRing(Math.min(100, Math.round(result.progress.done / result.progress.total * 100)))
-          : statusPill(result.status)
-      }
-      if (status.state === 'done' || status.state === 'failed') {
-        clearInterval(tsvImpTimer)
-        tsvImpTimer = null
-        finishTsvImport(status)
-      }
-    }).catch(failTsvImport)
-    poll()
-    tsvImpTimer = setInterval(poll, 1000)
-  }).catch(failTsvImport)
-})
-
-function failTsvImport(error) {
-  if (tsvImpTimer) clearInterval(tsvImpTimer)
-  tsvImpTimer = null
-  setTsvImpBusy(false, 'Import')
-  showErr($('err-tsvimp'), 'Import failed: ' + (error.message || error))
-}
-
-function finishTsvImport(status) {
-  const data = tsvImpPreview
-  setTsvImpBusy(false, `Import ${data.records} rows into ${data.schema}.${data.table}`)
-  if (status.error) showErr($('err-tsvimp'), status.error)
-  $('tsvimp-results-body').innerHTML = (status.results || []).map(r => {
-    const info = resultStatus(r.status)
-    const errors = r.errors && r.errors.length
-      ? `<div class="result-errors">${r.errors.map(escapeHtml).join('<br>')}</div>` : ''
-    return `
-      <div class="result-row">
-        <span class="status-icon ${info.cls}" title="${info.label}" aria-label="${info.label}">${info.icon}</span>
-        <span class="result-name">${escapeHtml(r.name)}</span>
-        <div class="result-msg">
-          <span class="status-text ${info.cls}">${info.label}</span>
-          <span class="result-detail">${escapeHtml(r.message)}</span>
-          ${errors}
-        </div>
-      </div>`
-  }).join('')
-  const sql = $('btn-tsvimp-sql')
-  sql.classList.toggle('hidden', !(status.state === 'done' && status.sql_download_url))
-  if (status.sql_download_url) {
-    sql.href = status.sql_download_url
-    sql.download = status.sql_filename || 'import.sql'
-  }
-  show($('tsvimp-results'))
-}
-
-$('tsvimp-schema').addEventListener('change', () => previewTsvImport(tsvImpFile))
-$('tsvimp-file-input').addEventListener('change', e => {
-  previewTsvImport(e.target.files[0])
-  e.target.value = ''
-})
-const tsvImpZone = $('tsvimp-drop-zone')
-tsvImpZone.tabIndex = 0
-tsvImpZone.setAttribute('role', 'button')
-tsvImpZone.addEventListener('click', e => {
-  if (tsvImpRunning) return
-  if (e.target !== $('tsvimp-file-input')) $('tsvimp-file-input').click()
-})
-tsvImpZone.addEventListener('keydown', e => {
-  if (tsvImpRunning) return
-  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('tsvimp-file-input').click() }
-})
-;['dragover', 'dragenter'].forEach(ev => tsvImpZone.addEventListener(ev, e => {
-  e.preventDefault(); tsvImpZone.classList.add('drag-over')
-}))
-tsvImpZone.addEventListener('dragleave', () => tsvImpZone.classList.remove('drag-over'))
-tsvImpZone.addEventListener('drop', e => {
-  e.preventDefault(); tsvImpZone.classList.remove('drag-over')
-  previewTsvImport(e.dataTransfer.files[0])
-})
-
 // ── SQL Generate ──────────────────────────────────────────────────────────────
 const SQLGEN_OTHER_NAVS = ['nav-import', 'nav-truncate', 'nav-editor', 'nav-query', 'nav-schema', 'nav-csvcheck',
-  'nav-tsv', 'nav-tsvimport', 'nav-connection', 'nav-about']
+  'nav-tsv', 'nav-connection', 'nav-about']
 
 $('nav-sqlgen').addEventListener('click', () => {
   document.querySelector('.container').classList.remove('editor-layout', 'about-layout')
@@ -4378,7 +4169,7 @@ $('nav-sqlgen').addEventListener('click', () => {
   restoreImportResults = !$('card-results').classList.contains('hidden')
   ;['card-conn', 'card-upload', 'card-preview', 'card-truncate-manager', 'card-data-editor', 'card-about',
     'card-updates', 'card-results', 'card-query-runner', 'card-schema-manager', 'card-csv-check',
-    'card-comma-tsv', 'card-tsv-import'].forEach(id => hide($(id)))
+    'card-comma-tsv'].forEach(id => hide($(id)))
   closeQuerySuggestions()
   show($('card-sql-generate'))
   SQLGEN_OTHER_NAVS.forEach(id => $(id).classList.remove('active'))

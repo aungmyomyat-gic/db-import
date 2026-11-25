@@ -145,21 +145,19 @@ class HeaderCheckRouteTests(unittest.TestCase):
             response = client.post("/import", json={"tables": ["MDNNOP"], "header": "maybe"})
         self.assertEqual(response.status_code, 400)
 
-    def test_tsv_preview_and_import_follow_the_users_choice(self):
+    def test_tsv_header_check_and_import_follow_the_users_choice(self):
         client = importer.app.test_client()
         raw = b"CODE\tAMOUNT\tDESCRIPTON\tACTIVE\n0001\t1\tx\t1\n"
         connection = FakeConnection(metadata=METADATA)
         p1, p2, p3 = self.patched(connection)
-
-        def post(url, header):
-            return client.post(url, data={"schema": "lvapdbf", "header": header,
-                                          "file": (io.BytesIO(raw), "MDNNOP.tsv")},
-                               content_type="multipart/form-data")
-
         with p1, p2, p3:
-            auto = post("/tsv/preview", "auto").get_json()
-            as_data = post("/tsv/preview", "no").get_json()
-            job = post("/tsv/import", "no").get_json()
+            client.post("/upload", data={"file": (io.BytesIO(raw), "MDNNOP.tsv")},
+                        content_type="multipart/form-data")
+            with client.session_transaction() as browser_session:
+                self.addCleanup(Path(browser_session["tmp_path"]).unlink, missing_ok=True)
+            auto = client.post("/csv/header-check", json={"schema": "lvapdbf"}).get_json()
+            as_data = client.post("/csv/header-check", json={"schema": "lvapdbf", "header": "no"}).get_json()
+            job = client.post("/import", json={"tables": ["MDNNOP"], "schema": "lvapdbf", "header": "no"}).get_json()
             deadline = time.monotonic() + 3
             while time.monotonic() < deadline:
                 status = client.get(f"/import/status/{job['job_id']}").get_json()

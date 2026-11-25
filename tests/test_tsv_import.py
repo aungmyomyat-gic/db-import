@@ -1,4 +1,4 @@
-"""TSV import: same engine as CSV import, values separated by tabs."""
+"""TSV import: the same tab and engine as CSV import, values separated by tabs."""
 
 import io
 import time
@@ -32,9 +32,30 @@ class TsvImportTests(unittest.TestCase):
                 patch.object(importer, "_build_conn_str", return_value=("mock", None)),
                 patch.object(importer.pyodbc, "connect", return_value=connection))
 
-    def post(self, client, url, raw, filename="MSHHKP.tsv", schema="lvapdbf"):
-        return client.post(url, data={"schema": schema, "file": (io.BytesIO(raw), filename)},
-                           content_type="multipart/form-data")
+    def upload(self, client, raw, filename="MSHHKP.tsv"):
+        response = client.post("/upload", data={"file": (io.BytesIO(raw), filename)},
+                               content_type="multipart/form-data")
+        with client.session_transaction() as browser_session:
+            path = browser_session.get("tmp_path")
+        if path:
+            self.addCleanup(Path(path).unlink, missing_ok=True)
+        return response
+
+    def header_check(self, client, schema="lvapdbf", header="auto"):
+        return client.post("/csv/header-check", json={"schema": schema, "header": header})
+
+    def run_import(self, client, header="auto"):
+        response = client.post("/import", json={"tables": ["MSHHKP"], "schemas": {"MSHHKP": "lvapdbf"},
+                                                "header": header})
+        self.assertEqual(response.status_code, 202)
+        job_id = response.get_json()["job_id"]
+        deadline = time.monotonic() + 3
+        while time.monotonic() < deadline:
+            snapshot = client.get(f"/import/status/{job_id}").get_json()
+            if snapshot["state"] in {"done", "failed"}:
+                break
+            time.sleep(0.01)
+        return snapshot
 
     def test_tabs_split_values_and_quoted_values_keep_their_tabs(self):
         raw = '1\ta,b,c.pdf\t3\n\n2\t"memo\twith tab"\t"say ""hi"""\n'.encode("cp932")
@@ -54,16 +75,22 @@ class TsvImportTests(unittest.TestCase):
         client = importer.app.test_client()
         p1, p2, p3 = self.patched(connection)
         with p1, p2, p3:
-            data = self.post(client, "/tsv/preview", raw, "MSHHKP (1).tsv").get_json()
-            header = self.post(client, "/tsv/preview", b"CODE\tFILE_NAME\tOTHER\n1\ta.pdf\tz\n").get_json()
-            wrong = self.post(client, "/tsv/preview", raw, "MSHHKP.csv")
-        self.assertEqual((data["table"], data["records"], data["columns"], data["header"]),
-                         ("MSHHKP", 3, 3, False))
+            upload = self.upload(client, raw, "MSHHKP (1).tsv").get_json()
+            scan = client.post("/scan", json={"sheet": "MSHHKP"}).get_json()
+            data = self.header_check(client).get_json()
+            self.upload(client, b"CODE\tFILE_NAME\tOTHER\n1\ta.pdf\tz\n")
+            header = self.header_check(client).get_json()
+            no_schema = self.header_check(client, schema="")
+            wrong = self.upload(client, raw, "MSHHKP.txt")
+        self.assertEqual((upload["kind"], upload["format"], upload["sheets"]), ("csv", "tsv", ["MSHHKP"]))
+        self.assertEqual(scan["format"], "tsv")
+        self.assertEqual((data["table"], data["records"], data["table_columns"], data["header"], data["format"]),
+                         ("MSHHKP", 3, 3, False, "tsv"))
         self.assertEqual([(m["line"], m["cells"]) for m in data["mismatched"]], [(2, 2), (3, 4)])
-        self.assertEqual((header["header"], header["records"], header["unknown_header_columns"]),
+        self.assertEqual((header["header"], header["records"], header["check"]["unknown"]),
                          (True, 1, ["OTHER"]))
+        self.assertEqual(no_schema.status_code, 400)
         self.assertEqual(wrong.status_code, 400)
-        self.assertIn(".tsv", wrong.get_json()["error"])
 
     def test_import_replaces_rows_and_offers_sql_download(self):
         connection = FakeConnection(metadata=METADATA)
@@ -72,15 +99,8 @@ class TsvImportTests(unittest.TestCase):
         client = importer.app.test_client()
         p1, p2, p3 = self.patched(connection)
         with p1, p2, p3:
-            response = self.post(client, "/tsv/import", raw)
-            self.assertEqual(response.status_code, 202)
-            job_id = response.get_json()["job_id"]
-            deadline = time.monotonic() + 3
-            while time.monotonic() < deadline:
-                snapshot = client.get(f"/import/status/{job_id}").get_json()
-                if snapshot["state"] in {"done", "failed"}:
-                    break
-                time.sleep(0.01)
+            self.assertEqual(self.upload(client, raw).status_code, 200)
+            snapshot = self.run_import(client)
             self.assertEqual(snapshot["state"], "done")
             result = snapshot["results"][0]
             self.assertEqual((result["name"], result["status"], result["schema"]),
@@ -95,14 +115,13 @@ class TsvImportTests(unittest.TestCase):
         self.assertIn("N'熱衝撃試験（1-08,2-08と併用).pdf'", sql)
         self.assertTrue(any(s.startswith("TRUNCATE") for s in connection.statements))
 
-    def test_import_needs_schema_and_a_tsv_named_after_the_table(self):
+    def test_tsv_must_be_named_after_the_table(self):
         client = importer.app.test_client()
         p1, p2, p3 = self.patched(FakeConnection())
         with p1, p2, p3:
-            self.assertIn("Schema is required",
-                          self.post(client, "/tsv/import", b"1\t2\n", schema="").get_json()["error"])
-            self.assertIn("must start with the table name",
-                          self.post(client, "/tsv/import", b"1\t2\n", "123.tsv").get_json()["error"])
+            response = self.upload(client, b"1\t2\n", "123.tsv")
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("TSV file name must start with the table name", response.get_json()["error"])
         self.assertEqual(importer.IMPORT_JOBS, {})
 
 

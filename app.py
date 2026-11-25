@@ -369,6 +369,15 @@ def is_tsv_filename(filename):
     return bool(filename) and filename.lower().endswith(".tsv")
 
 
+def delimiter_for(filename):
+    """The value separator by file extension: "," (.csv), tab (.tsv), None otherwise."""
+    if is_csv_filename(filename):
+        return ","
+    if is_tsv_filename(filename):
+        return "\t"
+    return None
+
+
 def parse_delimited(raw, delimiter=","):
     """Decode CSV/TSV bytes; return [(line_number, cells)] for every non-blank row.
 
@@ -480,24 +489,23 @@ def _csv_preview(table_name, rows, width, has_header=False):
     }
 
 
-# ── TEMP: CSV check against table columns ────────────────────────────────────
-# Temporary debugging aid: compares each CSV value with the column it will be
+# ── CSV check against table columns ──────────────────────────────────────────
+# Compares each CSV value with the column it will be
 # imported into (matched by position, like the CSV import) using the column
 # types, lengths and precision from INFORMATION_SCHEMA. Used by the "CSV Check"
-# tab and printed to the container log on every CSV import. Remove this block,
-# the /temp/csv-check route and the call in _run_csv_import.
-_TEMP_INT_RANGES = {
+# tab, and printed to the container log on every CSV import.
+_CSVCHECK_INT_RANGES = {
     "tinyint": (0, 255),
     "smallint": (-2**15, 2**15 - 1),
     "int": (-2**31, 2**31 - 1),
     "bigint": (-2**63, 2**63 - 1),
 }
-_TEMP_INT_RE = re.compile(r"[+-]?[0-9]+")
-_TEMP_DECIMAL_RE = re.compile(r"[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)")
-_TEMP_FLOAT_RE = re.compile(r"[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?")
+_CSVCHECK_INT_RE = re.compile(r"[+-]?[0-9]+")
+_CSVCHECK_DECIMAL_RE = re.compile(r"[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)")
+_CSVCHECK_FLOAT_RE = re.compile(r"[+-]?(?:[0-9]+(?:\.[0-9]*)?|\.[0-9]+)(?:[eE][+-]?[0-9]+)?")
 
 
-def _temp_table_columns(cursor, schema, table_name):
+def _csvcheck_table_columns(cursor, schema, table_name):
     cursor.execute(
         "SELECT COLUMN_NAME, DATA_TYPE, CHARACTER_MAXIMUM_LENGTH, NUMERIC_PRECISION, "
         "NUMERIC_SCALE, IS_NULLABLE FROM INFORMATION_SCHEMA.COLUMNS "
@@ -519,24 +527,24 @@ def _temp_table_columns(cursor, schema, table_name):
     return columns
 
 
-def _temp_value_problem(value, col):
+def _csvcheck_value_problem(value, col):
     """Return (severity, reason) when value does not fit col, else None."""
     dtype = col["type"]
     if dtype not in STRING_TYPES:
         value = value.strip()
     if value == "":
         return None   # blank -> NULL, or the type default for NOT NULL columns
-    if dtype in _TEMP_INT_RANGES:
-        if not _TEMP_INT_RE.fullmatch(value):
+    if dtype in _CSVCHECK_INT_RANGES:
+        if not _CSVCHECK_INT_RE.fullmatch(value):
             return "error", "Not an integer"
-        low, high = _TEMP_INT_RANGES[dtype]
+        low, high = _CSVCHECK_INT_RANGES[dtype]
         if not low <= int(value) <= high:
             return "error", f"Out of range for {dtype} ({low} to {high})"
     elif dtype == "bit":
         if value.lower() not in ("0", "1", "true", "false"):
             return "error", "Not 0/1/true/false"
     elif dtype in ("decimal", "numeric"):
-        if not _TEMP_DECIMAL_RE.fullmatch(value):
+        if not _CSVCHECK_DECIMAL_RE.fullmatch(value):
             return "error", "Not a number"
         whole, _, frac = value.lstrip("+-").partition(".")
         whole = whole.lstrip("0")
@@ -547,7 +555,7 @@ def _temp_value_problem(value, col):
         if len(frac.rstrip("0")) > scale:
             return "warning", f"{len(frac.rstrip('0'))} decimals, {col['label']} keeps {scale} (rounded)"
     elif dtype in ("money", "smallmoney", "float", "real"):
-        if not _TEMP_FLOAT_RE.fullmatch(value):
+        if not _CSVCHECK_FLOAT_RE.fullmatch(value):
             return "error", "Not a number"
     elif dtype in ("char", "varchar", "nchar", "nvarchar") and col["max_len"] not in (None, -1):
         if dtype in ("nchar", "nvarchar"):
@@ -559,7 +567,7 @@ def _temp_value_problem(value, col):
     return None
 
 
-def _temp_csv_issues(raw, columns):
+def _csvcheck_csv_issues(raw, columns):
     """Return (rows_checked, issues) for CSV bytes checked against table columns."""
     for encoding in CSV_ENCODINGS:
         try:
@@ -597,7 +605,7 @@ def _temp_csv_issues(raw, columns):
         for index, (value, col) in enumerate(zip(row, positional)):
             if col is None:
                 continue   # header column that is not in the table: the import skips it
-            problem = _temp_value_problem(value, col)
+            problem = _csvcheck_value_problem(value, col)
             if problem:
                 issues.append({**base, "column": col["name"], "type": col["label"],
                                "position": index + 1, "value": value,
@@ -605,12 +613,12 @@ def _temp_csv_issues(raw, columns):
     return rows_checked, issues, header
 
 
-def _temp_log_csv_check(conn, path, schema, table_name):
-    columns = _temp_table_columns(conn.cursor(), schema, table_name)
+def _csvcheck_log_csv_check(conn, path, schema, table_name):
+    columns = _csvcheck_table_columns(conn.cursor(), schema, table_name)
     if not columns:
         return
-    _, issues, _ = _temp_csv_issues(Path(path).read_bytes(), columns)
-    print(f"[TEMP CSV CHECK] {schema}.{table_name}: {len(issues)} problems", flush=True)
+    _, issues, _ = _csvcheck_csv_issues(Path(path).read_bytes(), columns)
+    print(f"[CSV CHECK] {schema}.{table_name}: {len(issues)} problems", flush=True)
     for i in issues:
         if i["column"] is None:
             print(f"Row {i['row']} (CSV line {i['line']}): {i['reason']}", flush=True)
@@ -623,8 +631,7 @@ def _temp_log_csv_check(conn, path, schema, table_name):
               f"Invalid value: {i['value']!r}\n"
               f"Problem: {i['reason']}\n"
               f"Full row: {i['full_row']}\n" + "-" * 60, flush=True)
-    print(f"[TEMP CSV CHECK] {schema}.{table_name}: done", flush=True)
-# ── END TEMP ──────────────────────────────────────────────────────────────────
+    print(f"[CSV CHECK] {schema}.{table_name}: done", flush=True)
 
 
 # ── Comma CSV → TSV for tables with file-name columns ─────────────────────────
@@ -847,96 +854,6 @@ def convert_comma_csv_to_tsv():
     })
 
 
-# ── TSV import ────────────────────────────────────────────────────────────────
-# Same import as CSV (file name = table name, optional header row, rows replace
-# the table's rows, SQL download afterwards), but the values are separated by
-# tabs, e.g. the file made by the CSV → TSV tab.
-
-def _tsv_upload():
-    """Validate a TSV upload form; return (file, table_name, schema)."""
-    file = request.files.get("file")
-    if not file or not file.filename:
-        raise RouteError("No file selected.")
-    if not is_tsv_filename(file.filename):
-        raise RouteError("Please choose a .tsv file.")
-    table_name = csv_table_name(file.filename)
-    if not table_name:
-        raise RouteError("TSV file name must start with the table name, e.g. MSHHKP.tsv.")
-    return file, table_name, request.form.get("schema", "").strip()
-
-
-@app.route("/tsv/preview", methods=["POST"])
-def tsv_preview():
-    """Check a TSV against its table before importing it. Nothing is imported."""
-    try:
-        file, table_name, schema = _tsv_upload()
-        header_mode = header_mode_arg(request.form.get("header"))
-        columns = _db_table_columns(_saved_config(), schema, table_name)
-        rows = parse_delimited(file.read(), "\t")
-    except RouteError as e:
-        return jsonify({"error": e.message}), e.status
-    except ValueError as e:
-        return jsonify({"error": f"Cannot read file: {e}"}), 400
-    report = _header_check_report(schema, table_name, columns, rows)
-    header = bool(rows) and resolve_header(report["check"], header_mode)
-    data = rows[1:] if header else rows
-    expected = len(rows[0][1]) if header else len(columns)
-    mismatched = [{"line": line, "cells": len(cells), "first": cells[0] if cells else ""}
-                  for line, cells in data if len(cells) != expected]
-    known = {c.upper() for c in columns}
-    return jsonify({
-        "filename": file.filename, "schema": schema, "table": table_name,
-        "columns": len(columns), "header": header, "expected": expected,
-        "records": len(data),
-        "unknown_header_columns": [normalize_cell(c) for c in rows[0][1]
-                                   if header and c.strip() and normalize_cell(c).upper() not in known],
-        "mismatched_count": len(mismatched),
-        "mismatched": mismatched[:200],
-        "header_mode": header_mode,
-        "check": report["check"],
-        "file_values": report["file_values"],
-    })
-
-
-@app.route("/tsv/import", methods=["POST"])
-def tsv_import():
-    """Start a background import of one TSV file; poll /import/status/<job_id>."""
-    try:
-        file, table_name, schema = _tsv_upload()
-        header_mode = header_mode_arg(request.form.get("header"))
-        cfg = _saved_config()
-        if not schema:
-            raise RouteError("Schema is required.")
-    except RouteError as e:
-        return jsonify({"error": e.message}), e.status
-    tmp = Path(tempfile.gettempdir()) / f"{uuid.uuid4()}.tsv"
-    file.save(tmp)
-    try:
-        parse_delimited(tmp.read_bytes(), "\t")
-    except ValueError as e:
-        tmp.unlink(missing_ok=True)
-        return jsonify({"error": f"Cannot read file: {e}"}), 400
-
-    _cleanup_import_jobs()
-    job_id = uuid.uuid4().hex
-    job = _new_import_job(job_id, [table_name])
-    job["owner"] = session.setdefault("import_owner", uuid.uuid4().hex)
-    with IMPORT_JOBS_LOCK:
-        IMPORT_JOBS[job_id] = job
-        snapshot = _job_snapshot(job)
-    threading.Thread(target=_run_tsv_import_job,
-                     args=(job_id, cfg, str(tmp), table_name, schema, header_mode), daemon=True).start()
-    return jsonify(snapshot), 202
-
-
-def _run_tsv_import_job(job_id, cfg, tmp_path, table_name, schema, header_mode="auto"):
-    try:
-        _run_import_job(job_id, cfg, tmp_path, None, [table_name], schema, {}, table_name, "\t",
-                        header_mode)
-    finally:
-        Path(tmp_path).unlink(missing_ok=True)
-
-
 def _csv_value(value, dtype):
     """CSV text -> insert value. Blank becomes NULL (NOT NULL columns get a default later)."""
     if dtype not in STRING_TYPES:
@@ -1027,8 +944,8 @@ def _test_connection(host, port, database, username, password):
         return str(e)
 
 
-@app.route("/temp/csv-check", methods=["POST"])   # TEMP: remove with the TEMP CSV check block
-def temp_csv_check():
+@app.route("/csv/check", methods=["POST"])
+def csv_check():
     file = request.files.get("file")
     if not file or not file.filename:
         return jsonify({"error": "No file selected."}), 400
@@ -1051,7 +968,7 @@ def temp_csv_check():
     try:
         conn = pyodbc.connect(conn_str, timeout=10)
         try:
-            columns = _temp_table_columns(conn.cursor(), schema, table_name)
+            columns = _csvcheck_table_columns(conn.cursor(), schema, table_name)
         finally:
             conn.close()
     except pyodbc.Error as e:
@@ -1059,7 +976,7 @@ def temp_csv_check():
     if not columns:
         return jsonify({"error": f"Table {schema}.{table_name} not found."}), 404
     try:
-        rows_checked, issues, header = _temp_csv_issues(file.read(), columns)
+        rows_checked, issues, header = _csvcheck_csv_issues(file.read(), columns)
     except Exception as e:
         return jsonify({"error": f"Cannot read file: {e}"}), 400
     return jsonify({
@@ -1084,18 +1001,20 @@ def upload():
     if not file or not file.filename:
         return jsonify({"error": "No file selected."}), 400
 
-    is_csv = is_csv_filename(file.filename)
-    table_name = csv_table_name(file.filename) if is_csv else None
-    if is_csv and not table_name:
-        return jsonify({"error": "CSV file name must start with the table name, e.g. MDNNOP.csv."}), 400
+    delimiter = delimiter_for(file.filename)   # "," for .csv, tab for .tsv, None for Excel
+    fmt = "tsv" if delimiter == "\t" else "csv" if delimiter else None
+    table_name = csv_table_name(file.filename) if fmt else None
+    if fmt and not table_name:
+        return jsonify({"error": f"{fmt.upper()} file name must start with the table name, "
+                                 f"e.g. MDNNOP.{fmt}."}), 400
 
-    tmp = Path(tempfile.gettempdir()) / f"{uuid.uuid4()}{'.csv' if is_csv else '.xlsx'}"
+    tmp = Path(tempfile.gettempdir()) / f"{uuid.uuid4()}{'.' + fmt if fmt else '.xlsx'}"
     file.save(tmp)
 
     try:
-        if is_csv:
-            read_csv_rows(tmp)
-            sheets = [table_name]   # a CSV is one "sheet" holding one table
+        if fmt:
+            read_csv_rows(tmp, delimiter)
+            sheets = [table_name]   # a CSV / TSV is one "sheet" holding one table
         else:
             wb = openpyxl.load_workbook(tmp, data_only=True, read_only=True)
             sheets = wb.sheetnames
@@ -1111,11 +1030,13 @@ def upload():
 
     session["tmp_path"] = str(tmp)
     session["orig_filename"] = file.filename
-    session["file_kind"] = "csv" if is_csv else "excel"
+    session["file_kind"] = "csv" if fmt else "excel"   # "csv" = any delimited file (.csv / .tsv)
+    session["delimiter"] = delimiter or ","
     session["csv_table"] = table_name
     return jsonify({
         "sheets": sheets,
         "kind": session["file_kind"],
+        "format": fmt,
         "table": table_name,
         "batch_job": derive_batch_job(file.filename),
     })
@@ -1135,13 +1056,14 @@ def scan():
 
     if session.get("file_kind") == "csv":
         try:
-            rows, width = read_csv_rows(tmp_path)
+            rows, width = read_csv_rows(tmp_path, session.get("delimiter", ","))
         except Exception as e:
             return jsonify({"error": f"Cannot open file: {e}"}), 400
         session["sheet_name"] = sheet_name
         table_name = session.get("csv_table")
         # The header is checked against the chosen schema's table by /csv/header-check.
-        return jsonify({"tables": [_csv_preview(table_name, rows, width, None)], "kind": "csv"})
+        return jsonify({"tables": [_csv_preview(table_name, rows, width, None)], "kind": "csv",
+                        "format": "tsv" if session.get("delimiter") == "\t" else "csv"})
 
     try:
         wb = openpyxl.load_workbook(tmp_path, data_only=True, read_only=True)
@@ -1161,20 +1083,38 @@ def scan():
 
 @app.route("/csv/header-check", methods=["POST"])
 def csv_header_check():
-    """Fetch the table's columns in the chosen schema and compare the CSV's first row."""
+    """
+    Fetch the table's columns in the chosen schema and compare the first row of
+    the uploaded CSV / TSV. With the header decision (automatic or the user's
+    choice) it also lists the rows that do not have the expected number of values.
+    """
     tmp_path = session.get("tmp_path")
     table_name = session.get("csv_table")
     if session.get("file_kind") != "csv" or not tmp_path or not Path(tmp_path).exists():
         return jsonify({"error": "Session expired — please re-upload the file."}), 400
-    schema = str((request.json or {}).get("schema", "")).strip()
+    payload = request.json or {}
+    schema = str(payload.get("schema", "")).strip()
     try:
+        header_mode = header_mode_arg(payload.get("header"))
         columns = _db_table_columns(_saved_config(), schema, table_name)
-        rows = parse_delimited(Path(tmp_path).read_bytes(), ",")
+        rows = parse_delimited(Path(tmp_path).read_bytes(), session.get("delimiter", ","))
     except RouteError as e:
         return jsonify({"error": e.message}), e.status
     except ValueError as e:
         return jsonify({"error": f"Cannot read file: {e}"}), 400
-    return jsonify(_header_check_report(schema, table_name, columns, rows))
+    report = _header_check_report(schema, table_name, columns, rows)
+    header = bool(rows) and resolve_header(report["check"], header_mode)
+    data = rows[1:] if header else rows
+    expected = len(rows[0][1]) if header else len(columns)
+    mismatched = [{"line": line, "cells": len(cells), "first": cells[0] if cells else ""}
+                  for line, cells in data if len(cells) != expected]
+    return jsonify({
+        **report,
+        "format": "tsv" if session.get("delimiter") == "\t" else "csv",
+        "header_mode": header_mode, "header": header,
+        "records": len(data), "expected": expected,
+        "mismatched_count": len(mismatched), "mismatched": mismatched[:200],
+    })
 
 
 def _header_check_report(schema, table_name, columns, rows):
@@ -1923,7 +1863,8 @@ def do_import():
     worker = threading.Thread(
         target=_run_import_job,
         args=(job_id, cfg, str(tmp_path), sheet_name, selected_names, preferred_schema, table_schemas,
-              session.get("csv_table") if session.get("file_kind") == "csv" else None, ",", header_mode),
+              session.get("csv_table") if session.get("file_kind") == "csv" else None,
+              session.get("delimiter", ","), header_mode),
         daemon=True,
     )
     worker.start()
@@ -2351,10 +2292,10 @@ def _run_csv_import(job_id, conn, tmp_path, table_name, selected_names, schema, 
     _mark_job_table(job_id, table_name, "running", "Importing", schema=schema)
     sql_path = Path(SQL_EXPORT_DIR.name) / f"{job_id}.sql"
     if delimiter == ",":
-        try:   # TEMP: remove with the TEMP CSV check block
-            _temp_log_csv_check(conn, tmp_path, schema, table_name)
+        try:   # also logs the CSV check to the container log
+            _csvcheck_log_csv_check(conn, tmp_path, schema, table_name)
         except Exception as e:
-            print(f"[TEMP CSV CHECK] failed: {e}", flush=True)
+            print(f"[CSV CHECK] failed: {e}", flush=True)
     try:
         rows, _ = read_csv_rows(tmp_path, delimiter)
         progress_cb = lambda done, total: _mark_job_progress(job_id, table_name, done, total)
