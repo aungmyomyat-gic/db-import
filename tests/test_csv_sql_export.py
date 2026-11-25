@@ -386,5 +386,94 @@ class CsvSqlExportTests(unittest.TestCase):
             self.assertFalse(export_path.exists())
 
 
+class SqlGenerateTests(unittest.TestCase):
+    """SQL Generate writes the import's SQL file but never changes the database."""
+
+    CONFIG = dict(host="example", port=1433, database="test", username="user", password="secret")
+
+    def setUp(self):
+        with importer.IMPORT_JOBS_LOCK:
+            importer.IMPORT_JOBS.clear()
+        self.addCleanup(self.clear_jobs)
+
+    def clear_jobs(self):
+        with importer.IMPORT_JOBS_LOCK:
+            for job in importer.IMPORT_JOBS.values():
+                if job.get("sql_path"):
+                    Path(job["sql_path"]).unlink(missing_ok=True)
+            importer.IMPORT_JOBS.clear()
+
+    def generate(self, connection, raw, filename="MDNNOP.csv", schema="lvapdbf"):
+        client = importer.app.test_client()
+        with patch.object(importer, "load_config", return_value=self.CONFIG), \
+             patch.object(importer, "_build_conn_str", return_value=("mock connection", None)), \
+             patch.object(importer.pyodbc, "connect", return_value=connection):
+            response = client.post("/sql/generate", data={"file": (io.BytesIO(raw), filename), "schema": schema})
+            if response.status_code != 202:
+                return client, response, None
+            job_id = response.json["job_id"]
+            deadline = time.monotonic() + 3
+            while time.monotonic() < deadline:
+                snapshot = client.get(f"/import/status/{job_id}").json
+                if snapshot["state"] in {"done", "failed"}:
+                    break
+                time.sleep(0.01)
+        return client, response, snapshot
+
+    @staticmethod
+    def csv_bytes(rows, delimiter=","):
+        stream = io.StringIO(newline="")
+        csv.writer(stream, delimiter=delimiter).writerows(rows)
+        return stream.getvalue().encode("utf-8")
+
+    def test_generated_sql_matches_import_export_and_db_is_untouched(self):
+        rows = [["0001", "12.50", "O'Brien 日本語", "", ""], ["0002", "", "text", "1", "2026-11-22"]]
+        connection = FakeConnection()
+        client, response, snapshot = self.generate(connection, self.csv_bytes(rows))
+        self.assertEqual(response.status_code, 202)
+        self.assertEqual(snapshot["state"], "done")
+        self.assertEqual(snapshot["results"][0]["status"], "ok")
+        self.assertIn("SQL generated for 2 rows", snapshot["results"][0]["message"])
+        download = client.get(snapshot["sql_download_url"])
+        self.assertEqual(download.status_code, 200)
+        generated = download.data.decode("utf-8-sig")
+        download.close()
+        # Only metadata was read: nothing cleared, inserted or committed.
+        self.assertTrue(all(sql.startswith("SELECT") for sql in connection.statements))
+        self.assertIsNone(connection.committed)
+        self.assertTrue(connection.closed)
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "MDNNOP.csv"
+            path.write_bytes(self.csv_bytes(rows))
+            job = importer._new_import_job("parity", ["MDNNOP"])
+            importer.IMPORT_JOBS["parity"] = job
+            importer._run_csv_import("parity", FakeConnection(), str(path), "MDNNOP", ["MDNNOP"], "lvapdbf")
+            imported = Path(job["sql_path"]).read_text(encoding="utf-8-sig")
+        self.assertEqual(generated, imported)
+
+    def test_tsv_and_header_row_are_supported(self):
+        rows = [["CREATED", "CODE", "DESCRIPTION"], ["2026-11-22", "0001", "a\tb"]]
+        _, _, snapshot = self.generate(FakeConnection(), self.csv_bytes(rows, "\t"), "MDNNOP.tsv")
+        self.assertEqual(snapshot["state"], "done")
+        self.assertIn("header row found", snapshot["results"][0]["message"])
+        sql = Path(importer.IMPORT_JOBS[snapshot["job_id"]]["sql_path"]).read_text(encoding="utf-8-sig")
+        self.assertIn("NCHAR(9)", sql)   # the quoted tab is kept inside the value
+        self.assertIn("N'0001'", sql)
+
+    def test_missing_table_is_skipped_without_download(self):
+        _, _, snapshot = self.generate(FakeConnection(table_exists=False), self.csv_bytes([["0001"]]))
+        self.assertEqual(snapshot["state"], "done")
+        self.assertEqual(snapshot["results"][0]["status"], "skip")
+        self.assertNotIn("sql_download_url", snapshot)
+
+    def test_invalid_requests_are_rejected(self):
+        raw = self.csv_bytes([["0001"]])
+        self.assertEqual(self.generate(FakeConnection(), raw, "MDNNOP.xlsx")[1].status_code, 400)
+        self.assertEqual(self.generate(FakeConnection(), raw, "123.csv")[1].status_code, 400)
+        self.assertEqual(self.generate(FakeConnection(), raw, schema="")[1].status_code, 400)
+        self.assertEqual(self.generate(FakeConnection(), b"0001,a\x81", "MDNNOP.csv")[1].status_code, 400)
+
+
 if __name__ == "__main__":
     unittest.main()

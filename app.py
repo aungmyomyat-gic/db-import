@@ -1871,11 +1871,115 @@ def download_import_sql(job_id):
         if not job or not job.get("owner") or job["owner"] != session.get("import_owner"):
             return jsonify({"error": "Import job not found."}), 404
         if job["state"] != "done" or not job.get("sql_path"):
-            return jsonify({"error": "SQL is available only after a successful CSV import."}), 409
+            return jsonify({"error": "SQL is available only after the file is processed successfully."}), 409
         if not Path(job["sql_path"]).is_file():
-            return jsonify({"error": "SQL download expired. Please import the CSV again."}), 404
+            return jsonify({"error": "SQL download expired. Please process the file again."}), 404
         return send_file(job["sql_path"], as_attachment=True, download_name=job["sql_filename"],
                          mimetype="application/sql", conditional=False, max_age=0)
+
+
+# ── SQL Generate ──────────────────────────────────────────────────────────────
+# Turns a CSV/TSV into the same SQL file the import offers for download
+# (DELETE + INSERTs), without importing it. Only table metadata is read from
+# the database; no rows are changed. Poll /import/status/<job_id> and download
+# from /import/sql/<job_id>.
+
+@app.route("/sql/generate", methods=["POST"])
+def sql_generate():
+    file = request.files.get("file")
+    if not file or not file.filename:
+        return jsonify({"error": "No file selected."}), 400
+    if is_csv_filename(file.filename):
+        delimiter, suffix = ",", ".csv"
+    elif is_tsv_filename(file.filename):
+        delimiter, suffix = "\t", ".tsv"
+    else:
+        return jsonify({"error": "Please choose a .csv or .tsv file."}), 400
+    table_name = csv_table_name(file.filename)
+    if not table_name:
+        return jsonify({"error": "File name must start with the table name, e.g. MDNNOP.csv."}), 400
+    schema = request.form.get("schema", "").strip()
+    try:
+        cfg = _saved_config()
+        if not schema:
+            raise RouteError("Schema is required.")
+    except RouteError as e:
+        return jsonify({"error": e.message}), e.status
+
+    tmp = Path(tempfile.gettempdir()) / f"{uuid.uuid4()}{suffix}"
+    file.save(tmp)
+    try:
+        parse_delimited(tmp.read_bytes(), delimiter)
+    except ValueError as e:
+        tmp.unlink(missing_ok=True)
+        return jsonify({"error": f"Cannot read file: {e}"}), 400
+
+    _cleanup_import_jobs()
+    job_id = uuid.uuid4().hex
+    job = _new_import_job(job_id, [table_name])
+    job["owner"] = session.setdefault("import_owner", uuid.uuid4().hex)
+    with IMPORT_JOBS_LOCK:
+        IMPORT_JOBS[job_id] = job
+        snapshot = _job_snapshot(job)
+    threading.Thread(target=_run_sql_generate_job,
+                     args=(job_id, cfg, str(tmp), table_name, schema, delimiter),
+                     daemon=True).start()
+    return jsonify(snapshot), 202
+
+
+def _run_sql_generate_job(job_id, cfg, tmp_path, table_name, schema, delimiter):
+    conn = None
+    sql_path = Path(SQL_EXPORT_DIR.name) / f"{job_id}.sql"
+    try:
+        _set_job_state(job_id, "running")
+        conn_str, err = _build_conn_str(
+            cfg["host"], cfg["port"], cfg["database"], cfg["username"], cfg["password"]
+        )
+        if err:
+            _fail_import_job(job_id, err)
+            return
+        conn = pyodbc.connect(conn_str, timeout=10)
+        _mark_job_table(job_id, table_name, "running", "Generating SQL", schema=schema)
+        try:
+            rows, _ = read_csv_rows(tmp_path, delimiter)
+            prepared = _prepare_import(conn.cursor(), table_name, None, rows, schema)
+            progress_cb = lambda done, total: _mark_job_progress(job_id, table_name, done, total)
+            _write_import_sql(sql_path, schema, table_name, prepared["plan"], prepared["rows"],
+                              prepared["db_cols"], progress_cb)
+            result = {"status": "ok", "errors": [],
+                      "message": f"SQL generated for {len(prepared['rows'])} rows" + prepared["message_suffix"]}
+        except SkipTable as e:
+            result = {"status": "skip", "message": str(e), "errors": []}
+        except Exception as e:
+            result = {"status": "failed", "message": f"Failed: {e}", "errors": []}
+        if result["status"] != "ok" or not _publish_sql(job_id, sql_path, table_name):
+            sql_path.unlink(missing_ok=True)
+        _mark_job_table(job_id, table_name, result["status"], result["message"],
+                        result["errors"], schema=schema)
+        _finish_import_job(job_id)
+    except Exception as e:
+        sql_path.unlink(missing_ok=True)
+        _fail_import_job(job_id, f"SQL generation failed: {e}")
+    finally:
+        Path(tmp_path).unlink(missing_ok=True)
+        if conn is not None:
+            try:
+                conn.close()
+            except Exception:
+                pass
+
+
+def _publish_sql(job_id, sql_path, table_name):
+    """Attach a written SQL file to its job for download; False if the job is gone."""
+    if not sql_path.is_file():
+        return False
+    with IMPORT_JOBS_LOCK:
+        job = IMPORT_JOBS.get(job_id)
+        if not job:
+            return False
+        job["sql_path"] = str(sql_path)
+        job["sql_filename"] = f"{table_name}_{datetime.now():%Y%m%d_%H%M%S}.sql"
+        return True
 
 
 @app.route("/truncate", methods=["POST"])
@@ -2183,15 +2287,7 @@ def _run_csv_import(job_id, conn, tmp_path, table_name, selected_names, schema, 
         except Exception:
             pass
         result = {"name": table_name, "status": "failed", "message": f"Failed: {e}", "errors": []}
-    published = False
-    if result.get("status") == "ok" and sql_path.is_file():
-        with IMPORT_JOBS_LOCK:
-            job = IMPORT_JOBS.get(job_id)
-            if job:
-                job["sql_path"] = str(sql_path)
-                job["sql_filename"] = f"{table_name}_{datetime.now():%Y%m%d_%H%M%S}.sql"
-                published = True
-    if not published:
+    if result.get("status") != "ok" or not _publish_sql(job_id, sql_path, table_name):
         sql_path.unlink(missing_ok=True)
     _mark_job_table(job_id, table_name, result.get("status", "failed"), result.get("message", ""),
                     result.get("errors", []), schema=schema)
@@ -2287,7 +2383,7 @@ def _sql_literal(value, dtype=None):
     return "N'" + text.replace("'", "''") + "'"
 
 
-def _write_import_sql(path, schema, table_name, plan, rows, db_cols):
+def _write_import_sql(path, schema, table_name, plan, rows, db_cols, progress_cb=None):
     """Write DELETE followed by multi-row INSERTs in table column order."""
     qualified = f"{_export_identifier(schema)}.{_export_identifier(table_name)}"
     insert_sql = f"INSERT INTO {qualified}"
@@ -2310,6 +2406,8 @@ def _write_import_sql(path, schema, table_name, plan, rows, db_cols):
                 script.write(f"({values}){ending}")
             if offset + len(batch) < len(rows):
                 script.write("\n")
+            if progress_cb:
+                progress_cb(offset + len(batch), len(rows))
 
 
 def _values_for_insert(row, plan, db_cols):
@@ -2347,15 +2445,18 @@ def _insert_batch(cursor, insert_sql, batch, error_samples):
     return inserted, errors
 
 
-def _import_one(conn, table_name, headers, rows, preferred_schema="lvapdbf", progress_cb=None,
-                sql_export_path=None):
-    """
-    Replace the table's rows. headers=None means a CSV: when its first row holds
-    the table's column names it is a header (columns matched by name), otherwise
-    the row values are matched to the table's columns by position.
-    """
-    cursor = conn.cursor()
+class SkipTable(Exception):
+    """The table cannot be imported (not found, no matching columns); not an error."""
 
+
+def _prepare_import(cursor, table_name, headers, rows, schema):
+    """
+    Read-only: match the rows to the table's columns. headers=None means a CSV:
+    when its first row holds the table's column names it is a header (columns
+    matched by name), otherwise the row values are matched to the table's
+    columns by position. Shared by the import and by SQL Generate so both
+    produce the same INSERT values. Raises SkipTable.
+    """
     # Resolve the actual schema (e.g. 'lvapdbf'), not the login default ('dbo').
     cursor.execute(
         "SELECT TABLE_SCHEMA FROM INFORMATION_SCHEMA.TABLES WHERE TABLE_NAME = ?",
@@ -2363,13 +2464,10 @@ def _import_one(conn, table_name, headers, rows, preferred_schema="lvapdbf", pro
     )
     schemas = [r[0] for r in cursor.fetchall()]
     if not schemas:
-        return {"name": table_name, "status": "skip", "message": "Table not found in DB"}
+        raise SkipTable("Table not found in DB")
     # Import into the chosen schema; if the table doesn't exist there, skip it.
-    if preferred_schema not in schemas:
-        return {"name": table_name, "status": "skip",
-                "message": f"Not in schema '{preferred_schema}' (found in: {', '.join(schemas)})"}
-    schema = preferred_schema
-    qualified = f"{_sql_identifier(schema)}.{_sql_identifier(table_name)}"
+    if schema not in schemas:
+        raise SkipTable(f"Not in schema '{schema}' (found in: {', '.join(schemas)})")
 
     # Full column metadata: type + nullability + whether it has a DB default.
     cursor.execute(
@@ -2407,7 +2505,7 @@ def _import_one(conn, table_name, headers, rows, preferred_schema="lvapdbf", pro
     # Which sheet header maps to which DB column?
     sheet_idx = {h.upper(): i for i, h in enumerate(headers) if h.upper() in db_cols}
     if not sheet_idx:
-        return {"name": table_name, "status": "skip", "message": "No matching columns"}
+        raise SkipTable("No matching columns")
 
     # Build the column list to INSERT:
     #  • sheet columns      → take the cell value (NULL→default if NOT NULL)
@@ -2421,6 +2519,32 @@ def _import_one(conn, table_name, headers, rows, preferred_schema="lvapdbf", pro
         elif not info["nullable"] and not info["has_default"]:
             plan.append((info["name"], ("fill", _type_default(info["type"]))))
             filled_cols.append(info["name"])
+
+    # Blank header cells (padding past the last named column) are not counted.
+    unmapped = sum(1 for h in headers if h and h.upper() not in db_cols)
+    suffix = ""
+    if filled_cols:
+        suffix += f" ({len(filled_cols)} required cols auto-filled: {', '.join(filled_cols)})"
+    if csv_header:
+        suffix += " (header row found — columns matched by name)"
+    if unmapped:
+        suffix += f" ({unmapped} {'CSV' if is_csv else 'sheet'} cols skipped — not in table)"
+    if extra_csv_cols:
+        suffix += f" ({extra_csv_cols} CSV cols skipped — table has only {len(db_cols)} columns)"
+    return {"rows": rows, "db_cols": db_cols, "plan": plan, "message_suffix": suffix}
+
+
+def _import_one(conn, table_name, headers, rows, preferred_schema="lvapdbf", progress_cb=None,
+                sql_export_path=None):
+    """Replace the table's rows (see _prepare_import for how rows map to columns)."""
+    cursor = conn.cursor()
+    schema = preferred_schema
+    try:
+        prepared = _prepare_import(cursor, table_name, headers, rows, schema)
+    except SkipTable as e:
+        return {"name": table_name, "status": "skip", "message": str(e)}
+    rows, db_cols, plan = prepared["rows"], prepared["db_cols"], prepared["plan"]
+    qualified = f"{_sql_identifier(schema)}.{_sql_identifier(table_name)}"
 
     # TRUNCATE is minimally logged and skips per-row delete cost; fall back to
     # DELETE only if it's blocked (e.g. a foreign key references this table).
@@ -2462,19 +2586,10 @@ def _import_one(conn, table_name, headers, rows, preferred_schema="lvapdbf", pro
     conn.commit()
     if progress_cb:
         progress_cb(inserted + errors, total_rows)
-    # Blank header cells (padding past the last named column) are not counted.
-    unmapped = sum(1 for h in headers if h and h.upper() not in db_cols)
     msg = f"{inserted} rows inserted"
     if errors:
         msg += f", {errors} errors"
-    if filled_cols:
-        msg += f" ({len(filled_cols)} required cols auto-filled: {', '.join(filled_cols)})"
-    if csv_header:
-        msg += " (header row found — columns matched by name)"
-    if unmapped:
-        msg += f" ({unmapped} {'CSV' if is_csv else 'sheet'} cols skipped — not in table)"
-    if extra_csv_cols:
-        msg += f" ({extra_csv_cols} CSV cols skipped — table has only {len(db_cols)} columns)"
+    msg += prepared["message_suffix"]
 
     return {
         "name": table_name,

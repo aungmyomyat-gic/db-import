@@ -454,6 +454,7 @@
   .card-title .step-check  { --c1: #fbbf24; --c2: #d97706 }   /* TEMP: CSV check */
   .card-title .step-tsv    { --c1: #38bdf8; --c2: #0284c7 }
   .card-title .step-tsvimport { --c1: #a78bfa; --c2: #7c3aed }
+  .card-title .step-sqlgen { --c1: #34d399; --c2: #059669 }
   #tsvimp-mismatch .tbl td.mono { font-family: ui-monospace, Consolas, monospace; white-space: nowrap }
   #btn-tsvimp-sql { text-decoration: none }
   #tsv-errors .tbl td.mono { font-family: ui-monospace, Consolas, monospace; white-space: nowrap }
@@ -815,10 +816,17 @@
           <button class="nav-btn" id="nav-csvcheck" role="menuitem" data-label="CSV Check" disabled>CSV Check <span class="badge yellow">Temporary</span><span class="menu-sub">Check a CSV against its table columns</span></button>  <!-- TEMP -->
         </div>
       </div>
-      <button class="nav-btn" id="nav-truncate" disabled>Truncate Table</button>
-      <button class="nav-btn" id="nav-editor" disabled>Data Editor</button>
-      <button class="nav-btn" id="nav-query" disabled>SQL Runner</button>
-      <button class="nav-btn" id="nav-schema" disabled>Schema</button>
+      <div class="nav-group" id="nav-group-db">
+        <button class="nav-btn nav-group-btn" id="nav-db-menu" aria-haspopup="menu" aria-expanded="false"
+          aria-controls="nav-db-panel"><span id="nav-db-menu-label">Database</span><span class="nav-caret" aria-hidden="true">▾</span></button>
+        <div class="nav-menu hidden" id="nav-db-panel" role="menu" aria-label="Database">
+          <button class="nav-btn" id="nav-truncate" role="menuitem" data-label="Truncate Table" disabled>Truncate Table<span class="menu-sub">Empty the tables you choose</span></button>
+          <button class="nav-btn" id="nav-query" role="menuitem" data-label="SQL Runner" disabled>SQL Runner<span class="menu-sub">Run SQL against the database</span></button>
+          <button class="nav-btn" id="nav-sqlgen" role="menuitem" data-label="SQL Generate" disabled>SQL Generate<span class="menu-sub">Turn a CSV / TSV into a SQL file, without importing</span></button>
+          <button class="nav-btn" id="nav-schema" role="menuitem" data-label="Schema" disabled>Schema<span class="menu-sub">List and create schemas</span></button>
+          <button class="nav-btn" id="nav-editor" role="menuitem" data-label="Data Editor" disabled>Data Editor<span class="menu-sub">Browse and edit table rows</span></button>
+        </div>
+      </div>
       <button class="nav-btn" id="nav-connection" title="Not connected"><span class="nav-dot" id="nav-conn-dot"></span>Connection</button>
       <button class="nav-btn" id="nav-about"><svg class="nav-icon-info" viewBox="0 0 24 24" aria-hidden="true"><defs><linearGradient id="info-grad" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4fb3ff"/><stop offset="1" stop-color="#1565d8"/></linearGradient></defs><circle cx="12" cy="12" r="12" fill="url(#info-grad)"/><circle cx="12" cy="6.8" r="1.9" fill="#fff"/><rect x="10.3" y="10" width="3.4" height="9" rx="1.7" fill="#fff"/></svg>About</button>
     </nav>
@@ -1024,6 +1032,34 @@
       <div id="tsvimp-results-body"></div>
       <div class="btn-row" style="margin-top:12px">
         <a class="btn success hidden" id="btn-tsvimp-sql" download>Download SQL</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- ── SQL Generate (CSV / TSV → SQL file, nothing imported) ── -->
+  <div class="card hidden" id="card-sql-generate">
+    <div class="card-title active"><span class="step step-sqlgen"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><path d="M14 2v6h6"/><path d="m10 13-2 2 2 2"/><path d="m14 17 2-2-2-2"/></svg></span> SQL Generate</div>
+    <p class="subtitle" style="margin-bottom:18px">Turns a CSV or TSV file into a SQL file (<code>DELETE</code> followed by <code>INSERT</code>s) that you can download and run later. The table comes from the file name (MDNNOP.csv → MDNNOP). The values are matched to the table's columns the same way as CSV import: a header row is matched by column name, otherwise values are matched by position. Column types are read from the database. <strong>Nothing is imported and no rows are changed.</strong></p>
+    <div id="err-sqlgen" class="alert error hidden"></div>
+    <div style="margin-bottom:14px;max-width:320px">
+      <label for="sqlgen-schema">Schema</label>
+      <select id="sqlgen-schema"><option value="">Loading schemas…</option></select>
+    </div>
+    <div class="drop-zone" id="sqlgen-drop-zone">
+      <input type="file" id="sqlgen-file-input" accept=".csv,.tsv">
+      <div class="drop-icon">🧾</div>
+      <div class="drop-label"><span>Click to browse</span> or drag &amp; drop a CSV or TSV file</div>
+      <div class="drop-hint">File name = table name, e.g. MDNNOP.csv</div>
+      <div class="file-name hidden" id="sqlgen-file-name"></div>
+    </div>
+    <div class="btn-row">
+      <button class="btn" id="btn-sqlgen-run" disabled>Generate SQL</button>
+      <span id="sqlgen-status"></span>
+    </div>
+    <div id="sqlgen-results" class="hidden" style="margin-top:18px">
+      <div id="sqlgen-results-body"></div>
+      <div class="btn-row" style="margin-top:12px">
+        <a class="btn success hidden" id="btn-sqlgen-download" download>⤓ Download SQL</a>
       </div>
     </div>
   </div>
@@ -4224,14 +4260,169 @@ tsvImpZone.addEventListener('drop', e => {
   previewTsvImport(e.dataTransfer.files[0])
 })
 
+// ── SQL Generate ──────────────────────────────────────────────────────────────
+const SQLGEN_OTHER_NAVS = ['nav-import', 'nav-truncate', 'nav-editor', 'nav-query', 'nav-schema', 'nav-csvcheck',
+  'nav-tsv', 'nav-tsvimport', 'nav-connection', 'nav-about']
 
-// ── Import dropdown in the nav bar ────────────────────────────────────────────
-// The import tools are ordinary nav buttons inside a menu, so each keeps its own
-// click handler. The menu button shows which one is open and is highlighted
-// while any of them is active.
-;(function() {
-  const trigger = $('nav-import-menu')
-  const panel = $('nav-import-panel')
+$('nav-sqlgen').addEventListener('click', () => {
+  document.querySelector('.container').classList.remove('editor-layout', 'about-layout')
+  const visible = ['card-conn', 'card-upload', 'card-preview'].find(id => !$(id).classList.contains('hidden'))
+  if (visible && visible !== 'card-conn') lastImportCard = visible
+  restoreImportResults = !$('card-results').classList.contains('hidden')
+  ;['card-conn', 'card-upload', 'card-preview', 'card-truncate-manager', 'card-data-editor', 'card-about',
+    'card-updates', 'card-results', 'card-query-runner', 'card-schema-manager', 'card-csv-check',
+    'card-comma-tsv', 'card-tsv-import'].forEach(id => hide($(id)))
+  closeQuerySuggestions()
+  show($('card-sql-generate'))
+  SQLGEN_OTHER_NAVS.forEach(id => $(id).classList.remove('active'))
+  $('nav-sqlgen').classList.add('active')
+  loadSqlGenSchemas()
+})
+
+SQLGEN_OTHER_NAVS.forEach(id => {
+  $(id).addEventListener('click', () => {
+    hide($('card-sql-generate'))
+    $('nav-sqlgen').classList.remove('active')
+  })
+})
+
+new MutationObserver(() => { $('nav-sqlgen').disabled = $('nav-editor').disabled })
+  .observe($('nav-editor'), { attributes: true, attributeFilter: ['disabled'] })
+$('nav-sqlgen').disabled = $('nav-editor').disabled
+
+function loadSqlGenSchemas() {
+  const select = $('sqlgen-schema')
+  const current = select.value
+  fetch('/schemas').then(r => r.json()).then(data => {
+    if (data.error) throw new Error(data.error)
+    select.innerHTML = ''
+    data.schemas.forEach(name => select.add(new Option(name, name)))
+    const target = data.schemas.includes(current) ? current : data.default
+    if (data.schemas.includes(target)) select.value = target
+  }).catch(error => showErr($('err-sqlgen'), error.message))
+}
+
+let sqlGenFile = null
+let sqlGenTimer = null
+let sqlGenRunning = false
+
+function setSqlGenBusy(busy, label) {
+  sqlGenRunning = busy
+  $('sqlgen-schema').disabled = busy
+  $('sqlgen-drop-zone').classList.toggle('disabled', busy)
+  setLoading($('btn-sqlgen-run'), busy, label)
+  if (!busy) $('btn-sqlgen-run').disabled = !sqlGenFile
+}
+
+function pickSqlGenFile(file) {
+  if (!file || sqlGenRunning) return
+  hide($('err-sqlgen')); hide($('sqlgen-results'))
+  $('sqlgen-status').innerHTML = ''
+  if (!/\.(csv|tsv)$/i.test(file.name)) {
+    sqlGenFile = null
+    hide($('sqlgen-file-name'))
+    $('btn-sqlgen-run').disabled = true
+    showErr($('err-sqlgen'), 'Please choose a .csv or .tsv file.')
+    return
+  }
+  sqlGenFile = file
+  $('sqlgen-file-name').textContent = file.name
+  show($('sqlgen-file-name'))
+  $('btn-sqlgen-run').disabled = false
+}
+
+$('btn-sqlgen-run').addEventListener('click', () => {
+  if (!sqlGenFile || sqlGenRunning) return
+  hide($('err-sqlgen')); hide($('sqlgen-results'))
+  setSqlGenBusy(true, 'Starting…')
+  const form = new FormData()
+  form.append('file', sqlGenFile)
+  form.append('schema', $('sqlgen-schema').value)
+  fetch('/sql/generate', { method: 'POST', body: form }).then(r => r.json()).then(job => {
+    if (job.error) throw new Error(job.error)
+    setLoading($('btn-sqlgen-run'), true, 'Generating SQL…')
+    const poll = () => fetch(`/import/status/${encodeURIComponent(job.job_id)}`).then(r => r.json()).then(status => {
+      if (status.error && !status.state) throw new Error(status.error)
+      const result = (status.results || [])[0]
+      if (result) {
+        $('sqlgen-status').innerHTML = result.status === 'running' && result.progress && result.progress.total > 0
+          ? progressRing(Math.min(100, Math.round(result.progress.done / result.progress.total * 100)))
+          : statusPill(result.status)
+      }
+      if (status.state === 'done' || status.state === 'failed') {
+        clearInterval(sqlGenTimer)
+        sqlGenTimer = null
+        finishSqlGen(status)
+      }
+    }).catch(failSqlGen)
+    poll()
+    sqlGenTimer = setInterval(poll, 1000)
+  }).catch(failSqlGen)
+})
+
+function failSqlGen(error) {
+  if (sqlGenTimer) clearInterval(sqlGenTimer)
+  sqlGenTimer = null
+  setSqlGenBusy(false, 'Generate SQL')
+  showErr($('err-sqlgen'), 'SQL generation failed: ' + (error.message || error))
+}
+
+function finishSqlGen(status) {
+  setSqlGenBusy(false, 'Generate SQL')
+  if (status.error) showErr($('err-sqlgen'), status.error)
+  $('sqlgen-results-body').innerHTML = (status.results || []).map(r => {
+    const info = resultStatus(r.status)
+    return `
+      <div class="result-row">
+        <span class="status-icon ${info.cls}" title="${info.label}" aria-label="${info.label}">${info.icon}</span>
+        <span class="result-name">${escapeHtml(r.schema ? `${r.schema}.${r.name}` : r.name)}</span>
+        <div class="result-msg">
+          <span class="status-text ${info.cls}">${r.status === 'ok' ? 'SQL generated' : info.label}</span>
+          <span class="result-detail">${escapeHtml(r.message)}</span>
+        </div>
+      </div>`
+  }).join('')
+  const link = $('btn-sqlgen-download')
+  link.classList.toggle('hidden', !(status.state === 'done' && status.sql_download_url))
+  if (status.sql_download_url) {
+    link.href = status.sql_download_url
+    link.download = status.sql_filename || 'generated.sql'
+  }
+  show($('sqlgen-results'))
+}
+
+$('sqlgen-file-input').addEventListener('change', e => {
+  pickSqlGenFile(e.target.files[0])
+  e.target.value = ''
+})
+const sqlGenZone = $('sqlgen-drop-zone')
+sqlGenZone.tabIndex = 0
+sqlGenZone.setAttribute('role', 'button')
+sqlGenZone.addEventListener('click', e => {
+  if (sqlGenRunning) return
+  if (e.target !== $('sqlgen-file-input')) $('sqlgen-file-input').click()
+})
+sqlGenZone.addEventListener('keydown', e => {
+  if (sqlGenRunning) return
+  if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); $('sqlgen-file-input').click() }
+})
+;['dragover', 'dragenter'].forEach(ev => sqlGenZone.addEventListener(ev, e => {
+  e.preventDefault(); sqlGenZone.classList.add('drag-over')
+}))
+sqlGenZone.addEventListener('dragleave', () => sqlGenZone.classList.remove('drag-over'))
+sqlGenZone.addEventListener('drop', e => {
+  e.preventDefault(); sqlGenZone.classList.remove('drag-over')
+  pickSqlGenFile(e.dataTransfer.files[0])
+})
+
+
+// ── Dropdown menus in the nav bar (Import, Database) ──────────────────────────
+// The tools are ordinary nav buttons inside a menu, so each keeps its own click
+// handler. The menu button shows which one is open and is highlighted while any
+// of them is active.
+function setupNavMenu(groupId, triggerId, panelId, labelId, defaultLabel) {
+  const trigger = $(triggerId)
+  const panel = $(panelId)
   const items = Array.from(panel.querySelectorAll('.nav-btn'))
 
   function place() {
@@ -4253,7 +4444,7 @@ tsvImpZone.addEventListener('drop', e => {
   function syncTrigger() {
     const current = items.find(item => item.classList.contains('active'))
     trigger.classList.toggle('active', Boolean(current))
-    $('nav-import-menu-label').textContent = current ? current.dataset.label : 'Import'
+    $(labelId).textContent = current ? current.dataset.label : defaultLabel
   }
 
   trigger.addEventListener('click', e => {
@@ -4262,7 +4453,7 @@ tsvImpZone.addEventListener('drop', e => {
   })
   items.forEach(item => item.addEventListener('click', () => setOpen(false)))
   document.addEventListener('click', e => {
-    if (!e.target.closest('#nav-group-import')) setOpen(false)
+    if (!e.target.closest('#' + groupId)) setOpen(false)
   })
   panel.addEventListener('keydown', e => {
     const enabled = items.filter(item => !item.disabled)
@@ -4277,7 +4468,9 @@ tsvImpZone.addEventListener('drop', e => {
   const observer = new MutationObserver(syncTrigger)
   items.forEach(item => observer.observe(item, { attributes: true, attributeFilter: ['class'] }))
   syncTrigger()
-})()
+}
+setupNavMenu('nav-group-import', 'nav-import-menu', 'nav-import-panel', 'nav-import-menu-label', 'Import')
+setupNavMenu('nav-group-db', 'nav-db-menu', 'nav-db-panel', 'nav-db-menu-label', 'Database')
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function setLoading(btn, loading, label) {
