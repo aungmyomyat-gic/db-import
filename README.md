@@ -42,6 +42,14 @@ the tables afterwards. It runs in Docker and opens at http://localhost:5000.
   the encoding (UTF-8 or Shift-JIS) and line endings stay the same. Rows that
   do not come out to exactly one value per column are left out of the TSV and
   listed with their CSV line number so they can be fixed by hand.
+- **TSV Import** — import a tab-separated `.tsv` file, such as the one made by
+  CSV → TSV. It works like CSV import (file name = table name, header row
+  matched by name or values matched by position, blank → NULL/default, the
+  table's rows are replaced, Download SQL afterwards). Only tabs separate
+  values: commas and double quotes are kept as part of the value. Before the
+  import, a preview shows the row count, whether a header was found, and the
+  lines that do not have one value per column; the import asks for
+  confirmation.
 - **Truncate Table** — empty one or more tables in a schema.
 - **Data Editor** — browse every record in any table:
   - pages of 1,000, 2,000, 5,000 or 10,000 rows (the choice is remembered)

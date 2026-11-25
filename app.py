@@ -365,9 +365,16 @@ def csv_table_name(filename):
     return m.group(0) if m else None
 
 
-def read_csv_rows(path):
-    """Read every non-blank row; short rows are padded so all rows have the same width."""
-    raw = Path(path).read_bytes()
+def is_tsv_filename(filename):
+    return bool(filename) and filename.lower().endswith(".tsv")
+
+
+def parse_delimited(raw, delimiter=","):
+    """Decode CSV/TSV bytes; return [(line_number, cells)] for every non-blank row.
+
+    A TSV is read without quote handling: every tab separates two values and a
+    double quote is kept as part of the value, as the CSV → TSV tab writes it.
+    """
     for encoding in CSV_ENCODINGS:
         try:
             text = raw.decode(encoding)
@@ -375,9 +382,17 @@ def read_csv_rows(path):
         except UnicodeDecodeError:
             continue
     else:
-        raise ValueError("CSV is not UTF-8 or Shift-JIS text")
-    rows = [row for row in csv.reader(io.StringIO(text, newline=""))
-            if any(cell.strip() for cell in row)]
+        raise ValueError("File is not UTF-8 or Shift-JIS text")
+    if delimiter == "\t":
+        reader = csv.reader(io.StringIO(text, newline=""), delimiter="\t", quoting=csv.QUOTE_NONE)
+    else:
+        reader = csv.reader(io.StringIO(text, newline=""))
+    return [(reader.line_num, row) for row in reader if any(cell.strip() for cell in row)]
+
+
+def read_csv_rows(path, delimiter=","):
+    """Read every non-blank row; short rows are padded so all rows have the same width."""
+    rows = [row for _, row in parse_delimited(Path(path).read_bytes(), delimiter)]
     width = max((len(row) for row in rows), default=0)
     return [row + [""] * (width - len(row)) for row in rows], width
 
@@ -678,6 +693,50 @@ def comma_csv_to_tsv(raw, column_names, file_columns):
     return tsv.encode(encoding, errors="strict"), report
 
 
+class RouteError(Exception):
+    """A request problem to answer with {"error": message} and an HTTP status."""
+
+    def __init__(self, message, status=400):
+        super().__init__(message)
+        self.message = message
+        self.status = status
+
+
+def _saved_config():
+    cfg = load_config()
+    if not cfg:
+        raise RouteError("No DB connection saved. Please set it up first.")
+    return cfg
+
+
+def _db_table_columns(cfg, schema, table_name):
+    """Column names of schema.table_name in table order."""
+    if not schema:
+        raise RouteError("Schema is required.")
+    conn_str, err = _build_conn_str(
+        cfg["host"], cfg["port"], cfg["database"], cfg["username"], cfg["password"]
+    )
+    if err:
+        raise RouteError(err, 500)
+    try:
+        conn = pyodbc.connect(conn_str, timeout=10)
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS "
+                "WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? ORDER BY ORDINAL_POSITION",
+                schema, table_name,
+            )
+            names = [row[0] for row in cursor.fetchall()]
+        finally:
+            conn.close()
+    except pyodbc.Error as e:
+        raise RouteError(f"Could not read table columns: {e}")
+    if not names:
+        raise RouteError(f"Table {schema}.{table_name} not found.", 404)
+    return names
+
+
 @app.route("/convert/comma-csv-to-tsv", methods=["POST"])
 def convert_comma_csv_to_tsv():
     file = request.files.get("file")
@@ -693,32 +752,10 @@ def convert_comma_csv_to_tsv():
         return jsonify({"error": f"No file-name column rule for table {table_name}. "
                                  f"Supported: {', '.join(sorted(COMMA_FILE_COLUMNS))}."}), 400
     schema = request.form.get("schema", "").strip()
-    if not schema:
-        return jsonify({"error": "Schema is required."}), 400
-    cfg = load_config()
-    if not cfg:
-        return jsonify({"error": "No DB connection saved."}), 400
-    conn_str, err = _build_conn_str(
-        cfg["host"], cfg["port"], cfg["database"], cfg["username"], cfg["password"]
-    )
-    if err:
-        return jsonify({"error": err}), 500
     try:
-        conn = pyodbc.connect(conn_str, timeout=10)
-        try:
-            cursor = conn.cursor()
-            cursor.execute(
-                "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS "
-                "WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? ORDER BY ORDINAL_POSITION",
-                schema, table_name,
-            )
-            column_names = [row[0] for row in cursor.fetchall()]
-        finally:
-            conn.close()
-    except pyodbc.Error as e:
-        return jsonify({"error": f"Could not read table columns: {e}"}), 400
-    if not column_names:
-        return jsonify({"error": f"Table {schema}.{table_name} not found."}), 404
+        column_names = _db_table_columns(_saved_config(), schema, table_name)
+    except RouteError as e:
+        return jsonify({"error": e.message}), e.status
     missing = [name for name in file_columns
                if name.upper() not in {c.upper() for c in column_names}]
     if missing:
@@ -736,6 +773,89 @@ def convert_comma_csv_to_tsv():
         "tsv_filename": Path(file.filename).stem + ".tsv",
         "tsv_base64": base64.b64encode(tsv).decode("ascii"),
     })
+
+
+# ── TSV import ────────────────────────────────────────────────────────────────
+# Same import as CSV (file name = table name, optional header row, rows replace
+# the table's rows, SQL download afterwards), but the values are separated by
+# tabs, e.g. the file made by the CSV → TSV tab.
+
+def _tsv_upload():
+    """Validate a TSV upload form; return (file, table_name, schema)."""
+    file = request.files.get("file")
+    if not file or not file.filename:
+        raise RouteError("No file selected.")
+    if not is_tsv_filename(file.filename):
+        raise RouteError("Please choose a .tsv file.")
+    table_name = csv_table_name(file.filename)
+    if not table_name:
+        raise RouteError("TSV file name must start with the table name, e.g. MSHHKP.tsv.")
+    return file, table_name, request.form.get("schema", "").strip()
+
+
+@app.route("/tsv/preview", methods=["POST"])
+def tsv_preview():
+    """Check a TSV against its table before importing it. Nothing is imported."""
+    try:
+        file, table_name, schema = _tsv_upload()
+        columns = _db_table_columns(_saved_config(), schema, table_name)
+        rows = parse_delimited(file.read(), "\t")
+    except RouteError as e:
+        return jsonify({"error": e.message}), e.status
+    except ValueError as e:
+        return jsonify({"error": f"Cannot read file: {e}"}), 400
+    header = bool(rows) and csv_has_header(rows[0][1], columns)
+    data = rows[1:] if header else rows
+    expected = len(rows[0][1]) if header else len(columns)
+    mismatched = [{"line": line, "cells": len(cells), "first": cells[0] if cells else ""}
+                  for line, cells in data if len(cells) != expected]
+    known = {c.upper() for c in columns}
+    return jsonify({
+        "filename": file.filename, "schema": schema, "table": table_name,
+        "columns": len(columns), "header": header, "expected": expected,
+        "records": len(data),
+        "unknown_header_columns": [normalize_cell(c) for c in rows[0][1]
+                                   if header and c.strip() and normalize_cell(c).upper() not in known],
+        "mismatched_count": len(mismatched),
+        "mismatched": mismatched[:200],
+    })
+
+
+@app.route("/tsv/import", methods=["POST"])
+def tsv_import():
+    """Start a background import of one TSV file; poll /import/status/<job_id>."""
+    try:
+        file, table_name, schema = _tsv_upload()
+        cfg = _saved_config()
+        if not schema:
+            raise RouteError("Schema is required.")
+    except RouteError as e:
+        return jsonify({"error": e.message}), e.status
+    tmp = Path(tempfile.gettempdir()) / f"{uuid.uuid4()}.tsv"
+    file.save(tmp)
+    try:
+        parse_delimited(tmp.read_bytes(), "\t")
+    except ValueError as e:
+        tmp.unlink(missing_ok=True)
+        return jsonify({"error": f"Cannot read file: {e}"}), 400
+
+    _cleanup_import_jobs()
+    job_id = uuid.uuid4().hex
+    job = _new_import_job(job_id, [table_name])
+    job["owner"] = session.setdefault("import_owner", uuid.uuid4().hex)
+    with IMPORT_JOBS_LOCK:
+        IMPORT_JOBS[job_id] = job
+        snapshot = _job_snapshot(job)
+    threading.Thread(target=_run_tsv_import_job, args=(job_id, cfg, str(tmp), table_name, schema),
+                     daemon=True).start()
+    return jsonify(snapshot), 202
+
+
+def _run_tsv_import_job(job_id, cfg, tmp_path, table_name, schema):
+    try:
+        _run_import_job(job_id, cfg, tmp_path, None, [table_name], schema, {}, table_name, "\t")
+    finally:
+        Path(tmp_path).unlink(missing_ok=True)
 
 
 def _csv_value(value, dtype):
@@ -1925,7 +2045,7 @@ def _fail_import_job(job_id, message):
 
 
 def _run_import_job(job_id, cfg, tmp_path, sheet_name, selected_names, preferred_schema,
-                    table_schemas=None, csv_table=None):
+                    table_schemas=None, csv_table=None, delimiter=","):
     table_schemas = table_schemas or {}
     conn = None
     wb = None
@@ -1941,7 +2061,7 @@ def _run_import_job(job_id, cfg, tmp_path, sheet_name, selected_names, preferred
 
         if csv_table:
             _run_csv_import(job_id, conn, tmp_path, csv_table, selected_names,
-                            table_schemas.get(csv_table) or preferred_schema)
+                            table_schemas.get(csv_table) or preferred_schema, delimiter)
             _finish_import_job(job_id)
             return
 
@@ -2005,7 +2125,7 @@ def _run_import_job(job_id, cfg, tmp_path, sheet_name, selected_names, preferred
                 pass
 
 
-def _run_csv_import(job_id, conn, tmp_path, table_name, selected_names, schema):
+def _run_csv_import(job_id, conn, tmp_path, table_name, selected_names, schema, delimiter=","):
     if selected_names is None:
         _replace_job_queue(job_id, [table_name])
     elif table_name not in selected_names:
@@ -2014,12 +2134,13 @@ def _run_csv_import(job_id, conn, tmp_path, table_name, selected_names, schema):
         return
     _mark_job_table(job_id, table_name, "running", "Importing", schema=schema)
     sql_path = Path(SQL_EXPORT_DIR.name) / f"{job_id}.sql"
-    try:   # TEMP: remove with the TEMP CSV check block
-        _temp_log_csv_check(conn, tmp_path, schema, table_name)
-    except Exception as e:
-        print(f"[TEMP CSV CHECK] failed: {e}", flush=True)
+    if delimiter == ",":
+        try:   # TEMP: remove with the TEMP CSV check block
+            _temp_log_csv_check(conn, tmp_path, schema, table_name)
+        except Exception as e:
+            print(f"[TEMP CSV CHECK] failed: {e}", flush=True)
     try:
-        rows, _ = read_csv_rows(tmp_path)
+        rows, _ = read_csv_rows(tmp_path, delimiter)
         progress_cb = lambda done, total: _mark_job_progress(job_id, table_name, done, total)
         result = _import_one(conn, table_name, None, rows, schema, progress_cb,
                              sql_export_path=sql_path)
