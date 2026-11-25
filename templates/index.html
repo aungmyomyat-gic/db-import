@@ -978,7 +978,10 @@
     </div>
     <div id="tsv-results" class="hidden" style="margin-top:18px">
       <div id="tsv-summary" class="alert info"></div>
-      <button class="btn sm" id="btn-download-tsv" style="margin-bottom:14px">⤓ Download TSV</button>
+      <div class="btn-row" style="margin-bottom:14px">
+        <button class="btn sm" id="btn-download-tsv">⤓ Download TSV</button>
+        <button class="btn danger sm hidden" id="btn-download-tsv-errors" title="Only the lines that could not be converted, exactly as in the original CSV">⤓ Download error CSV</button>
+      </div>
       <div id="tsv-errors" class="hidden" style="overflow-x:auto">
         <table class="tbl">
           <thead><tr><th>CSV line</th><th>Problem</th><th>Line</th></tr></thead>
@@ -3981,6 +3984,9 @@ function runTsvConvert(file) {
     summary.textContent = parts.join(' · ') +
       (data.error_count > data.errors.length ? ` (showing the first ${data.errors.length})` : '')
     $('btn-download-tsv').disabled = !data.written && !data.header
+    $('btn-download-tsv-errors').textContent =
+      `⤓ Download error CSV (${data.error_count} ${data.error_count === 1 ? 'line' : 'lines'})`
+    $('btn-download-tsv-errors').classList.toggle('hidden', !data.error_count)
     $('tsv-error-body').innerHTML = data.errors.map(e => `
       <tr><td>${e.line}</td><td><span class="badge red">${escapeHtml(e.reason)}</span></td>
         <td class="mono">${escapeHtml(e.text)}</td></tr>`).join('')
@@ -3992,17 +3998,24 @@ function runTsvConvert(file) {
   })
 }
 
-$('btn-download-tsv').addEventListener('click', () => {
-  if (!lastTsvResult) return
-  const bytes = Uint8Array.from(atob(lastTsvResult.tsv_base64), c => c.charCodeAt(0))
-  const url = URL.createObjectURL(new Blob([bytes], { type: 'text/tab-separated-values' }))
+function downloadBase64(base64, filename, type) {
+  const bytes = Uint8Array.from(atob(base64), c => c.charCodeAt(0))
+  const url = URL.createObjectURL(new Blob([bytes], { type }))
   const link = document.createElement('a')
   link.href = url
-  link.download = lastTsvResult.tsv_filename
+  link.download = filename
   document.body.appendChild(link)
   link.click()
   link.remove()
   setTimeout(() => URL.revokeObjectURL(url), 1000)
+}
+
+$('btn-download-tsv').addEventListener('click', () => {
+  if (lastTsvResult) downloadBase64(lastTsvResult.tsv_base64, lastTsvResult.tsv_filename, 'text/tab-separated-values')
+})
+$('btn-download-tsv-errors').addEventListener('click', () => {
+  if (lastTsvResult && lastTsvResult.error_count)
+    downloadBase64(lastTsvResult.error_csv_base64, lastTsvResult.error_csv_filename, 'text/csv')
 })
 
 $('tsv-file-input').addEventListener('change', e => {

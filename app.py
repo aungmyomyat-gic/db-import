@@ -667,7 +667,9 @@ def comma_csv_to_tsv(raw, column_names, file_columns):
     Rows that do not come out to exactly one value per column are left out and
     listed in report["errors"] with their line number, for fixing by hand.
     report["quoted_lines"] lists the lines with a value written in quotes
-    because it contains a tab.
+    because it contains a tab. report["error_csv"] holds the error lines exactly
+    as they were (plus the header row, if any), in the input's encoding and line
+    endings, so they can be fixed and converted again.
     """
     for encoding in CSV_ENCODINGS:
         try:
@@ -688,6 +690,7 @@ def comma_csv_to_tsv(raw, column_names, file_columns):
               "quoted_lines": quoted_lines,
               "encoding": "Shift-JIS" if encoding == "cp932" else "UTF-8"}
     first = True
+    header_line = None
     for line_number, line in enumerate(text.split("\n"), 1):
         line = line.rstrip("\r")
         if not line.strip():
@@ -697,6 +700,7 @@ def comma_csv_to_tsv(raw, column_names, file_columns):
             first = False
             if csv_has_header(cells, column_names):
                 report["header"] = True
+                header_line = line
                 out.append(_tsv_line(cells))
                 continue
         report["rows"] += 1
@@ -710,6 +714,9 @@ def comma_csv_to_tsv(raw, column_names, file_columns):
         report["written"] += 1
         report["joined"] += joined
     tsv = (newline.join(out) + newline) if out else ""
+    error_lines = ([header_line] if header_line is not None else []) + [e["text"] for e in errors]
+    report["error_csv"] = ((newline.join(error_lines) + newline).encode(encoding)
+                           if errors else b"")
     return tsv.encode(encoding, errors="strict"), report
 
 
@@ -784,8 +791,12 @@ def convert_comma_csv_to_tsv():
         tsv, report = comma_csv_to_tsv(file.read(), column_names, file_columns)
     except (ValueError, UnicodeError) as e:
         return jsonify({"error": f"Cannot convert file: {e}"}), 400
+    error_csv = report.pop("error_csv")
     return jsonify({
         **report,
+        # Every error line, for fixing by hand; "MSHHKP (errors).csv" still names the table.
+        "error_csv_base64": base64.b64encode(error_csv).decode("ascii"),
+        "error_csv_filename": f"{table_name} (errors).csv",
         "errors": report["errors"][:2000],
         "error_count": len(report["errors"]),
         "quoted_count": len(report["quoted_lines"]),

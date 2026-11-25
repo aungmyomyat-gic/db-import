@@ -40,6 +40,9 @@ class CommaCsvToTsvTests(unittest.TestCase):
         self.assertEqual(tsv, "1\tN\ta.pdf\t\t\t\tX\n")
         self.assertEqual([e["line"] for e in report["errors"]], [3, 4, 5])
         self.assertEqual(report["errors"][2]["text"], "4,N,a.pdf,,,,X,extra")
+        # Only the error lines, unchanged, for fixing by hand.
+        self.assertEqual(report["error_csv"].decode(),
+                         "2,N,a,b,,,,X\n3,N,noext,,,\n4,N,a.pdf,,,,X,extra\n")
         self.assertIn("left over", report["errors"][2]["reason"])
         self.assertEqual((report["rows"], report["written"]), (4, 1))
 
@@ -89,6 +92,13 @@ class CommaCsvToTsvTests(unittest.TestCase):
         self.assertEqual(tsv, "\t".join(COLUMNS) + "\r\n1\t名前\t資料,一.pdf\t\t\t\tX\r\n")
         self.assertTrue(report["header"])
         self.assertEqual((report["rows"], report["encoding"]), (1, "Shift-JIS"))
+        self.assertEqual(report["error_csv"], b"")   # no errors, nothing to download
+
+    def test_error_csv_keeps_header_encoding_and_line_endings(self):
+        text = ",".join(COLUMNS) + "\r\n1,名前,a.pdf,,,,X\r\n2,名前,a,b,c\r\n"
+        _, report = convert(text, "cp932")
+        self.assertEqual(report["error_csv"].decode("cp932"),
+                         ",".join(COLUMNS) + "\r\n2,名前,a,b,c\r\n")
 
     def test_utf8_bom_is_kept_only_when_present(self):
         with_bom, _ = importer.comma_csv_to_tsv("﻿1,N,a.pdf,,,,X\n".encode("utf-8"),
@@ -117,7 +127,16 @@ class CommaCsvToTsvTests(unittest.TestCase):
                          ("MSHHKP", 7, "MSHHKP (1).tsv", list(FILE_COLUMNS)))
         self.assertEqual(base64.b64decode(data["tsv_base64"]).decode(),
                          "1\tN\ta,b,c.pdf\t\t\t\tX\n")
+        self.assertEqual((data["error_count"], data["error_csv_base64"], data["error_csv_filename"]),
+                         (0, "", "MSHHKP (errors).csv"))
         self.assertTrue(connection.closed)
+
+    def test_route_returns_the_error_lines_as_a_csv(self):
+        connection = FakeConnection(metadata=[(name,) for name in COLUMNS])
+        data = self.post("MSHHKP.csv", connection, raw=b"1,N,a.pdf,,,,X\n2,N,a,b,c\n").get_json()
+        self.assertEqual(data["error_count"], 1)
+        self.assertEqual(base64.b64decode(data["error_csv_base64"]).decode(), "2,N,a,b,c\n")
+        self.assertEqual(importer.csv_table_name(data["error_csv_filename"]), "MSHHKP")
 
     def test_route_requires_the_file_name_columns(self):
         for blank in ("", "  ", " , 、 "):

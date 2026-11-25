@@ -47,6 +47,8 @@ the tables afterwards. It runs in Docker and opens at http://localhost:5000.
   the encoding (UTF-8 or Shift-JIS) and line endings stay the same. Rows that
   do not come out to exactly one value per column are left out of the TSV and
   listed with their CSV line number so they can be fixed by hand.
+  **Download error CSV** saves just those lines, unchanged (plus the header
+  row, if any), as `TABLE (errors).csv`; fix them and convert that file again.
 - **TSV Import** — import a tab-separated `.tsv` file, such as the one made by
   CSV → TSV. It works like CSV import (file name = table name, header row
   matched by name or values matched by position, blank → NULL/default, the
