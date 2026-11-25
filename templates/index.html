@@ -626,6 +626,11 @@
   .alert { border-radius: 8px; padding: 12px 16px; font-size: .875rem; margin-bottom: 14px }
   .alert.error { background: #450a0a; border: 1px solid #7f1d1d; color: #fca5a5 }
   .alert.info  { background: #1e3a5f; border: 1px solid #1e40af; color: #93c5fd }
+  .alert.warn  { background: #3d2f00; border: 1px solid #a16207; color: #fde68a }
+  .header-check-notes { margin: 6px 0 0; padding-left: 18px }
+  .header-choice { display: flex; flex-wrap: wrap; gap: 6px 18px; align-items: center; margin-top: 10px }
+  .header-choice label { display: inline-flex; align-items: center; gap: 6px; margin: 0; cursor: pointer; color: inherit; font-size: .85rem }
+  .header-choice input { width: auto; margin: 0 }
   .file-change-warning { display: flex; align-items: center; justify-content: space-between; gap: 14px }
 
   .hidden { display: none !important }
@@ -1016,6 +1021,7 @@
       <div class="file-name hidden" id="tsvimp-file-name"></div>
     </div>
     <div id="tsvimp-preview" class="hidden" style="margin-top:18px">
+      <div id="tsvimp-header-check" class="alert info" aria-live="polite"></div>
       <div id="tsvimp-summary" class="alert info"></div>
       <div id="tsvimp-mismatch" class="hidden" style="overflow-x:auto;margin-bottom:14px">
         <table class="tbl">
@@ -1259,6 +1265,7 @@
         <button class="btn secondary" id="btn-rescan" style="padding:6px 14px;font-size:.8rem">Change file</button>
       </div>
     </div>
+    <div id="csv-header-check" class="alert info hidden" aria-live="polite"></div>
 
     <table class="tbl" id="preview-tbl">
       <thead><tr>
@@ -2717,7 +2724,7 @@ function scanSheet(btn) {
     setLoading(btn, false, idleLabel)
     if (data.error) { showErr($('err-upload'), data.error); return }
     buildPreview(data.tables, sheet)
-    loadSchemas()
+    loadSchemas().then(() => { if (currentFileKind === 'csv') checkCsvHeader() })
     hide($('card-upload')); show($('card-preview'))
   })
   .catch(e => {
@@ -2727,13 +2734,13 @@ function scanSheet(btn) {
 }
 
 function buildPreview(tables, sheet) {
-  const csvHeader = tables[0] && tables[0].header
-  const csvMatch = csvHeader === true ? 'header row found, columns are matched by name'
-    : csvHeader === false ? 'no header row, columns are matched by position'
-    : 'header row is checked against the table when you import'
+  csvHeaderReport = null
+  csvHeaderMode = 'auto'
+  csvPreviewRows = currentFileKind === 'csv' && tables[0] ? (tables[0].records ?? 0) : 0
+  hide($('csv-header-check'))
   $('preview-summary').innerHTML = currentFileKind === 'csv'
     ? `CSV <strong>${escapeHtml($('file-name').textContent)}</strong> → table
-       <strong>${escapeHtml(sheet)}</strong> · ${csvMatch}`
+       <strong>${escapeHtml(sheet)}</strong>`
     : `Found <strong>${tables.length}</strong> table${tables.length !== 1 ? 's' : ''} in sheet
      <strong>${escapeHtml(sheet)}</strong>`
   const tbody = $('preview-body'); tbody.innerHTML = ''
@@ -2747,10 +2754,14 @@ function buildPreview(tables, sheet) {
       </select></td>
       <td class="status-cell" data-status-name="${escapeAttr(t.name)}">${statusPill('ready')}</td>
       <td><span class="range-code">${escapeHtml(t.col_range || '-')}</span></td>
-      <td><span class="badge blue">${t.records ?? 0}</span></td>
+      <td><span class="badge blue records-badge">${t.records ?? 0}</span></td>
       <td><span class="badge blue">${t.columns}</span></td>
     </tr>`
   })
+  if (currentFileKind === 'csv') {
+    const sel = schemaSelects()[0]
+    if (sel) sel.addEventListener('change', () => { csvHeaderMode = 'auto'; checkCsvHeader() })
+  }
   $('chk-all').checked = true
   bindRowChecks()
   updateSelectCount()
@@ -2760,8 +2771,91 @@ const DEFAULT_IMPORT_SCHEMA = 'lvapdbf'
 
 function schemaSelects() { return Array.from(document.querySelectorAll('.schema-row')) }
 
+// ── Header check (CSV + TSV import) ──────────────────────────────────────────
+// The server fetches the table's columns and compares the file's first row:
+// 100% match → header, 0% → no header, anything in between → warning + choice.
+function headerCheckView(report, mode, radioName) {
+  const c = report.check
+  const header = mode === 'yes' ? true : mode === 'no' ? false : c.header
+  const list = names => names.slice(0, 15).map(escapeHtml).join(', ') + (names.length > 15 ? `, … (${names.length} in all)` : '')
+  let warn = false
+  let text = `Header check against <strong>${escapeHtml(report.schema)}.${escapeHtml(report.table)}</strong>
+    (${report.table_columns} columns): first row `
+  if (c.status === 'header') {
+    text += `${c.matched} / ${c.cells} match (100%) → <strong>header row</strong>, columns are matched by name.`
+  } else if (c.status === 'none') {
+    text += `0 / ${c.cells} match (0%) → <strong>no header</strong>, values are matched to columns by position.`
+  } else {
+    warn = true
+    text += `⚠ <strong>${c.matched} / ${c.cells} values are column names (${c.percent}%)</strong> — it may be a header
+      with wrong names, or a data row. Not column names: <span class="mono">${list(c.unknown)}</span>`
+  }
+  const notes = []
+  if (!header && report.file_values !== report.table_columns) {
+    warn = true
+    notes.push(`The file has ${report.file_values} values per row but the table has ${report.table_columns} columns — ` +
+      (report.file_values > report.table_columns ? 'the extra values are skipped.' : 'the remaining columns get NULL or their default.'))
+  }
+  if (header && c.status !== 'none' && c.missing.length)
+    notes.push(`Table columns not in the header (NULL or their default): <span class="mono">${list(c.missing)}</span>`)
+  if (header && c.duplicates.length) {
+    warn = true
+    notes.push(`Duplicate header names: <span class="mono">${list(c.duplicates)}</span>`)
+  }
+  let html = text
+  if (notes.length) html += `<ul class="header-check-notes">${notes.map(n => `<li>${n}</li>`).join('')}</ul>`
+  if (c.status === 'partial') {
+    html += `<div class="header-choice" role="radiogroup" aria-label="Use the first row as">
+      <span>Use the first row as:</span>
+      <label><input type="radio" name="${radioName}" value="yes" ${header ? 'checked' : ''}> Header (names not in the table are skipped)</label>
+      <label><input type="radio" name="${radioName}" value="no" ${header ? '' : 'checked'}> Data row (imported)</label>
+    </div>`
+  }
+  return { html, warn, header }
+}
+
+let csvHeaderReport = null
+let csvHeaderMode = 'auto'
+let csvPreviewRows = 0
+let csvHeaderRequest = 0
+
+function checkCsvHeader() {
+  const box = $('csv-header-check')
+  const table = (rowChecks()[0] || {}).dataset?.name
+  if (!table) return
+  const token = ++csvHeaderRequest
+  csvHeaderReport = null
+  box.className = 'alert info'
+  box.textContent = 'Checking the first row against the table columns…'
+  fetch('/csv/header-check', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ schema: schemaFor(table) })
+  }).then(r => r.json()).then(data => {
+    if (token !== csvHeaderRequest) return   // the schema changed meanwhile
+    if (data.error) throw new Error(data.error)
+    csvHeaderReport = data
+    renderCsvHeaderCheck()
+  }).catch(error => {
+    if (token !== csvHeaderRequest) return
+    box.className = 'alert error'
+    box.textContent = 'Header check failed: ' + error.message + ' — the import will decide by itself.'
+  })
+}
+
+function renderCsvHeaderCheck() {
+  const box = $('csv-header-check')
+  const view = headerCheckView(csvHeaderReport, csvHeaderMode, 'csv-header-mode')
+  box.className = 'alert ' + (view.warn ? 'warn' : 'info')
+  box.innerHTML = view.html
+  box.querySelectorAll('input[name="csv-header-mode"]').forEach(radio =>
+    radio.addEventListener('change', () => { csvHeaderMode = radio.value; renderCsvHeaderCheck() }))
+  const badge = document.querySelector('#preview-body .records-badge')
+  if (badge) badge.textContent = Math.max(0, csvPreviewRows - (view.header ? 1 : 0))
+}
+
 function loadSchemas() {
-  fetch('/schemas').then(r => r.json()).then(data => {
+  return fetch('/schemas').then(r => r.json()).then(data => {
     if (data.error || !data.schemas || !data.schemas.length) return  // keep default option
     const def = data.default || DEFAULT_IMPORT_SCHEMA
     schemaSelects().forEach(sel => {
@@ -2821,7 +2915,11 @@ $('btn-import').addEventListener('click', () => {
   fetch('/import', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ tables, schemas: Object.fromEntries(tables.map(name => [name, schemaFor(name)])) })
+    body: JSON.stringify({
+      tables,
+      schemas: Object.fromEntries(tables.map(name => [name, schemaFor(name)])),
+      header: currentFileKind === 'csv' ? csvHeaderMode : 'auto',
+    })
   })
   .then(r => r.json())
   .then(data => {
@@ -4122,10 +4220,13 @@ let tsvImpPreview = null
 let tsvImpTimer = null
 let tsvImpRunning = false
 
+let tsvImpHeaderMode = 'auto'
+
 function tsvImpForm() {
   const form = new FormData()
   form.append('file', tsvImpFile)
   form.append('schema', $('tsvimp-schema').value)
+  form.append('header', tsvImpHeaderMode)
   return form
 }
 
@@ -4136,8 +4237,10 @@ function setTsvImpBusy(busy, label) {
   setLoading($('btn-tsvimp-import'), busy, label)
 }
 
-function previewTsvImport(file) {
+// keepHeaderMode: re-check after the user picked Header / Data row for a partial match.
+function previewTsvImport(file, keepHeaderMode) {
   if (!file || tsvImpRunning) return
+  if (!keepHeaderMode) tsvImpHeaderMode = 'auto'
   tsvImpFile = file
   tsvImpPreview = null
   hide($('err-tsvimp')); hide($('tsvimp-preview')); hide($('tsvimp-results'))
@@ -4148,11 +4251,15 @@ function previewTsvImport(file) {
     if (data.error) throw new Error(data.error)
     tsvImpPreview = data
     $('tsvimp-file-name').textContent = `${data.filename} → ${data.schema}.${data.table} (${data.columns} columns)`
-    const parts = [`${data.records} rows`,
-      data.header ? 'header row found, columns are matched by name'
-                  : 'no header row, columns are matched by position']
-    if (data.unknown_header_columns.length)
-      parts.push(`header columns not in the table (skipped): ${data.unknown_header_columns.join(', ')}`)
+    const view = headerCheckView({ schema: data.schema, table: data.table, table_columns: data.columns,
+                                   file_values: data.file_values, check: data.check },
+                                 data.header_mode, 'tsvimp-header-mode')
+    const headerBox = $('tsvimp-header-check')
+    headerBox.className = 'alert ' + (view.warn ? 'warn' : 'info')
+    headerBox.innerHTML = view.html
+    headerBox.querySelectorAll('input[name="tsvimp-header-mode"]').forEach(radio =>
+      radio.addEventListener('change', () => { tsvImpHeaderMode = radio.value; previewTsvImport(tsvImpFile, true) }))
+    const parts = [`${data.records} rows`]
     if (data.mismatched_count)
       parts.push(`${data.mismatched_count} rows do not have ${data.expected} values — check them before importing`)
     const summary = $('tsvimp-summary')

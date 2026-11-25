@@ -394,36 +394,75 @@ def read_csv_rows(path, delimiter=","):
     return [row + [""] * (width - len(row)) for row in rows], width
 
 
+HEADER_MODES = ("auto", "yes", "no")
+
+
+def check_header(first_row, column_names):
+    """
+    Compare a file's first row with the table's column names.
+
+    status: "header"  every non-blank cell is a column name
+            "none"    no cell is a column name (the row is data)
+            "partial" some cells match: shown as a warning, the user decides
+    header: the automatic choice; for "partial" it is True when more than half
+            of the cells match (e.g. a header with a few typos).
+    """
+    by_upper = {str(name).upper(): str(name) for name in column_names}
+    cells = [normalize_cell(cell) for cell in first_row]
+    cells = [cell for cell in cells if cell]
+    matched = [cell for cell in cells if cell.upper() in by_upper]
+    unknown = [cell for cell in cells if cell.upper() not in by_upper]
+    if not matched:
+        status = "none"
+    elif not unknown:
+        status = "header"
+    else:
+        status = "partial"
+    seen, duplicates = set(), []
+    for cell in matched:
+        if cell.upper() in seen and cell not in duplicates:
+            duplicates.append(cell)
+        seen.add(cell.upper())
+    percent = len(matched) * 100 // len(cells) if cells else 0
+    if status == "partial":
+        percent = min(99, max(1, percent))   # never show 0% / 100% for a partial match
+    return {
+        "status": status,
+        "header": status == "header" or (status == "partial" and len(matched) * 2 > len(cells)),
+        "matched": len(matched),
+        "cells": len(cells),
+        "percent": percent,
+        "unknown": unknown,
+        "missing": [name for up, name in by_upper.items() if up not in seen],
+        "duplicates": duplicates,
+    }
+
+
+def resolve_header(check, mode="auto"):
+    """The header decision: the user's choice ("yes"/"no") or the automatic one."""
+    if mode == "yes":
+        return True
+    if mode == "no":
+        return False
+    return check["header"]
+
+
+def header_mode_arg(value):
+    value = str(value or "auto").strip().lower()
+    if value not in HEADER_MODES:
+        raise RouteError("header must be auto, yes or no.")
+    return value
+
+
 def csv_has_header(first_row, column_names):
     """True when most non-blank cells of first_row are column names of the table."""
-    names = {str(name).upper() for name in column_names}
-    cells = [normalize_cell(cell).upper() for cell in first_row if cell.strip()]
-    return bool(cells) and sum(cell in names for cell in cells) * 2 > len(cells)
+    return check_header(first_row, column_names)["header"]
 
 
-def _csv_table_column_names(table_name):
-    """Column names of table_name in any schema, or None when the DB can't be reached."""
-    cfg = load_config()
-    if not cfg:
-        return None
-    conn_str, err = _build_conn_str(
-        cfg["host"], cfg["port"], cfg["database"], cfg["username"], cfg["password"]
-    )
-    if err:
-        return None
-    try:
-        conn = pyodbc.connect(conn_str, timeout=5)
-        try:
-            cursor = conn.cursor()
-            cursor.execute(
-                "SELECT DISTINCT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = ?",
-                table_name,
-            )
-            return [row[0] for row in cursor.fetchall()]
-        finally:
-            conn.close()
-    except pyodbc.Error:
-        return None
+def first_file_row(raw, delimiter=","):
+    """The first non-blank row of a CSV/TSV, or [] for an empty file."""
+    rows = parse_delimited(raw, delimiter)
+    return rows[0][1] if rows else []
 
 
 def _csv_preview(table_name, rows, width, has_header=False):
@@ -831,13 +870,15 @@ def tsv_preview():
     """Check a TSV against its table before importing it. Nothing is imported."""
     try:
         file, table_name, schema = _tsv_upload()
+        header_mode = header_mode_arg(request.form.get("header"))
         columns = _db_table_columns(_saved_config(), schema, table_name)
         rows = parse_delimited(file.read(), "\t")
     except RouteError as e:
         return jsonify({"error": e.message}), e.status
     except ValueError as e:
         return jsonify({"error": f"Cannot read file: {e}"}), 400
-    header = bool(rows) and csv_has_header(rows[0][1], columns)
+    report = _header_check_report(schema, table_name, columns, rows)
+    header = bool(rows) and resolve_header(report["check"], header_mode)
     data = rows[1:] if header else rows
     expected = len(rows[0][1]) if header else len(columns)
     mismatched = [{"line": line, "cells": len(cells), "first": cells[0] if cells else ""}
@@ -851,6 +892,9 @@ def tsv_preview():
                                    if header and c.strip() and normalize_cell(c).upper() not in known],
         "mismatched_count": len(mismatched),
         "mismatched": mismatched[:200],
+        "header_mode": header_mode,
+        "check": report["check"],
+        "file_values": report["file_values"],
     })
 
 
@@ -859,6 +903,7 @@ def tsv_import():
     """Start a background import of one TSV file; poll /import/status/<job_id>."""
     try:
         file, table_name, schema = _tsv_upload()
+        header_mode = header_mode_arg(request.form.get("header"))
         cfg = _saved_config()
         if not schema:
             raise RouteError("Schema is required.")
@@ -879,14 +924,15 @@ def tsv_import():
     with IMPORT_JOBS_LOCK:
         IMPORT_JOBS[job_id] = job
         snapshot = _job_snapshot(job)
-    threading.Thread(target=_run_tsv_import_job, args=(job_id, cfg, str(tmp), table_name, schema),
-                     daemon=True).start()
+    threading.Thread(target=_run_tsv_import_job,
+                     args=(job_id, cfg, str(tmp), table_name, schema, header_mode), daemon=True).start()
     return jsonify(snapshot), 202
 
 
-def _run_tsv_import_job(job_id, cfg, tmp_path, table_name, schema):
+def _run_tsv_import_job(job_id, cfg, tmp_path, table_name, schema, header_mode="auto"):
     try:
-        _run_import_job(job_id, cfg, tmp_path, None, [table_name], schema, {}, table_name, "\t")
+        _run_import_job(job_id, cfg, tmp_path, None, [table_name], schema, {}, table_name, "\t",
+                        header_mode)
     finally:
         Path(tmp_path).unlink(missing_ok=True)
 
@@ -1094,10 +1140,8 @@ def scan():
             return jsonify({"error": f"Cannot open file: {e}"}), 400
         session["sheet_name"] = sheet_name
         table_name = session.get("csv_table")
-        # The import decides with the chosen schema's columns; this is the preview's guess.
-        column_names = _csv_table_column_names(table_name) if rows else []
-        has_header = None if column_names is None else csv_has_header(rows[0], column_names) if rows else False
-        return jsonify({"tables": [_csv_preview(table_name, rows, width, has_header)], "kind": "csv"})
+        # The header is checked against the chosen schema's table by /csv/header-check.
+        return jsonify({"tables": [_csv_preview(table_name, rows, width, None)], "kind": "csv"})
 
     try:
         wb = openpyxl.load_workbook(tmp_path, data_only=True, read_only=True)
@@ -1113,6 +1157,35 @@ def scan():
     wb.close()
     session["sheet_name"] = sheet_name
     return jsonify({"tables": tables})
+
+
+@app.route("/csv/header-check", methods=["POST"])
+def csv_header_check():
+    """Fetch the table's columns in the chosen schema and compare the CSV's first row."""
+    tmp_path = session.get("tmp_path")
+    table_name = session.get("csv_table")
+    if session.get("file_kind") != "csv" or not tmp_path or not Path(tmp_path).exists():
+        return jsonify({"error": "Session expired — please re-upload the file."}), 400
+    schema = str((request.json or {}).get("schema", "")).strip()
+    try:
+        columns = _db_table_columns(_saved_config(), schema, table_name)
+        rows = parse_delimited(Path(tmp_path).read_bytes(), ",")
+    except RouteError as e:
+        return jsonify({"error": e.message}), e.status
+    except ValueError as e:
+        return jsonify({"error": f"Cannot read file: {e}"}), 400
+    return jsonify(_header_check_report(schema, table_name, columns, rows))
+
+
+def _header_check_report(schema, table_name, columns, rows):
+    """Header check plus the counts the preview shows; rows = parse_delimited() output."""
+    first = rows[0][1] if rows else []
+    check = check_header(first, columns)
+    return {
+        "schema": schema, "table": table_name, "table_columns": len(columns),
+        "file_values": max((len(cells) for _, cells in rows), default=0),
+        "rows": len(rows), "check": check,
+    }
 
 
 @app.route("/schemas", methods=["GET"])
@@ -1834,6 +1907,10 @@ def do_import():
     if isinstance(raw_schemas, dict):
         table_schemas = {str(name): str(schema).strip()
                          for name, schema in raw_schemas.items() if str(schema).strip()}
+    try:
+        header_mode = header_mode_arg(payload.get("header"))   # CSV only
+    except RouteError as e:
+        return jsonify({"error": e.message}), e.status
 
     _cleanup_import_jobs()
     job_id = uuid.uuid4().hex
@@ -1846,7 +1923,7 @@ def do_import():
     worker = threading.Thread(
         target=_run_import_job,
         args=(job_id, cfg, str(tmp_path), sheet_name, selected_names, preferred_schema, table_schemas,
-              session.get("csv_table") if session.get("file_kind") == "csv" else None),
+              session.get("csv_table") if session.get("file_kind") == "csv" else None, ",", header_mode),
         daemon=True,
     )
     worker.start()
@@ -1900,6 +1977,7 @@ def sql_generate():
         return jsonify({"error": "File name must start with the table name, e.g. MDNNOP.csv."}), 400
     schema = request.form.get("schema", "").strip()
     try:
+        header_mode = header_mode_arg(request.form.get("header"))
         cfg = _saved_config()
         if not schema:
             raise RouteError("Schema is required.")
@@ -1922,12 +2000,12 @@ def sql_generate():
         IMPORT_JOBS[job_id] = job
         snapshot = _job_snapshot(job)
     threading.Thread(target=_run_sql_generate_job,
-                     args=(job_id, cfg, str(tmp), table_name, schema, delimiter),
+                     args=(job_id, cfg, str(tmp), table_name, schema, delimiter, header_mode),
                      daemon=True).start()
     return jsonify(snapshot), 202
 
 
-def _run_sql_generate_job(job_id, cfg, tmp_path, table_name, schema, delimiter):
+def _run_sql_generate_job(job_id, cfg, tmp_path, table_name, schema, delimiter, header_mode="auto"):
     conn = None
     sql_path = Path(SQL_EXPORT_DIR.name) / f"{job_id}.sql"
     try:
@@ -1942,7 +2020,7 @@ def _run_sql_generate_job(job_id, cfg, tmp_path, table_name, schema, delimiter):
         _mark_job_table(job_id, table_name, "running", "Generating SQL", schema=schema)
         try:
             rows, _ = read_csv_rows(tmp_path, delimiter)
-            prepared = _prepare_import(conn.cursor(), table_name, None, rows, schema)
+            prepared = _prepare_import(conn.cursor(), table_name, None, rows, schema, header_mode)
             progress_cb = lambda done, total: _mark_job_progress(job_id, table_name, done, total)
             _write_import_sql(sql_path, schema, table_name, prepared["plan"], prepared["rows"],
                               prepared["db_cols"], progress_cb)
@@ -2182,7 +2260,7 @@ def _fail_import_job(job_id, message):
 
 
 def _run_import_job(job_id, cfg, tmp_path, sheet_name, selected_names, preferred_schema,
-                    table_schemas=None, csv_table=None, delimiter=","):
+                    table_schemas=None, csv_table=None, delimiter=",", header_mode="auto"):
     table_schemas = table_schemas or {}
     conn = None
     wb = None
@@ -2198,7 +2276,7 @@ def _run_import_job(job_id, cfg, tmp_path, sheet_name, selected_names, preferred
 
         if csv_table:
             _run_csv_import(job_id, conn, tmp_path, csv_table, selected_names,
-                            table_schemas.get(csv_table) or preferred_schema, delimiter)
+                            table_schemas.get(csv_table) or preferred_schema, delimiter, header_mode)
             _finish_import_job(job_id)
             return
 
@@ -2262,7 +2340,8 @@ def _run_import_job(job_id, cfg, tmp_path, sheet_name, selected_names, preferred
                 pass
 
 
-def _run_csv_import(job_id, conn, tmp_path, table_name, selected_names, schema, delimiter=","):
+def _run_csv_import(job_id, conn, tmp_path, table_name, selected_names, schema, delimiter=",",
+                    header_mode="auto"):
     if selected_names is None:
         _replace_job_queue(job_id, [table_name])
     elif table_name not in selected_names:
@@ -2280,7 +2359,7 @@ def _run_csv_import(job_id, conn, tmp_path, table_name, selected_names, schema, 
         rows, _ = read_csv_rows(tmp_path, delimiter)
         progress_cb = lambda done, total: _mark_job_progress(job_id, table_name, done, total)
         result = _import_one(conn, table_name, None, rows, schema, progress_cb,
-                             sql_export_path=sql_path)
+                             sql_export_path=sql_path, header_mode=header_mode)
     except Exception as e:
         try:
             conn.rollback()
@@ -2449,7 +2528,7 @@ class SkipTable(Exception):
     """The table cannot be imported (not found, no matching columns); not an error."""
 
 
-def _prepare_import(cursor, table_name, headers, rows, schema):
+def _prepare_import(cursor, table_name, headers, rows, schema, header_mode="auto"):
     """
     Read-only: match the rows to the table's columns. headers=None means a CSV:
     when its first row holds the table's column names it is a header (columns
@@ -2488,7 +2567,8 @@ def _prepare_import(cursor, table_name, headers, rows, schema):
     extra_csv_cols = 0
     is_csv = headers is None
     csv_header = False
-    if is_csv and rows and csv_has_header(rows[0], [info["name"] for info in db_cols.values()]):
+    check = check_header(rows[0], [info["name"] for info in db_cols.values()]) if is_csv and rows else None
+    if check and resolve_header(check, header_mode):
         csv_header = True
         headers = [normalize_cell(cell) for cell in rows[0]]
         rows = rows[1:]
@@ -2523,6 +2603,9 @@ def _prepare_import(cursor, table_name, headers, rows, schema):
     # Blank header cells (padding past the last named column) are not counted.
     unmapped = sum(1 for h in headers if h and h.upper() not in db_cols)
     suffix = ""
+    if check and check["status"] == "partial":
+        suffix += (f" (⚠ first row: {check['matched']} of {check['cells']} values are column names "
+                   f"({check['percent']}%) — {'used as header' if csv_header else 'imported as data'})")
     if filled_cols:
         suffix += f" ({len(filled_cols)} required cols auto-filled: {', '.join(filled_cols)})"
     if csv_header:
@@ -2535,12 +2618,12 @@ def _prepare_import(cursor, table_name, headers, rows, schema):
 
 
 def _import_one(conn, table_name, headers, rows, preferred_schema="lvapdbf", progress_cb=None,
-                sql_export_path=None):
+                sql_export_path=None, header_mode="auto"):
     """Replace the table's rows (see _prepare_import for how rows map to columns)."""
     cursor = conn.cursor()
     schema = preferred_schema
     try:
-        prepared = _prepare_import(cursor, table_name, headers, rows, schema)
+        prepared = _prepare_import(cursor, table_name, headers, rows, schema, header_mode)
     except SkipTable as e:
         return {"name": table_name, "status": "skip", "message": str(e)}
     rows, db_cols, plan = prepared["rows"], prepared["db_cols"], prepared["plan"]
