@@ -138,6 +138,25 @@
     margin-right: 7px; vertical-align: -3px; border-radius: 50%;
   }
   .nav-btn.active .nav-icon-info { box-shadow: 0 0 0 1.5px rgba(255, 255, 255, .85) }
+  .nav-group { display: flex }
+  .nav-group-btn { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap }
+  .nav-caret { font-size: .7rem; opacity: .8; transition: transform .15s }
+  .nav-group-btn[aria-expanded="true"] .nav-caret { transform: rotate(180deg) }
+  /* Fixed, placed by JS: the nav bar scrolls sideways on narrow screens and would clip it. */
+  .nav-menu {
+    position: fixed; z-index: 60; min-width: 270px; display: grid; gap: 2px;
+    background: #1a1d2e; border: 1px solid #2d3148; border-radius: 10px; padding: 6px;
+    box-shadow: 0 12px 30px rgba(0, 0, 0, .45);
+  }
+  .nav-menu.hidden { display: none }
+  .nav-menu .nav-btn { display: block; width: 100%; text-align: left; flex: none; padding: 8px 12px; color: #e2e8f0 }
+  .nav-menu .nav-btn:hover:not(:disabled) { background: #252840 }
+  .nav-menu .nav-btn.active { background: #312e81; color: #fff }
+  .nav-menu .nav-btn:disabled { color: #4a5568 }
+  .nav-menu .nav-btn:disabled .menu-sub { color: #3b4256 }
+  .nav-menu .menu-sub { display: block; color: #64748b; font-size: .72rem; margin-top: 2px }
+  .nav-menu .nav-btn.active .menu-sub { color: #c7d2fe }
+  .nav-menu .badge { margin-left: 6px; font-size: .65rem; padding: 1px 6px; vertical-align: 1px }
   .multi-table-list { display: grid; gap: 8px; min-width: 0; width: 100% }
   .multi-table-row { display: flex; gap: 7px; align-items: center; min-width: 0; width: 100% }
   .multi-table-row input { flex: 1 1 auto; min-width: 0; width: 100% }
@@ -786,14 +805,20 @@
       <span class="version-badge" id="version-badge" title="Version info">v…</span>
     </div>
     <nav class="nav-bar" aria-label="Main navigation">
-      <button class="nav-btn active" id="nav-import">Import</button>
+      <div class="nav-group" id="nav-group-import">
+        <button class="nav-btn nav-group-btn active" id="nav-import-menu" aria-haspopup="menu" aria-expanded="false"
+          aria-controls="nav-import-panel"><span id="nav-import-menu-label">Import</span><span class="nav-caret" aria-hidden="true">▾</span></button>
+        <div class="nav-menu hidden" id="nav-import-panel" role="menu" aria-label="Import">
+          <button class="nav-btn active" id="nav-import" role="menuitem" data-label="Import">Excel / CSV Import<span class="menu-sub">Excel sheets, or one comma CSV per table</span></button>
+          <button class="nav-btn" id="nav-tsvimport" role="menuitem" data-label="TSV Import" disabled>TSV Import<span class="menu-sub">Import a tab-separated .tsv file</span></button>
+          <button class="nav-btn" id="nav-tsv" role="menuitem" data-label="CSV → TSV" disabled>CSV → TSV<span class="menu-sub">Fix unquoted commas in file names</span></button>
+          <button class="nav-btn" id="nav-csvcheck" role="menuitem" data-label="CSV Check" disabled>CSV Check <span class="badge yellow">Temporary</span><span class="menu-sub">Check a CSV against its table columns</span></button>  <!-- TEMP -->
+        </div>
+      </div>
       <button class="nav-btn" id="nav-truncate" disabled>Truncate Table</button>
       <button class="nav-btn" id="nav-editor" disabled>Data Editor</button>
       <button class="nav-btn" id="nav-query" disabled>SQL Runner</button>
       <button class="nav-btn" id="nav-schema" disabled>Schema</button>
-      <button class="nav-btn" id="nav-csvcheck" title="Temporary: check a CSV against its table columns" disabled>CSV Check</button>  <!-- TEMP -->
-      <button class="nav-btn" id="nav-tsv" title="Convert a comma CSV whose file-name columns contain commas to TSV" disabled>CSV → TSV</button>
-      <button class="nav-btn" id="nav-tsvimport" title="Import a tab-separated (.tsv) file into its table" disabled>TSV Import</button>
       <button class="nav-btn" id="nav-connection" title="Not connected"><span class="nav-dot" id="nav-conn-dot"></span>Connection</button>
       <button class="nav-btn" id="nav-about"><svg class="nav-icon-info" viewBox="0 0 24 24" aria-hidden="true"><defs><linearGradient id="info-grad" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#4fb3ff"/><stop offset="1" stop-color="#1565d8"/></linearGradient></defs><circle cx="12" cy="12" r="12" fill="url(#info-grad)"/><circle cx="12" cy="6.8" r="1.9" fill="#fff"/><rect x="10.3" y="10" width="3.4" height="9" rx="1.7" fill="#fff"/></svg>About</button>
     </nav>
@@ -4186,6 +4211,60 @@ tsvImpZone.addEventListener('drop', e => {
   previewTsvImport(e.dataTransfer.files[0])
 })
 
+
+// ── Import dropdown in the nav bar ────────────────────────────────────────────
+// The import tools are ordinary nav buttons inside a menu, so each keeps its own
+// click handler. The menu button shows which one is open and is highlighted
+// while any of them is active.
+;(function() {
+  const trigger = $('nav-import-menu')
+  const panel = $('nav-import-panel')
+  const items = Array.from(panel.querySelectorAll('.nav-btn'))
+
+  function place() {
+    const box = trigger.getBoundingClientRect()
+    const width = Math.max(panel.offsetWidth, 270)
+    panel.style.top = `${box.bottom + 6}px`
+    panel.style.left = `${Math.max(8, Math.min(box.left, window.innerWidth - width - 8))}px`
+  }
+  function setOpen(open) {
+    panel.classList.toggle('hidden', !open)
+    trigger.setAttribute('aria-expanded', String(open))
+    if (open) {
+      place()
+      const first = items.find(item => item.classList.contains('active') && !item.disabled)
+        || items.find(item => !item.disabled)
+      if (first) first.focus({ preventScroll: true })
+    }
+  }
+  function syncTrigger() {
+    const current = items.find(item => item.classList.contains('active'))
+    trigger.classList.toggle('active', Boolean(current))
+    $('nav-import-menu-label').textContent = current ? current.dataset.label : 'Import'
+  }
+
+  trigger.addEventListener('click', e => {
+    e.stopPropagation()
+    setOpen(panel.classList.contains('hidden'))
+  })
+  items.forEach(item => item.addEventListener('click', () => setOpen(false)))
+  document.addEventListener('click', e => {
+    if (!e.target.closest('#nav-group-import')) setOpen(false)
+  })
+  panel.addEventListener('keydown', e => {
+    const enabled = items.filter(item => !item.disabled)
+    const index = enabled.indexOf(document.activeElement)
+    if (e.key === 'Escape') { setOpen(false); trigger.focus() }
+    else if (e.key === 'ArrowDown') { e.preventDefault(); enabled[(index + 1) % enabled.length].focus() }
+    else if (e.key === 'ArrowUp') { e.preventDefault(); enabled[(index - 1 + enabled.length) % enabled.length].focus() }
+  })
+  window.addEventListener('resize', () => { if (!panel.classList.contains('hidden')) place() })
+  window.addEventListener('scroll', () => setOpen(false), true)
+
+  const observer = new MutationObserver(syncTrigger)
+  items.forEach(item => observer.observe(item, { attributes: true, attributeFilter: ['class'] }))
+  syncTrigger()
+})()
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function setLoading(btn, loading, label) {
