@@ -27,10 +27,14 @@ the tables afterwards. It runs in Docker and opens at http://localhost:5000.
   Downloads expire one hour after completion, or when the app restarts.
 - **Truncate Table** — empty one or more tables in a schema.
 - **Data Editor** — browse every record in any table:
+  - pages of 1,000, 2,000, 5,000 or 10,000 rows (the choice is remembered)
   - row numbers, and a summary of primary keys, total rows and columns
-  - sort by clicking a column header; search columns by name
+  - sort by clicking a column header (sorted by the database, across all
+    pages); search columns by name
   - edit rows in place (Edit mode)
-  - copy rows to Excel, with or without the header
+  - copy the current page to Excel, with or without the header
+  - download every row as a UTF-8 CSV, in the current sort order. The
+    file without a header can be imported again with CSV import
   - paste rows copied from Excel (Ctrl+V), review them, then insert
 - **SQL Runner** — run all or selected SQL with schema-aware table-name and SQL
   keyword suggestions, multiple result grids, write-query confirmation, and

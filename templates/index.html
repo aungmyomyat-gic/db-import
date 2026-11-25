@@ -223,6 +223,33 @@
   .btn-group .btn:first-child { border-radius: 8px 0 0 8px }
   .btn-group .btn:last-child { border-radius: 0 8px 8px 0; margin-left: -1px }
   .btn-group .btn:not(:disabled):hover { position: relative; z-index: 1 }
+  .tools-right { display: flex; align-items: center; gap: 8px; flex-wrap: wrap }
+  .download-menu { position: relative }
+  .download-menu-panel {
+    position: absolute; right: 0; top: calc(100% + 6px); z-index: 30; min-width: 250px;
+    background: #1a1d2e; border: 1px solid #2d3148; border-radius: 10px; padding: 6px;
+    box-shadow: 0 12px 30px rgba(0, 0, 0, .45);
+  }
+  .download-menu-panel button {
+    display: block; width: 100%; text-align: left; border: none; background: transparent; color: #e2e8f0;
+    padding: 8px 10px; border-radius: 7px; font-size: .8rem; cursor: pointer;
+  }
+  .download-menu-panel button:hover { background: #252840 }
+  .download-menu-panel .menu-sub { display: block; color: #64748b; font-size: .72rem; margin-top: 2px }
+  .download-menu-panel .menu-note { padding: 6px 10px 4px; color: #64748b; font-size: .72rem; border-top: 1px solid #2d3148; margin-top: 4px }
+  .data-pager {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap;
+    padding: 9px 14px; background: #111522; border-top: 1px solid #2d3148; font-size: .78rem; color: #94a3b8;
+  }
+  .data-pager .pager-size { display: flex; align-items: center; gap: 8px }
+  .data-pager .pager-size label { margin: 0; font-size: .78rem; color: #94a3b8 }
+  .data-pager select { width: auto; height: 32px; padding: 0 30px 0 10px; font-size: .78rem; background-position: right 10px center }
+  .data-pager .pager-nav { display: flex; align-items: center; gap: 6px }
+  .data-pager .pager-nav .btn.sm { width: 32px; padding: 0; font-size: .9rem }
+  .data-pager .pager-page { display: flex; align-items: center; gap: 6px; margin: 0 4px }
+  .data-pager .pager-page input[type=text] { width: 64px; height: 32px; padding: 0 8px; text-align: center; font-size: .78rem }
+  .data-pager .pager-range strong { color: #e2e8f0; font-weight: 600 }
+  .data-grid th.not-sortable { cursor: default }
 
   .editor-body { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 20px; align-items: start }
   .editor-main { min-width: 0 }
@@ -939,9 +966,19 @@
               </div>
               <span class="paste-hint" title="Copy rows in Excel (with or without the header row), click the table, then paste">Paste rows from Excel with <kbd>Ctrl</kbd>+<kbd>V</kbd></span>
             </div>
-            <div class="btn-group">
-              <button class="btn secondary sm" id="btn-copy-header" disabled title="Copy all rows with column headers">Copy with header</button>
-              <button class="btn secondary sm" id="btn-copy-plain" disabled title="Copy all rows without headers">Copy without header</button>
+            <div class="tools-right">
+              <div class="btn-group">
+                <button class="btn secondary sm" id="btn-copy-header" disabled title="Copy the rows on this page, with column headers">Copy page with header</button>
+                <button class="btn secondary sm" id="btn-copy-plain" disabled title="Copy the rows on this page, without headers">Copy page</button>
+              </div>
+              <div class="download-menu">
+                <button class="btn secondary sm" id="btn-download-data" disabled title="Download every row of the table as a CSV file" aria-haspopup="menu" aria-expanded="false">⤓ Download CSV ▾</button>
+                <div class="download-menu-panel hidden" id="download-menu-panel" role="menu">
+                  <button type="button" role="menuitem" data-header="1">With header<span class="menu-sub">For Excel</span></button>
+                  <button type="button" role="menuitem" data-header="0">Without header<span class="menu-sub">Can be imported again with CSV import</span></button>
+                  <div class="menu-note" id="download-menu-note">All rows, in the current sort order</div>
+                </div>
+              </div>
             </div>
           </div>
           <div class="paste-bar hidden" id="paste-bar">
@@ -953,6 +990,25 @@
           </div>
           <div class="data-grid-wrap" id="data-grid-wrap"><table class="data-grid"><thead id="data-grid-head"></thead><tbody id="data-grid-body"></tbody></table>
             <div class="data-grid-empty hidden" id="data-grid-empty">No columns match your search.</div>
+          </div>
+          <div class="data-pager" id="data-pager">
+            <div class="pager-size">
+              <label for="editor-page-size">Rows per page</label>
+              <select id="editor-page-size">
+                <option value="1000">1,000</option>
+                <option value="2000">2,000</option>
+                <option value="5000">5,000</option>
+                <option value="10000">10,000</option>
+              </select>
+            </div>
+            <div class="pager-range" id="pager-range"></div>
+            <div class="pager-nav">
+              <button class="btn secondary sm" id="btn-page-first" title="First page" aria-label="First page">«</button>
+              <button class="btn secondary sm" id="btn-page-prev" title="Previous page" aria-label="Previous page">‹</button>
+              <span class="pager-page">Page <input type="text" id="editor-page-input" inputmode="numeric" autocomplete="off" aria-label="Page number"> of <span id="pager-total-pages">1</span></span>
+              <button class="btn secondary sm" id="btn-page-next" title="Next page" aria-label="Next page">›</button>
+              <button class="btn secondary sm" id="btn-page-last" title="Last page" aria-label="Last page">»</button>
+            </div>
           </div>
         </div>
       </div>
@@ -1172,8 +1228,17 @@ let truncateSelectedTables = []
 let editorData = null
 let editorEditMode = false
 let editorPending = null   // { mapped: Set<colIndex>, rows: [[value per column]] } — pasted rows not yet inserted
-let editorSortColumn = null
+let editorSortColumn = null   // column name; sorting is done by the database
 let editorSortDir = 'asc'
+const EDITOR_PAGE_SIZES = [1000, 2000, 5000, 10000]
+const EDITOR_PAGE_SIZE_KEY = 'dbImport.editorPageSize'
+let editorPage = 1
+let editorPageSize = (() => {
+  let saved = 0
+  try { saved = Number(localStorage.getItem(EDITOR_PAGE_SIZE_KEY)) } catch (_) {}
+  return EDITOR_PAGE_SIZES.includes(saved) ? saved : EDITOR_PAGE_SIZES[0]
+})()
+let editorLoadSeq = 0   // ignores responses from an older page request
 let editorAvailableTables = []
 let isConfigured = false
 let savedConfig = null
@@ -1477,6 +1542,7 @@ function loadEditorTables(schema, presetTable) {
   input.value = ''; input.disabled = true
   $('btn-load-data').disabled = true; $('btn-refresh-data').disabled = true
   $('btn-copy-header').disabled = true; $('btn-copy-plain').disabled = true
+  $('btn-download-data').disabled = true
   input.placeholder = schema ? 'Loading tables…' : 'Select a schema first'
   closeEditorTablePanel()
   if (!schema) return
@@ -1570,12 +1636,12 @@ function setEditorTableHighlight(index) {
   }
 }
 
-$('btn-load-data').addEventListener('click', loadEditorData)
+$('btn-load-data').addEventListener('click', () => loadEditorData())
 $('btn-refresh-data').addEventListener('click', () => {
   if (!editorData) return
   $('editor-schema').value = editorData.schema
   editorTableInput.value = editorData.table
-  loadEditorData()
+  loadEditorData(true)
 })
 $('btn-edit-mode').addEventListener('click', () => {
   editorEditMode = !editorEditMode
@@ -1614,41 +1680,175 @@ async function copyEditorData(includeHeader, btn) {
 $('btn-copy-header').addEventListener('click', () => copyEditorData(true, $('btn-copy-header')))
 $('btn-copy-plain').addEventListener('click', () => copyEditorData(false, $('btn-copy-plain')))
 
-function loadEditorData() {
+// keepView = true (Refresh, after Save / Insert) stays on the same page and sort.
+function loadEditorData(keepView = false) {
   const schema = $('editor-schema').value
   const typedTable = editorTableInput.value.trim()
   const table = editorAvailableTables.find(name => name.toLowerCase() === typedTable.toLowerCase())
   if (!schema || !table) return
   editorTableInput.value = table
-  const btn = $('btn-load-data'); hide($('err-data-editor')); hide($('ok-data-editor'))
-  setLoading(btn, true, 'Loading…')
-  return fetch(`/table-data?schema=${encodeURIComponent(schema)}&table=${encodeURIComponent(table)}`)
+  const sameTable = editorData && editorData.schema === schema && editorData.table === table
+  if (!keepView || !sameTable) {
+    editorPage = 1; editorSortColumn = null; editorSortDir = 'asc'
+    hide($('err-data-editor')); hide($('ok-data-editor'))
+  }
+  return fetchEditorPage(schema, table)
+}
+
+function fetchEditorPage(schema, table) {
+  const seq = ++editorLoadSeq
+  const btn = $('btn-load-data'); hide($('err-data-editor'))
+  setLoading(btn, true, 'Loading…'); setPagerBusy(true)
+  const params = new URLSearchParams({ schema, table, page: editorPage, page_size: editorPageSize })
+  if (editorSortColumn) { params.set('sort', editorSortColumn); params.set('dir', editorSortDir) }
+  return fetch(`/table-data?${params}`)
     .then(r => r.json()).then(data => {
+      if (seq !== editorLoadSeq) return
       if (data.error) throw new Error(data.error)
       if (!editorData || editorData.schema !== data.schema || editorData.table !== data.table) {
         $('editor-column-search').value = ''
         editorPending = null
       }
       editorData = data; editorEditMode = false
-      editorSortColumn = null; editorSortDir = 'asc'
+      editorPage = data.page
+      editorSortColumn = data.sort; editorSortDir = data.dir
       $('btn-edit-mode').textContent = '✎ Edit mode'
       $('btn-edit-mode').classList.remove('edit-on')
       $('btn-edit-mode').disabled = false
       $('btn-refresh-data').disabled = false
       $('btn-copy-header').disabled = !data.rows.length
       $('btn-copy-plain').disabled = !data.rows.length
-      const totalRows = Number(data.total_rows ?? data.rows.length)
+      $('btn-download-data').disabled = false
       $('summary-table-name').innerHTML = `<span class="schema">${escapeHtml(data.schema)}.</span>${escapeHtml(data.table)}`
       $('summary-pk-count').textContent = data.primary_keys.length
       $('summary-pk-chip').title = data.primary_keys.length ? data.primary_keys.join(', ') : 'No primary key'
-      $('summary-row-count').textContent = totalRows.toLocaleString()
-      $('summary-row-shown').textContent = data.rows.length < totalRows ? `(showing ${data.rows.length})` : ''
+      $('summary-row-count').textContent = Number(data.total_rows).toLocaleString()
+      $('summary-row-shown').textContent = data.total_pages > 1 ? `(page ${data.page} of ${data.total_pages})` : ''
       $('summary-col-count').textContent = data.columns.length
       show($('editor-table-summary'))
       renderEditorGrid()
+      $('data-grid-wrap').scrollTop = 0
       pushEditorHistory(schema, table)
-    }).catch(error => showErr($('err-data-editor'), error.message))
-    .finally(() => setLoading(btn, false, 'Load data'))
+    }).catch(error => { if (seq === editorLoadSeq) showErr($('err-data-editor'), error.message) })
+    .finally(() => {
+      if (seq !== editorLoadSeq) return
+      setLoading(btn, false, 'Load data')
+      setPagerBusy(false)
+    })
+}
+
+// ── Pagination ────────────────────────────────────────────────────────────────
+const PAGER_CONTROLS = ['btn-page-first', 'btn-page-prev', 'btn-page-next', 'btn-page-last', 'editor-page-input', 'editor-page-size']
+
+function setPagerBusy(busy) {
+  if (busy) { PAGER_CONTROLS.forEach(id => { $(id).disabled = true }); return }
+  renderPager()
+}
+
+function renderPager() {
+  $('editor-page-size').value = String(editorPageSize)
+  if (!editorData) return
+  const { page, page_size: size, total_pages: pages, total_rows: total } = editorData
+  const first = (page - 1) * size + 1, last = (page - 1) * size + editorData.rows.length
+  $('pager-range').innerHTML = total
+    ? `Rows <strong>${first.toLocaleString()}–${last.toLocaleString()}</strong> of <strong>${Number(total).toLocaleString()}</strong>`
+    : 'No rows'
+  $('editor-page-input').value = page
+  $('pager-total-pages').textContent = pages.toLocaleString()
+  $('btn-page-first').disabled = $('btn-page-prev').disabled = page <= 1
+  $('btn-page-next').disabled = $('btn-page-last').disabled = page >= pages
+  $('editor-page-input').disabled = pages <= 1
+  $('editor-page-size').disabled = false
+}
+
+function goToEditorPage(page) {
+  if (!editorData) return
+  const target = Math.min(Math.max(1, page), editorData.total_pages)
+  if (target === editorData.page) { renderPager(); return }
+  editorPage = target
+  fetchEditorPage(editorData.schema, editorData.table)
+}
+
+$('btn-page-first').addEventListener('click', () => goToEditorPage(1))
+$('btn-page-prev').addEventListener('click', () => goToEditorPage(editorData.page - 1))
+$('btn-page-next').addEventListener('click', () => goToEditorPage(editorData.page + 1))
+$('btn-page-last').addEventListener('click', () => goToEditorPage(editorData.total_pages))
+$('editor-page-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') { e.preventDefault(); e.target.blur() }
+  if (e.key === 'Escape') { renderPager(); e.target.blur() }
+})
+$('editor-page-input').addEventListener('change', e => {
+  const page = parseInt(e.target.value, 10)
+  if (Number.isFinite(page)) goToEditorPage(page); else renderPager()
+})
+$('editor-page-size').addEventListener('change', e => {
+  const size = Number(e.target.value)
+  if (!EDITOR_PAGE_SIZES.includes(size)) return
+  // Keep the first row on screen in view: it lands on the matching page of the new size.
+  const firstRow = editorData ? (editorData.page - 1) * editorData.page_size : 0
+  editorPageSize = size
+  try { localStorage.setItem(EDITOR_PAGE_SIZE_KEY, String(size)) } catch (_) {}
+  if (!editorData) return
+  editorPage = Math.floor(firstRow / size) + 1
+  fetchEditorPage(editorData.schema, editorData.table)
+})
+renderPager()
+
+// ── Download every row as CSV (streamed by the server, in the current sort) ──
+const DOWNLOAD_LABEL = '⤓ Download CSV ▾'
+
+function setDownloadMenu(open) {
+  $('download-menu-panel').classList.toggle('hidden', !open)
+  $('btn-download-data').setAttribute('aria-expanded', String(open))
+  if (open && editorData) {
+    const sorted = editorSortColumn ? `sorted by ${editorSortColumn} ${editorSortDir === 'desc' ? '▼' : '▲'}` : 'in table order'
+    $('download-menu-note').textContent = `All ${Number(editorData.total_rows).toLocaleString()} rows, ${sorted}`
+  }
+}
+$('btn-download-data').addEventListener('click', e => {
+  e.stopPropagation()
+  setDownloadMenu($('download-menu-panel').classList.contains('hidden'))
+})
+document.addEventListener('click', e => { if (!e.target.closest('.download-menu')) setDownloadMenu(false) })
+document.addEventListener('keydown', e => { if (e.key === 'Escape') setDownloadMenu(false) })
+$('download-menu-panel').querySelectorAll('button[data-header]').forEach(item => {
+  item.addEventListener('click', () => downloadEditorData(item.dataset.header === '1'))
+})
+
+function filenameFromDisposition(header) {
+  if (!header) return null
+  const utf8 = /filename\*=UTF-8''([^;]+)/i.exec(header)
+  if (utf8) { try { return decodeURIComponent(utf8[1]) } catch (_) {} }
+  const plain = /filename="([^"]+)"/i.exec(header)
+  return plain ? plain[1] : null
+}
+
+async function downloadEditorData(includeHeader) {
+  setDownloadMenu(false)
+  if (!editorData) return
+  const btn = $('btn-download-data')
+  const params = new URLSearchParams({ schema: editorData.schema, table: editorData.table, header: includeHeader ? '1' : '0' })
+  if (editorSortColumn) { params.set('sort', editorSortColumn); params.set('dir', editorSortDir) }
+  hide($('err-data-editor'))
+  setLoading(btn, true, 'Downloading…')
+  try {
+    const response = await fetch(`/table-data/download?${params}`)
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}))
+      throw new Error(data.error || 'Download failed.')
+    }
+    const blob = await response.blob()
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = filenameFromDisposition(response.headers.get('Content-Disposition')) || `${editorData.table}.csv`
+    document.body.appendChild(link); link.click(); link.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+  } catch (error) {
+    showErr($('err-data-editor'), error.message)
+  } finally {
+    setLoading(btn, false, DOWNLOAD_LABEL)
+  }
 }
 
 // ── Recent-tables history (left panel) ────────────────────────────────────────
@@ -1705,25 +1905,16 @@ function renderEditorHistory() {
 renderEditorHistory()
 
 function sortEditorData(colIndex) {
-  if (editorSortColumn === colIndex) {
+  const column = editorData.columns[colIndex]
+  if (column.sortable === false) return
+  if (editorSortColumn === column.name) {
     editorSortDir = editorSortDir === 'asc' ? 'desc' : 'asc'
   } else {
-    editorSortColumn = colIndex
+    editorSortColumn = column.name
     editorSortDir = 'asc'
   }
-  const dir = editorSortDir === 'asc' ? 1 : -1
-  editorData.rows.sort((a, b) => {
-    const av = a[colIndex], bv = b[colIndex]
-    if (av == null && bv == null) return 0
-    if (av == null) return 1
-    if (bv == null) return -1
-    if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * dir
-    const as = String(av), bs = String(bv)
-    const an = Number(as), bn = Number(bs)
-    if (as.trim() !== '' && bs.trim() !== '' && !isNaN(an) && !isNaN(bn)) return (an - bn) * dir
-    return as.localeCompare(bs, undefined, { numeric: true, sensitivity: 'base' }) * dir
-  })
-  renderEditorGrid()
+  editorPage = 1
+  fetchEditorPage(editorData.schema, editorData.table)
 }
 
 function renderEditorGrid() {
@@ -1734,15 +1925,17 @@ function renderEditorGrid() {
   const numTh = document.createElement('th'); numTh.className = 'row-num'; numTh.textContent = '#'
   headerRow.appendChild(numTh)
   editorData.columns.forEach((column, colIndex) => {
-    const th = document.createElement('th'); th.className = 'sortable'; th.dataset.col = colIndex
+    const th = document.createElement('th'); th.dataset.col = colIndex
+    th.className = column.sortable === false ? 'not-sortable' : 'sortable'
+    if (column.sortable === false) th.title = `${column.type} columns cannot be sorted`
     const label = document.createElement('span')
     label.textContent = column.name + (editorData.primary_keys.includes(column.name) ? ' 🔑' : '')
     const arrow = document.createElement('span'); arrow.className = 'sort-arrow'
-    if (editorSortColumn === colIndex) {
+    if (editorSortColumn === column.name) {
       th.classList.add('sorted')
       arrow.textContent = editorSortDir === 'asc' ? '▲' : '▼'
     } else {
-      arrow.textContent = '⇅'
+      arrow.textContent = column.sortable === false ? '' : '⇅'
     }
     th.append(label, arrow)
     th.addEventListener('click', () => sortEditorData(colIndex))
@@ -1753,7 +1946,8 @@ function renderEditorGrid() {
   renderPendingRows(body)
   editorData.rows.forEach((row, rowIndex) => {
     const tr = document.createElement('tr')
-    const numTd = document.createElement('td'); numTd.className = 'row-num'; numTd.textContent = rowIndex + 1
+    const numTd = document.createElement('td'); numTd.className = 'row-num'
+    numTd.textContent = ((editorData.page - 1) * editorData.page_size + rowIndex + 1).toLocaleString()
     tr.appendChild(numTd)
     editorData.columns.forEach((column, colIndex) => {
       const td = document.createElement('td'), value = row[colIndex]
@@ -1917,7 +2111,7 @@ $('btn-paste-insert').addEventListener('click', async () => {
     const data = await response.json()
     if (!response.ok || data.error) throw new Error(data.error || 'Insert failed.')
     editorPending = null
-    await loadEditorData()
+    await loadEditorData(true)
     $('ok-data-editor').textContent = data.message; show($('ok-data-editor'))
   } catch (error) {
     showErr($('err-data-editor'), error.message)
@@ -1970,7 +2164,7 @@ async function saveEditorRow(rowIndex, tr, button) {
     const data = await response.json()
     if (!response.ok || data.error) throw new Error(data.error || 'Update failed.')
     $('ok-data-editor').textContent = data.message; show($('ok-data-editor'))
-    await loadEditorData()
+    await loadEditorData(true)
   } catch (error) {
     showErr($('err-data-editor'), error.message); setLoading(button, false, 'Save')
   }

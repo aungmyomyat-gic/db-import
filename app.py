@@ -10,6 +10,7 @@ import time
 import unicodedata
 import tempfile
 import urllib.error
+import urllib.parse
 import urllib.request
 import uuid
 from datetime import date, datetime, time as datetime_time
@@ -985,9 +986,45 @@ def run_query():
             conn.close()
 
 
+EDITOR_PAGE_SIZES = (1000, 2000, 5000, 10000)
+# SQL Server cannot ORDER BY these types.
+UNSORTABLE_TYPES = {"text", "ntext", "image", "xml", "geography", "geometry"}
+
+
+def _quote_identifier(value):
+    return "[" + str(value).replace("]", "]]") + "]"
+
+
+def _editor_order_sql(columns, primary_keys, sort_column, sort_dir):
+    """ORDER BY for paging: the chosen column first, then a stable tie-breaker."""
+    direction = "DESC" if sort_dir == "desc" else "ASC"
+    parts, used = [], set()
+    if sort_column:
+        parts.append(f"{_quote_identifier(sort_column)} {direction}")
+        used.add(sort_column)
+    # Primary key keeps pages stable; without one, order by every sortable column.
+    tie_breakers = primary_keys or [c["name"] for c in columns
+                                    if (c.get("type") or "").lower() not in UNSORTABLE_TYPES]
+    parts += [_quote_identifier(name) for name in tie_breakers if name not in used]
+    return " ORDER BY " + (", ".join(parts) if parts else "(SELECT NULL)")
+
+
+def _editor_request_args(columns):
+    """Validate sort/dir query args against the table's columns."""
+    sort_column = request.args.get("sort", "").strip() or None
+    sort_dir = "desc" if request.args.get("dir", "").lower() == "desc" else "asc"
+    if sort_column:
+        match = next((c for c in columns if c["name"] == sort_column), None)
+        if match is None:
+            raise ValueError(f"Unknown sort column '{sort_column}'.")
+        if (match.get("type") or "").lower() in UNSORTABLE_TYPES:
+            raise ValueError(f"Column '{sort_column}' ({match['type']}) cannot be sorted.")
+    return sort_column, sort_dir
+
+
 @app.route("/table-data", methods=["GET"])
 def get_table_data():
-    """Return all table rows plus metadata for safe row editing."""
+    """Return one page of table rows plus metadata for safe row editing."""
     cfg = load_config()
     if not cfg:
         return jsonify({"error": "No DB connection saved."}), 400
@@ -995,6 +1032,13 @@ def get_table_data():
     table_name = request.args.get("table", "").strip()
     if not schema or not table_name:
         return jsonify({"error": "Schema and table are required."}), 400
+    try:
+        page_size = int(request.args.get("page_size", EDITOR_PAGE_SIZES[0]))
+        page = max(1, int(request.args.get("page", 1)))
+    except ValueError:
+        return jsonify({"error": "page and page_size must be numbers."}), 400
+    if page_size not in EDITOR_PAGE_SIZES:
+        return jsonify({"error": f"page_size must be one of {', '.join(map(str, EDITOR_PAGE_SIZES))}."}), 400
 
     conn_str, err = _build_conn_str(
         cfg["host"], cfg["port"], cfg["database"], cfg["username"], cfg["password"]
@@ -1008,24 +1052,111 @@ def get_table_data():
         columns, primary_keys = _table_metadata(cursor, schema, table_name)
         if not columns:
             return jsonify({"error": f"Table '{schema}.{table_name}' was not found."}), 404
-        safe_schema = schema.replace("]", "]]")
-        safe_table = table_name.replace("]", "]]")
-        order_sql = ""
-        if primary_keys:
-            order_sql = " ORDER BY " + ", ".join(f"[{key.replace(']', ']]')}]" for key in primary_keys)
-        cursor.execute(f"SELECT * FROM [{safe_schema}].[{safe_table}]{order_sql}")
+        try:
+            sort_column, sort_dir = _editor_request_args(columns)
+        except ValueError as e:
+            return jsonify({"error": str(e)}), 400
+        qualified = f"{_quote_identifier(schema)}.{_quote_identifier(table_name)}"
+        cursor.execute(f"SELECT COUNT_BIG(*) FROM {qualified}")
+        total_rows = int(cursor.fetchone()[0])
+        total_pages = max(1, -(-total_rows // page_size))
+        page = min(page, total_pages)   # e.g. rows were deleted since the last load
+        order_sql = _editor_order_sql(columns, primary_keys, sort_column, sort_dir)
+        cursor.execute(
+            f"SELECT * FROM {qualified}{order_sql} OFFSET ? ROWS FETCH NEXT ? ROWS ONLY",
+            (page - 1) * page_size, page_size,
+        )
         rows = [[_json_table_value(value) for value in row] for row in cursor.fetchall()]
+        for column in columns:
+            column["sortable"] = (column.get("type") or "").lower() not in UNSORTABLE_TYPES
         return jsonify({
             "schema": schema, "table": table_name, "columns": columns,
             "primary_keys": primary_keys,
             "identifier_columns": primary_keys or [column["name"] for column in columns],
-            "rows": rows, "total_rows": len(rows),
+            "rows": rows, "total_rows": total_rows,
+            "page": page, "page_size": page_size, "total_pages": total_pages,
+            "page_sizes": list(EDITOR_PAGE_SIZES),
+            "sort": sort_column, "dir": sort_dir,
         })
     except pyodbc.Error as e:
         return jsonify({"error": f"Could not load table data: {e}"}), 400
     finally:
         if conn is not None:
             conn.close()
+
+
+def _csv_download_value(value):
+    if value is None:
+        return ""
+    if isinstance(value, bool):
+        return "1" if value else "0"
+    return str(_json_table_value(value))
+
+
+@app.route("/table-data/download", methods=["GET"])
+def download_table_data():
+    """Stream every row of a table as a UTF-8 CSV, in the Data Editor's sort order."""
+    cfg = load_config()
+    if not cfg:
+        return jsonify({"error": "No DB connection saved."}), 400
+    schema = request.args.get("schema", "").strip()
+    table_name = request.args.get("table", "").strip()
+    if not schema or not table_name:
+        return jsonify({"error": "Schema and table are required."}), 400
+    include_header = request.args.get("header", "1") != "0"
+
+    conn_str, err = _build_conn_str(
+        cfg["host"], cfg["port"], cfg["database"], cfg["username"], cfg["password"]
+    )
+    if err:
+        return jsonify({"error": err}), 500
+    try:
+        conn = pyodbc.connect(conn_str, timeout=10)
+    except pyodbc.Error as e:
+        return jsonify({"error": f"Could not connect: {e}"}), 400
+    try:
+        cursor = conn.cursor()
+        columns, primary_keys = _table_metadata(cursor, schema, table_name)
+        if not columns:
+            conn.close()
+            return jsonify({"error": f"Table '{schema}.{table_name}' was not found."}), 404
+        sort_column, sort_dir = _editor_request_args(columns)
+        qualified = f"{_quote_identifier(schema)}.{_quote_identifier(table_name)}"
+        cursor.execute(f"SELECT * FROM {qualified}"
+                       + _editor_order_sql(columns, primary_keys, sort_column, sort_dir))
+    except ValueError as e:
+        conn.close()
+        return jsonify({"error": str(e)}), 400
+    except pyodbc.Error as e:
+        conn.close()
+        return jsonify({"error": f"Could not load table data: {e}"}), 400
+
+    def generate():
+        buffer = io.StringIO()
+        writer = csv.writer(buffer)
+        try:
+            yield "﻿"   # BOM so Excel opens UTF-8 (Japanese text) correctly
+            if include_header:
+                writer.writerow([c["name"] for c in columns])
+            while True:
+                chunk = cursor.fetchmany(5000)
+                if not chunk:
+                    break
+                writer.writerows([_csv_download_value(v) for v in row] for row in chunk)
+                yield buffer.getvalue()
+                buffer.seek(0); buffer.truncate()
+            if buffer.tell():
+                yield buffer.getvalue()
+        finally:
+            conn.close()
+
+    # "TABLE (timestamp).csv": the CSV import reads the table name up to the space.
+    filename = f"{table_name} ({datetime.now():%Y%m%d_%H%M%S}).csv"
+    ascii_name = filename.encode("ascii", "replace").decode().replace('"', "")
+    return app.response_class(generate(), mimetype="text/csv", headers={
+        "Content-Disposition": f"attachment; filename=\"{ascii_name}\"; "
+                               f"filename*=UTF-8''{urllib.parse.quote(filename)}",
+    })
 
 
 @app.route("/table-data", methods=["PATCH"])
