@@ -898,7 +898,7 @@
   <!-- ── TEMP: CSV check against table columns ────────── -->
   <div class="card hidden" id="card-csv-check">
     <div class="card-title active"><span class="step step-check"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg></span> CSV Check <span class="badge yellow" style="margin-left:8px">Temporary</span></div>
-    <p class="subtitle" style="margin-bottom:18px">Checks a header-less CSV against its table before you import it. The table comes from the file name (DSHKKP.csv → DSHKKP), and columns are matched by position. Column types, lengths and precision are read from the database. Nothing is imported.</p>
+    <p class="subtitle" style="margin-bottom:18px">Checks a CSV against its table before you import it. The table comes from the file name (DSHKKP.csv → DSHKKP). If the first row holds column names it is used as the header and columns are matched by name; otherwise they are matched by position. Column types, lengths and precision are read from the database. Nothing is imported.</p>
     <div id="err-csvcheck" class="alert error hidden"></div>
     <div style="margin-bottom:14px;max-width:320px">
       <label for="csvcheck-schema">Schema</label>
@@ -1087,7 +1087,7 @@
       <input type="file" id="file-input" accept=".xlsx,.xls,.csv">
       <div class="drop-icon">📂</div>
       <div class="drop-label"><span>Click to browse</span> or drag &amp; drop your Excel or CSV file</div>
-      <div class="drop-hint">CSV: no header row, file name = table name (e.g. MDNNOP.csv → MDNNOP)</div>
+      <div class="drop-hint">CSV: file name = table name (e.g. MDNNOP.csv → MDNNOP), with or without a header row</div>
       <div class="file-name hidden" id="file-name"></div>
     </div>
 
@@ -2494,7 +2494,7 @@ function handleFile(file) {
       const sel = $('sheet-select')
       sel.innerHTML = '<option value="">— select a sheet —</option>'
       data.sheets.forEach(s => {
-        const label = currentFileKind === 'csv' ? `${s} (CSV, no header)` : s
+        const label = currentFileKind === 'csv' ? `${s} (CSV)` : s
         const o = document.createElement('option'); o.value = s; o.textContent = label
         sel.appendChild(o)
       })
@@ -2585,9 +2585,13 @@ function scanSheet(btn) {
 }
 
 function buildPreview(tables, sheet) {
+  const csvHeader = tables[0] && tables[0].header
+  const csvMatch = csvHeader === true ? 'header row found, columns are matched by name'
+    : csvHeader === false ? 'no header row, columns are matched by position'
+    : 'header row is checked against the table when you import'
   $('preview-summary').innerHTML = currentFileKind === 'csv'
     ? `CSV <strong>${escapeHtml($('file-name').textContent)}</strong> → table
-       <strong>${escapeHtml(sheet)}</strong> · no header row, columns are matched by position`
+       <strong>${escapeHtml(sheet)}</strong> · ${csvMatch}`
     : `Found <strong>${tables.length}</strong> table${tables.length !== 1 ? 's' : ''} in sheet
      <strong>${escapeHtml(sheet)}</strong>`
   const tbody = $('preview-body'); tbody.innerHTML = ''
@@ -3738,10 +3742,13 @@ function runCsvCheck(file) {
   form.append('schema', $('csvcheck-schema').value)
   fetch('/temp/csv-check', { method: 'POST', body: form }).then(r => r.json()).then(data => {
     if (data.error) throw new Error(data.error)
-    $('csvcheck-file-name').textContent = `${data.filename} → ${data.schema}.${data.table} (${data.columns.length} columns)`
+    $('csvcheck-file-name').textContent = `${data.filename} → ${data.schema}.${data.table} (${data.columns.length} columns) · ` +
+      (data.header ? 'header row found, matched by name' : 'no header row, matched by position')
     const summary = $('csvcheck-summary')
     summary.className = 'alert ' + (data.error_count ? 'error' : 'info')
     const parts = [`${data.rows_checked} rows checked`]
+    if (data.unknown_header_columns && data.unknown_header_columns.length)
+      parts.push(`header columns not in the table (skipped): ${data.unknown_header_columns.join(', ')}`)
     if (data.error_count) parts.push(`${data.bad_rows} bad rows`, `${data.error_count} errors`)
     if (data.warning_count) parts.push(`${data.warning_count} warnings`)
     if (!data.issue_count) parts.push('no problems found')

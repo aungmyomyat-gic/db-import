@@ -345,9 +345,10 @@ def extract_table(ws, meta):
 
 
 # ── CSV helpers ───────────────────────────────────────────────────────────────
-# A CSV upload holds ONE table with NO header row: the table name comes from the
-# file name (MDNNOP.csv, "MDNNOP (1).csv" -> MDNNOP) and the columns are matched
-# to the DB table's columns by position.
+# A CSV upload holds ONE table: the table name comes from the file name
+# (MDNNOP.csv, "MDNNOP (1).csv" -> MDNNOP). If the first row holds the table's
+# column names it is a header row and columns are matched by name; otherwise
+# every row is data and columns are matched to the DB table's columns by position.
 
 CSV_TABLE_NAME_RE = re.compile(r"[A-Z][A-Z0-9_]*")
 CSV_ENCODINGS = ("utf-8-sig", "cp932")   # UTF-8 (with/without BOM), then Shift-JIS
@@ -380,13 +381,50 @@ def read_csv_rows(path):
     return [row + [""] * (width - len(row)) for row in rows], width
 
 
-def _csv_preview(table_name, rows, width):
+def csv_has_header(first_row, column_names):
+    """True when most non-blank cells of first_row are column names of the table."""
+    names = {str(name).upper() for name in column_names}
+    cells = [normalize_cell(cell).upper() for cell in first_row if cell.strip()]
+    return bool(cells) and sum(cell in names for cell in cells) * 2 > len(cells)
+
+
+def _csv_table_column_names(table_name):
+    """Column names of table_name in any schema, or None when the DB can't be reached."""
+    cfg = load_config()
+    if not cfg:
+        return None
+    conn_str, err = _build_conn_str(
+        cfg["host"], cfg["port"], cfg["database"], cfg["username"], cfg["password"]
+    )
+    if err:
+        return None
+    try:
+        conn = pyodbc.connect(conn_str, timeout=5)
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT DISTINCT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = ?",
+                table_name,
+            )
+            return [row[0] for row in cursor.fetchall()]
+        finally:
+            conn.close()
+    except pyodbc.Error:
+        return None
+
+
+def _csv_preview(table_name, rows, width, has_header=False):
+    """has_header: True / False, or None when it could not be checked (no DB)."""
+    records = len(rows) - 1 if has_header and rows else len(rows)
+    first = 2 if has_header else 1
     return {
         "name": table_name,
         "columns": width,
-        "records": len(rows),
-        "col_range": "No header",
-        "row_range": f"1:{len(rows)}" if rows else "-",
+        "records": records,
+        "header": has_header,
+        "col_range": "Header row" if has_header else "No header" if has_header is False
+                     else "Checked at import",
+        "row_range": f"{first}:{len(rows)}" if records else "-",
     }
 
 
@@ -481,34 +519,45 @@ def _temp_csv_issues(raw, columns):
         raise ValueError("CSV is not UTF-8 or Shift-JIS text")
     issues = []
     rows_checked = 0
+    header = None   # set when the first row is a header: columns are matched by name
+    by_name = {c["name"].upper(): c for c in columns}
+    positional = columns
     reader = csv.reader(io.StringIO(text, newline=""))
     for row in reader:
         if not any(cell.strip() for cell in row):
             continue   # the import skips blank lines too
+        if header is None and rows_checked == 0 and csv_has_header(row, list(by_name)):
+            header = [normalize_cell(cell) for cell in row]
+            positional = [by_name.get(h.upper()) for h in header]
+            continue
         rows_checked += 1
         base = {"row": rows_checked, "line": reader.line_num,
                 "record_id": row[0] if row else "", "full_row": row}
-        if len(row) != len(columns):
-            more = len(row) > len(columns)
+        expected = len(header) if header else len(columns)
+        if len(row) != expected:
+            more = len(row) > expected
+            what = "header has" if header else "table has"
             issues.append({**base, "column": None, "type": None, "position": None, "value": None,
                            "severity": "warning",
-                           "reason": f"{len(row)} columns, table has {len(columns)}"
+                           "reason": f"{len(row)} columns, {what} {expected}"
                                      + (" (extra columns are skipped)" if more
                                         else " (missing columns become NULL/default)")})
-        for index, (value, col) in enumerate(zip(row, columns)):
+        for index, (value, col) in enumerate(zip(row, positional)):
+            if col is None:
+                continue   # header column that is not in the table: the import skips it
             problem = _temp_value_problem(value, col)
             if problem:
                 issues.append({**base, "column": col["name"], "type": col["label"],
                                "position": index + 1, "value": value,
                                "severity": problem[0], "reason": problem[1]})
-    return rows_checked, issues
+    return rows_checked, issues, header
 
 
 def _temp_log_csv_check(conn, path, schema, table_name):
     columns = _temp_table_columns(conn.cursor(), schema, table_name)
     if not columns:
         return
-    _, issues = _temp_csv_issues(Path(path).read_bytes(), columns)
+    _, issues, _ = _temp_csv_issues(Path(path).read_bytes(), columns)
     print(f"[TEMP CSV CHECK] {schema}.{table_name}: {len(issues)} problems", flush=True)
     for i in issues:
         if i["column"] is None:
@@ -648,12 +697,15 @@ def temp_csv_check():
     if not columns:
         return jsonify({"error": f"Table {schema}.{table_name} not found."}), 404
     try:
-        rows_checked, issues = _temp_csv_issues(file.read(), columns)
+        rows_checked, issues, header = _temp_csv_issues(file.read(), columns)
     except Exception as e:
         return jsonify({"error": f"Cannot read file: {e}"}), 400
     return jsonify({
         "filename": file.filename, "schema": schema, "table": table_name,
         "columns": [{"name": c["name"], "type": c["label"]} for c in columns],
+        "header": header is not None,
+        "unknown_header_columns": [h for h in (header or [])
+                                   if h and h.upper() not in {c["name"].upper() for c in columns}],
         "rows_checked": rows_checked,
         "bad_rows": len({i["row"] for i in issues if i["severity"] == "error"}),
         "error_count": sum(i["severity"] == "error" for i in issues),
@@ -725,7 +777,11 @@ def scan():
         except Exception as e:
             return jsonify({"error": f"Cannot open file: {e}"}), 400
         session["sheet_name"] = sheet_name
-        return jsonify({"tables": [_csv_preview(session.get("csv_table"), rows, width)], "kind": "csv"})
+        table_name = session.get("csv_table")
+        # The import decides with the chosen schema's columns; this is the preview's guess.
+        column_names = _csv_table_column_names(table_name) if rows else []
+        has_header = None if column_names is None else csv_has_header(rows[0], column_names) if rows else False
+        return jsonify({"tables": [_csv_preview(table_name, rows, width, has_header)], "kind": "csv"})
 
     try:
         wb = openpyxl.load_workbook(tmp_path, data_only=True, read_only=True)
@@ -1977,8 +2033,9 @@ def _insert_batch(cursor, insert_sql, batch, error_samples):
 def _import_one(conn, table_name, headers, rows, preferred_schema="lvapdbf", progress_cb=None,
                 sql_export_path=None):
     """
-    Replace the table's rows. headers=None means a header-less CSV: the row
-    values are matched to the table's columns by position.
+    Replace the table's rows. headers=None means a CSV: when its first row holds
+    the table's column names it is a header (columns matched by name), otherwise
+    the row values are matched to the table's columns by position.
     """
     cursor = conn.cursor()
 
@@ -2014,7 +2071,15 @@ def _import_one(conn, table_name, headers, rows, preferred_schema="lvapdbf", pro
         }
 
     extra_csv_cols = 0
-    if headers is None:
+    is_csv = headers is None
+    csv_header = False
+    if is_csv and rows and csv_has_header(rows[0], [info["name"] for info in db_cols.values()]):
+        csv_header = True
+        headers = [normalize_cell(cell) for cell in rows[0]]
+        rows = rows[1:]
+        types = [db_cols[h.upper()]["type"] if h.upper() in db_cols else None for h in headers]
+        rows = [[_csv_value(v, t) for v, t in zip(row, types)] for row in rows]
+    elif is_csv:
         width = max((len(row) for row in rows), default=0)
         ordered = list(db_cols.values())
         headers = [info["name"] for info in ordered[:width]]
@@ -2080,14 +2145,17 @@ def _import_one(conn, table_name, headers, rows, preferred_schema="lvapdbf", pro
     conn.commit()
     if progress_cb:
         progress_cb(inserted + errors, total_rows)
-    unmapped = len(headers) - len(sheet_idx)
+    # Blank header cells (padding past the last named column) are not counted.
+    unmapped = sum(1 for h in headers if h and h.upper() not in db_cols)
     msg = f"{inserted} rows inserted"
     if errors:
         msg += f", {errors} errors"
     if filled_cols:
         msg += f" ({len(filled_cols)} required cols auto-filled: {', '.join(filled_cols)})"
+    if csv_header:
+        msg += " (header row found — columns matched by name)"
     if unmapped:
-        msg += f" ({unmapped} sheet cols skipped — not in table)"
+        msg += f" ({unmapped} {'CSV' if is_csv else 'sheet'} cols skipped — not in table)"
     if extra_csv_cols:
         msg += f" ({extra_csv_cols} CSV cols skipped — table has only {len(db_cols)} columns)"
 

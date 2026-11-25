@@ -10,10 +10,14 @@ the tables afterwards. It runs in Docker and opens at http://localhost:5000.
   Preview them, choose which to import, and insert them into the target schema.
   If the file name contains `day job 12` / `month job 3`, the matching batch job
   can be triggered after the import.
-- **CSV import** — choose a `.csv` file with **no header row** and the file name
-  is used as the table name (`MDNNOP.csv` or `MDNNOP (1).csv` → `MDNNOP`). Columns
-  are matched to the table by position, and blank values become NULL, or the
-  type's default for NOT NULL columns. UTF-8 and Shift-JIS files both work.
+- **CSV import** — choose a `.csv` file and the file name is used as the table
+  name (`MDNNOP.csv` or `MDNNOP (1).csv` → `MDNNOP`). The file may have a header
+  row or not. If more than half of the first row's cells are column names of
+  the table, that row is the header and columns are matched **by name** (any
+  order; header columns not in the table are skipped). Otherwise every row is
+  data and columns are matched **by position**. The preview shows which one was
+  found. Blank values become NULL, or the type's default for NOT NULL columns.
+  UTF-8 and Shift-JIS files both work.
   After a successful CSV import, **Download SQL** appears in Import Results.
   The UTF-8 `.sql` file starts with `DELETE FROM schema.table;`, followed by
   `INSERT INTO schema.table` and a `VALUES` block with one tuple per row.

@@ -262,6 +262,54 @@ class CsvSqlExportTests(unittest.TestCase):
         self.assertEqual(connection.committed[0][0], "0001")
         self.assertEqual(connection.committed[0][1], "Excel 日本語")
 
+    def test_header_row_maps_columns_by_name_in_any_order(self):
+        connection = FakeConnection()
+        job = self.run_csv(connection, [["description", "ＣＯＤＥ", "EXTRA", "AMOUNT"],
+                                        ["日本語", "0001", "ignored", "12.50"],
+                                        ["", "0002", "", ""]])
+        self.assertEqual(connection.committed, [
+            ("0001", "12.50", "日本語", 0, "1900-01-01", ""),
+            ("0002", None, None, 0, "1900-01-01", ""),
+        ])
+        message = job["results"][0]["message"]
+        self.assertIn("2 rows inserted", message)
+        self.assertIn("header row found — columns matched by name", message)
+        self.assertIn("1 CSV cols skipped — not in table", message)
+        sql = Path(job["sql_path"]).read_text(encoding="utf-8-sig")
+        self.assertIn("(CODE, AMOUNT, DESCRIPTION, ACTIVE, CREATED, REQUIRED)\nVALUES\n", sql)
+        self.assertNotIn("description", sql)
+
+    def test_header_row_with_every_column_matches_headerless_import(self):
+        metadata = [("CODE", "varchar", "NO", None), ("QTY", "int", "NO", None)]
+        with_header = FakeConnection(metadata=metadata)
+        self.run_csv(with_header, [["CODE", "QTY"], ["00001", "3"]])
+        self.clear_jobs()
+        without_header = FakeConnection(metadata=metadata)
+        self.run_csv(without_header, [["00001", "3"]])
+        self.assertEqual(with_header.committed, without_header.committed)
+        self.assertEqual(with_header.committed, [("00001", "3")])
+
+    def test_data_row_containing_a_column_name_is_not_a_header(self):
+        connection = FakeConnection(metadata=[("CODE", "varchar", "NO", None),
+                                              ("NOTE", "varchar", "YES", None),
+                                              ("QTY", "varchar", "YES", None)])
+        job = self.run_csv(connection, [["CODE", "abc", "1"], ["0002", "def", "2"]])
+        self.assertEqual(connection.committed, [("CODE", "abc", "1"), ("0002", "def", "2")])
+        self.assertNotIn("header row", job["results"][0]["message"])
+
+    def test_csv_header_detection_and_preview_counts(self):
+        names = ["CODE", "AMOUNT", "DESCRIPTION"]
+        self.assertTrue(importer.csv_has_header(["code", " AMOUNT ", ""], names))
+        self.assertTrue(importer.csv_has_header(["CODE", "AMOUNT", "OTHER"], names))
+        self.assertFalse(importer.csv_has_header(["CODE", "1", "x"], names))
+        self.assertFalse(importer.csv_has_header(["", ""], names))
+        rows = [["CODE", "AMOUNT"], ["1", "2"], ["3", "4"]]
+        preview = importer._csv_preview("MDNNOP", rows, 2, True)
+        self.assertEqual((preview["records"], preview["row_range"], preview["col_range"]),
+                         (2, "2:3", "Header row"))
+        preview = importer._csv_preview("MDNNOP", rows, 2, False)
+        self.assertEqual((preview["records"], preview["row_range"]), (3, "1:3"))
+
     def test_sql_literals_keep_quotes_unicode_numeric_precision_and_binary(self):
         self.assertEqual(importer._sql_literal("O'Brien 日本語"), "N'O''Brien 日本語'")
         self.assertEqual(importer._sql_literal(Decimal("12345678901234567890.1234")), "12345678901234567890.1234")
