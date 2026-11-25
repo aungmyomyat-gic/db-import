@@ -597,14 +597,18 @@ def _temp_log_csv_check(conn, path, schema, table_name):
 # names. A line with exactly one cell per table column (after dropping empty
 # cells at the end of the line) is used as is. Otherwise the cells are taken
 # column by column; in a file-name column, a cell that is neither blank nor
-# ending in a file extension (.pdf, .png, …) is joined with the next cell until
-# a cell with an extension is reached. The result is written as TSV, so only
+# ending in one of FILE_EXTENSIONS is joined with the next cell until a cell
+# with an extension is reached. The result is written as TSV, so only
 # the commas inside those file names remain.
 COMMA_FILE_COLUMNS = {
     "MSHHKP": ("SHKTRM", "SHKFL1", "SHKFL2", "SHKFL3"),
 }
-# 1-5 letters/digits with at least one letter, so "2014.11" is not an extension.
-FILE_EXTENSION_RE = re.compile(r"\.(?=[A-Za-z0-9]*[A-Za-z])[A-Za-z0-9]{1,5}$")
+# Only these count (any letter case), so text such as "JN75 0.35GR" or "2014.11"
+# is not taken for the end of a file name. They are every extension found in
+# the MSHHKP export; a file with another extension shows up as an error row.
+FILE_EXTENSIONS = ("pdf", "docx", "xlsx", "jpg", "xls", "doc", "png", "txt", "tif", "jpeg",
+                   "pptx", "gif", "ppt")
+FILE_EXTENSION_RE = re.compile(r"\.(?:" + "|".join(FILE_EXTENSIONS) + r")$", re.IGNORECASE)
 
 
 def _ends_file_name(cell):

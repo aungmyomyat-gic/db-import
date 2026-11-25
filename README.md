@@ -36,8 +36,10 @@ the tables afterwards. It runs in Docker and opens at http://localhost:5000.
   more tables can be added to `COMMA_FILE_COLUMNS` in `app.py`). A line with
   one cell per table column (empty cells at the end of the line are dropped)
   just has its commas changed to tabs. Otherwise, in the file-name columns, a
-  cell that is neither blank nor ending in an extension (`.pdf`, `.png`, …; at
-  least one letter, so `2014.11` does not count) is joined with the next cell.
+  cell that is neither blank nor ending in one of the known extensions
+  (`FILE_EXTENSIONS` in `app.py`: pdf, docx, xlsx, jpg, xls, doc, png, txt,
+  tif, jpeg, pptx, gif, ppt, any letter case) is joined with the next cell, so
+  text like `JN75 0.35GR` is not taken for the end of a file name.
   Every other comma becomes a tab. A header row is kept, and
   the encoding (UTF-8 or Shift-JIS) and line endings stay the same. Rows that
   do not come out to exactly one value per column are left out of the TSV and

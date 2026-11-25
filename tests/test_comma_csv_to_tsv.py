@@ -63,6 +63,14 @@ class CommaCsvToTsvTests(unittest.TestCase):
         tsv, _ = convert("1,N,検査 2014.11,結果.pdf,,,,X\n")
         self.assertEqual(tsv, "1\tN\t検査 2014.11,結果.pdf\t\t\t\tX\n")
 
+    def test_only_known_extensions_end_a_file_name(self):
+        # ".35GR" is not a file extension, so it is joined with the next cell.
+        tsv, report = convert("1,N,a test.pdf,JN75 0.35GR,NV function.pdf,x.Docx,,X\n")
+        self.assertEqual(tsv, "1\tN\ta test.pdf\tJN75 0.35GR,NV function.pdf\tx.Docx\t\tX\n")
+        self.assertEqual(report["errors"], [])
+        self.assertTrue(importer._ends_file_name(" 報告書.PDF "))
+        self.assertFalse(importer._ends_file_name("archive.zip"))   # not in FILE_EXTENSIONS
+
     def test_missing_extension_at_end_of_line(self):
         _, report = convert("1,N,a,b,c\n")
         self.assertIn("SHKTRM: no file extension found in 'a,b,c'", report["errors"][0]["reason"])
