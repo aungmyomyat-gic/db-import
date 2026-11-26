@@ -137,6 +137,33 @@ DB_IMPORT_PORT=5055 bash start.sh
 
 `setup.sh` continues to start the Docker version.
 
+## Import a CSV / TSV from PowerShell
+
+`import-csv.ps1` imports one CSV or TSV file without the web app. It uses the
+same rules as the app's import (table name from the file name, header row
+detected automatically, blank values to NULL, defaults for NOT NULL columns),
+streams the file so large files (hundreds of MB) use little memory, and
+prints the record count and the import time in milliseconds:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\import-csv.ps1 'C:\data\MDNNOP.csv'
+```
+
+```
+Imported lvapdbf.MDNNOP
+  Records : 1,000,000
+  Inserted: 1,000,000
+  Time    : 15,836 ms  (read 970 ms, load 13,457 ms, write 1,253 ms)
+```
+
+The table's rows are replaced in one transaction: if any row fails, the table
+is left unchanged and the SQL Server error is shown. The connection comes from
+`data/db_config.json`; when its server name (e.g. `db`, the Docker name) does
+not resolve on the PC, `localhost,11433` is used. Options: `-Schema`, `-Table`
+(when the file name is not the table name), `-Header auto|yes|no`, `-Server`,
+`-Database`, `-User`, `-Password`, and `-Force` to skip the confirmation.
+Run `Get-Help .\import-csv.ps1 -Detailed` for details.
+
 ## Update
 
 When the app shows **Update available**, double-click `update.bat` (Windows) or

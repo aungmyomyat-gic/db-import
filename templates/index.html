@@ -396,6 +396,7 @@
   .side-panel #card-results .result-detail {
     display: block; color: #64748b; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
+  .side-panel #card-results .result-stats { grid-column: 1 / -1; grid-row: 2 }
   .side-panel #card-results .result-actions {
     grid-column: 4; grid-row: 1; display: flex; flex-direction: column; gap: 4px;
   }
@@ -599,6 +600,31 @@
   .status-text.yellow { color: #fbbf24 }
   .status-text.red { color: #f87171 }
   .result-errors { font-size: .78rem; color: #f87171; margin-top: 3px }
+  /* Records / Time cells: their own row under the result's name and message */
+  .result-row:has(> .result-stats) { flex-wrap: wrap }
+  .result-stats { flex: 1 0 100%; display: grid; grid-template-columns: 1fr 1fr; gap: 6px }
+  .result-stat {
+    min-width: 0; padding: 5px 6px 5px 9px; display: flex; align-items: center; gap: 6px;
+    background: #0c0f1a; border: 1px solid #292e45; border-radius: 8px;
+  }
+  .result-stat-text { min-width: 0; flex: 1 }
+  .stat-copy {
+    flex: 0 0 auto; width: 24px; height: 24px; padding: 4px; margin: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: transparent; border: 1px solid transparent; border-radius: 6px;
+    color: #64748b; cursor: pointer; transition: color .15s, background .15s, border-color .15s;
+  }
+  .stat-copy svg { width: 14px; height: 14px }
+  .stat-copy:hover { color: #c7d2fe; background: #1a1f33; border-color: #333a57 }
+  .stat-copy:focus-visible { outline: 2px solid #818cf8; outline-offset: 1px }
+  .stat-copy.copied { color: #4ade80 }
+  .result-stat-label {
+    display: block; color: #64748b; font-size: .62rem; letter-spacing: .08em; text-transform: uppercase;
+  }
+  .result-stat-value {
+    display: block; color: #e2e8f0; font-size: .8rem; font-variant-numeric: tabular-nums;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
   .truncate-result { font-size: .78rem; margin-top: 4px }
   .truncate-result.ok { color: #4ade80 }
   .truncate-result.error { color: #f87171 }
@@ -1776,9 +1802,8 @@ function editorDataToTSV(includeHeader) {
   return lines.join('\n')
 }
 
-async function copyEditorData(includeHeader, btn) {
-  if (!editorData || !editorData.rows.length) return
-  const text = editorDataToTSV(includeHeader)
+// Clipboard write with a fallback for pages where the Clipboard API is blocked.
+async function copyText(text) {
   try {
     await navigator.clipboard.writeText(text)
   } catch (_) {
@@ -1788,6 +1813,11 @@ async function copyEditorData(includeHeader, btn) {
     try { document.execCommand('copy') } catch (_) {}
     document.body.removeChild(ta)
   }
+}
+
+async function copyEditorData(includeHeader, btn) {
+  if (!editorData || !editorData.rows.length) return
+  await copyText(editorDataToTSV(includeHeader))
   const original = btn.textContent
   btn.textContent = 'Copied!'
   setTimeout(() => { btn.textContent = original }, 1200)
@@ -3057,6 +3087,37 @@ $('btn-call-batch').addEventListener('click', () => {
     })
 })
 
+const COPY_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="9" y="9" width="12" height="12" rx="2"/><path d="M5 15H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v1"/></svg>'
+const COPIED_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>'
+
+// One listener for every Records / Time copy button (results are re-rendered).
+$('results-body').addEventListener('click', async e => {
+  const btn = e.target.closest('.stat-copy')
+  if (!btn) return
+  await copyText(btn.dataset.copy)
+  btn.innerHTML = COPIED_ICON; btn.classList.add('copied')
+  clearTimeout(btn._copiedTimer)
+  btn._copiedTimer = setTimeout(() => { btn.innerHTML = COPY_ICON; btn.classList.remove('copied') }, 1200)
+})
+
+// CSV / TSV imports report the file's record count and how long the import took.
+function resultStatsHtml(r) {
+  // [label, shown text, number the copy button puts on the clipboard, e.g. "180,035"]
+  const cells = []
+  if (typeof r.records === 'number') cells.push(['Records', r.records.toLocaleString(), r.records.toLocaleString('en-US')])
+  if (typeof r.elapsed_ms === 'number') cells.push(['Time', `${r.elapsed_ms.toLocaleString()} ms`, r.elapsed_ms.toLocaleString('en-US')])
+  if (!cells.length) return ''
+  return `<div class="result-stats">${cells.map(([label, value, digits]) => `
+    <div class="result-stat">
+      <div class="result-stat-text">
+        <span class="result-stat-label">${label}</span>
+        <span class="result-stat-value">${value}</span>
+      </div>
+      <button type="button" class="stat-copy" data-copy="${digits}" title="Copy ${digits}" aria-label="Copy ${label.toLowerCase()}: ${digits}">${COPY_ICON}</button>
+    </div>`).join('')}
+  </div>`
+}
+
 function buildResults(results) {
   const body = $('results-body'); body.innerHTML = ''
   let ok = 0, skip = 0, warn = 0, failed = 0
@@ -3081,6 +3142,7 @@ function buildResults(results) {
           <div class="truncate-result hidden"></div>
         </div>
         ${actions}
+        ${resultStatsHtml(r)}
       </div>`
     if (r.status === 'ok') ok++
     else if (r.status === 'warn') warn++

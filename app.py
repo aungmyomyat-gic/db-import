@@ -2144,7 +2144,8 @@ def _set_job_state(job_id, state, error=None):
         job["updated_at"] = time.time()
 
 
-def _mark_job_table(job_id, table_name, status, message, errors=None, schema=None):
+def _mark_job_table(job_id, table_name, status, message, errors=None, schema=None, stats=None):
+    """stats: optional extra result fields, e.g. {"records": 120, "elapsed_ms": 845}."""
     final_statuses = {"ok", "warn", "skip", "failed"}
     with IMPORT_JOBS_LOCK:
         job = IMPORT_JOBS.get(job_id)
@@ -2165,6 +2166,8 @@ def _mark_job_table(job_id, table_name, status, message, errors=None, schema=Non
         })
         if schema:
             existing["schema"] = schema
+        if stats:
+            existing.update(stats)
         if status in final_statuses and not was_final:
             job["completed"] += 1
         job["updated_at"] = time.time()
@@ -2304,6 +2307,7 @@ def _run_csv_import(job_id, conn, tmp_path, table_name, selected_names, schema, 
         _datacheck_log(conn, tmp_path, schema, table_name, delimiter)
     except Exception as e:
         print(f"[DATA CHECK] failed: {e}", flush=True)
+    started = time.perf_counter()   # times reading the file + writing it to the table
     try:
         rows, _ = read_csv_rows(tmp_path, delimiter)
         progress_cb = lambda done, total: _mark_job_progress(job_id, table_name, done, total)
@@ -2315,10 +2319,13 @@ def _run_csv_import(job_id, conn, tmp_path, table_name, selected_names, schema, 
         except Exception:
             pass
         result = {"name": table_name, "status": "failed", "message": f"Failed: {e}", "errors": []}
+    stats = {"elapsed_ms": round((time.perf_counter() - started) * 1000)}
+    if "records" in result:
+        stats["records"] = result["records"]
     if result.get("status") != "ok" or not _publish_sql(job_id, sql_path, table_name):
         sql_path.unlink(missing_ok=True)
     _mark_job_table(job_id, table_name, result.get("status", "failed"), result.get("message", ""),
-                    result.get("errors", []), schema=schema)
+                    result.get("errors", []), schema=schema, stats=stats)
 
 
 def _sql_identifier(value):
@@ -2627,6 +2634,7 @@ def _import_one(conn, table_name, headers, rows, preferred_schema="lvapdbf", pro
         "name": table_name,
         "status": "ok" if not errors else "warn",
         "message": msg,
+        "records": total_rows,
         "inserted": inserted,
         "errors": error_samples,
     }

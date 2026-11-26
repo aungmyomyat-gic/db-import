@@ -138,6 +138,15 @@ class CsvSqlExportTests(unittest.TestCase):
         importer._finish_import_job(self.job_id)
         return job
 
+    def test_result_reports_record_count_and_elapsed_ms(self):
+        rows = [["0001", "12.50", "a", "", ""], ["0002", "", "b", "1", "2026-11-22"]]
+        job = self.run_csv(FakeConnection(), rows)
+        result = importer._job_snapshot(job)["results"][0]
+        self.assertEqual(result["status"], "ok")
+        self.assertEqual(result["records"], 2)
+        self.assertIsInstance(result["elapsed_ms"], int)
+        self.assertGreaterEqual(result["elapsed_ms"], 0)
+
     def test_success_script_matches_odbc_values_and_defaults_across_batches(self):
         connection = FakeConnection()
         rows = [["0001", "12.50", "O'Brien 日本語", "", ""],
